@@ -12,6 +12,8 @@
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
+    <!-- 游戏安装路径 - 根据实际情况修改 -->
+    <DuckovPath Condition=" '$(DuckovPath)' == '' ">E:\Program Files (x86)\Steam\steamapps\common\Escape from Duckov</DuckovPath>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -54,351 +56,370 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Harmony 补丁库 - 来自 Shared 文件夹 -->
     <Reference Include="0Harmony, Version=2.3.3.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\0Harmony.dll</HintPath>
+      <HintPath>..\Shared\0Harmony.dll</HintPath>
     </Reference>
+    <!-- 音频中间件 Wwise -->
     <Reference Include="Ak.Wwise.Api.WAAPI, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Ak.Wwise.Api.WAAPI.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Ak.Wwise.Api.WAAPI.dll</HintPath>
     </Reference>
     <Reference Include="AK.Wwise.Unity.API, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\AK.Wwise.Unity.API.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\AK.Wwise.Unity.API.dll</HintPath>
     </Reference>
     <Reference Include="AK.Wwise.Unity.API.WwiseTypes, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\AK.Wwise.Unity.API.WwiseTypes.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\AK.Wwise.Unity.API.WwiseTypes.dll</HintPath>
     </Reference>
     <Reference Include="AK.Wwise.Unity.MonoBehaviour, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\AK.Wwise.Unity.MonoBehaviour.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\AK.Wwise.Unity.MonoBehaviour.dll</HintPath>
     </Reference>
     <Reference Include="AK.Wwise.Unity.Timeline, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\AK.Wwise.Unity.Timeline.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\AK.Wwise.Unity.Timeline.dll</HintPath>
     </Reference>
+    <!-- 第三方插件库 -->
     <Reference Include="ALINE, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\ALINE.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\ALINE.dll</HintPath>
     </Reference>
     <Reference Include="andywiecko.BurstTriangulator, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\andywiecko.BurstTriangulator.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\andywiecko.BurstTriangulator.dll</HintPath>
     </Reference>
     <Reference Include="Animancer, Version=7.4.2.25, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Animancer.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Animancer.dll</HintPath>
     </Reference>
     <Reference Include="Animancer.FSM, Version=7.4.2.25, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Animancer.FSM.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Animancer.FSM.dll</HintPath>
     </Reference>
     <Reference Include="AstarPathfindingProject, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\AstarPathfindingProject.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\AstarPathfindingProject.dll</HintPath>
     </Reference>
     <Reference Include="BakeryRuntimeAssembly, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\BakeryRuntimeAssembly.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\BakeryRuntimeAssembly.dll</HintPath>
     </Reference>
     <Reference Include="Bilibili.BDS, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Bilibili.BDS.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Bilibili.BDS.dll</HintPath>
     </Reference>
     <Reference Include="Cinemachine, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Cinemachine.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Cinemachine.dll</HintPath>
     </Reference>
     <Reference Include="Clipper2Lib, Version=1.0.0.0, Culture=neutral, PublicKeyToken=ddeb3f68c442d6e4, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Clipper2Lib.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Clipper2Lib.dll</HintPath>
     </Reference>
     <Reference Include="com.rlabrecque.steamworks.net, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\com.rlabrecque.steamworks.net.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\com.rlabrecque.steamworks.net.dll</HintPath>
     </Reference>
     <Reference Include="DOTween, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\DOTween.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\DOTween.dll</HintPath>
     </Reference>
     <Reference Include="DOTween.Modules, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\DOTween.Modules.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\DOTween.Modules.dll</HintPath>
     </Reference>
     <Reference Include="DOTweenPro, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\DOTweenPro.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\DOTweenPro.dll</HintPath>
     </Reference>
     <Reference Include="Drawing, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Drawing.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Drawing.dll</HintPath>
     </Reference>
     <Reference Include="Eflatun.SceneReference, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\steam\steamapps\common\逃离鸭科夫 Playtest\Duckov_Data\Managed\Eflatun.SceneReference.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Eflatun.SceneReference.dll</HintPath>
     </Reference>
     <Reference Include="FMODUnity">
-      <HintPath>E:\steam\steamapps\common\逃离鸭科夫 Playtest\Duckov_Data\Managed\FMODUnity.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\FMODUnity.dll</HintPath>
     </Reference>
     <Reference Include="ICSharpCode.SharpZipLib, Version=2.86.0.518, Culture=neutral, PublicKeyToken=1b03e6acf1164f73, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\ICSharpCode.SharpZipLib.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\ICSharpCode.SharpZipLib.dll</HintPath>
     </Reference>
+    
+    <!-- 游戏核心系统 -->
     <Reference Include="ItemStatsSystem, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\steam\steamapps\common\Escape from Duckov\Duckov_Data\Managed\ItemStatsSystem.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\ItemStatsSystem.dll</HintPath>
     </Reference>
     <Reference Include="LeTai.TranslucentImage, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\LeTai.TranslucentImage.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\LeTai.TranslucentImage.dll</HintPath>
     </Reference>
     <Reference Include="LeTai.TranslucentImage.Demo, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\LeTai.TranslucentImage.Demo.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\LeTai.TranslucentImage.Demo.dll</HintPath>
     </Reference>
     <Reference Include="LeTai.TranslucentImage.UniversalRP, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\LeTai.TranslucentImage.UniversalRP.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\LeTai.TranslucentImage.UniversalRP.dll</HintPath>
     </Reference>
     <Reference Include="LeTai.TrueShadow, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\LeTai.TrueShadow.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\LeTai.TrueShadow.dll</HintPath>
     </Reference>
+    
+    <!-- 网络库 LiteNetLib - 来自 Shared 文件夹 -->
     <Reference Include="LiteNetLib, Version=1.1.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\LiteNetLib.dll</HintPath>
+      <HintPath>..\Shared\LiteNetLib.dll</HintPath>
     </Reference>
+    
     <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Newtonsoft.Json.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="NodeCanvas, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\NodeCanvas.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\NodeCanvas.dll</HintPath>
     </Reference>
     <Reference Include="PackageTools, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\PackageTools.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\PackageTools.dll</HintPath>
     </Reference>
     <Reference Include="ParadoxNotion, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\ParadoxNotion.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\ParadoxNotion.dll</HintPath>
     </Reference>
     <Reference Include="Pathfinding.Ionic.Zip.Reduced, Version=1.9.1.9000, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Pathfinding.Ionic.Zip.Reduced.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Pathfinding.Ionic.Zip.Reduced.dll</HintPath>
     </Reference>
     <Reference Include="Plugins, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Plugins.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Plugins.dll</HintPath>
     </Reference>
     <Reference Include="ShapesSamples, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\ShapesSamples.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\ShapesSamples.dll</HintPath>
     </Reference>
     <Reference Include="Sirenix.OdinInspector.Attributes, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Sirenix.OdinInspector.Attributes.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Sirenix.OdinInspector.Attributes.dll</HintPath>
     </Reference>
     <Reference Include="Sirenix.Serialization, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Sirenix.Serialization.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Sirenix.Serialization.dll</HintPath>
     </Reference>
     <Reference Include="Sirenix.Serialization.Config, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Sirenix.Serialization.Config.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Sirenix.Serialization.Config.dll</HintPath>
     </Reference>
     <Reference Include="Sirenix.Utilities, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Sirenix.Utilities.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Sirenix.Utilities.dll</HintPath>
     </Reference>
     <Reference Include="SymmetryBreak.TastyGrassShader, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\steam\steamapps\common\逃离鸭科夫 Playtest\Duckov_Data\Managed\SymmetryBreak.TastyGrassShader.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\SymmetryBreak.TastyGrassShader.dll</HintPath>
     </Reference>
     <Reference Include="SymmetryBreakStudio.TastyGrassShader.Examples, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\steam\steamapps\common\逃离鸭科夫 Playtest\Duckov_Data\Managed\SymmetryBreakStudio.TastyGrassShader.Examples.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\SymmetryBreakStudio.TastyGrassShader.Examples.dll</HintPath>
     </Reference>
+    <!-- .NET Framework 系统库 -->
     <Reference Include="System" />
     <Reference Include="System.Collections" />
     <Reference Include="System.ComponentModel.Composition" />
     <Reference Include="System.Configuration" />
+    
+    <!-- TeamSoda 游戏核心框架 -->
     <Reference Include="TeamSoda.Duckov.Core, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\steam\steamapps\common\Escape from Duckov\Duckov_Data\Managed\TeamSoda.Duckov.Core.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\TeamSoda.Duckov.Core.dll</HintPath>
     </Reference>
     <Reference Include="TeamSoda.Duckov.Utilities, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\TeamSoda.Duckov.Utilities.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\TeamSoda.Duckov.Utilities.dll</HintPath>
     </Reference>
     <Reference Include="TeamSoda.MiniLocalizor, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\TeamSoda.MiniLocalizor.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\TeamSoda.MiniLocalizor.dll</HintPath>
     </Reference>
+    
     <Reference Include="UISplineRenderer, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UISplineRenderer.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UISplineRenderer.dll</HintPath>
     </Reference>
+    
+    <!-- UniTask 异步库 -->
     <Reference Include="UniTask, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UniTask.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UniTask.dll</HintPath>
     </Reference>
     <Reference Include="UniTask.Addressables, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UniTask.Addressables.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UniTask.Addressables.dll</HintPath>
     </Reference>
     <Reference Include="UniTask.DOTween, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UniTask.DOTween.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UniTask.DOTween.dll</HintPath>
     </Reference>
     <Reference Include="UniTask.TextMeshPro, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\steam\steamapps\common\逃离鸭科夫 Playtest\Duckov_Data\Managed\UniTask.TextMeshPro.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UniTask.TextMeshPro.dll</HintPath>
     </Reference>
+    <!-- Unity 核心包 -->
     <Reference Include="Unity.Burst, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Unity.Burst.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Unity.Burst.dll</HintPath>
     </Reference>
     <Reference Include="Unity.InputSystem, Version=1.11.1.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Unity.InputSystem.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Unity.InputSystem.dll</HintPath>
     </Reference>
     <Reference Include="Unity.InputSystem.ForUI, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Unity.InputSystem.ForUI.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Unity.InputSystem.ForUI.dll</HintPath>
     </Reference>
     <Reference Include="Unity.ResourceManager, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null" />
     <Reference Include="Unity.TextMeshPro, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\steam\steamapps\common\逃离鸭科夫 Playtest\Duckov_Data\Managed\Unity.TextMeshPro.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Unity.TextMeshPro.dll</HintPath>
     </Reference>
     <Reference Include="Unity.VisualScripting.Core, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\Unity.VisualScripting.Core.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\Unity.VisualScripting.Core.dll</HintPath>
     </Reference>
+    
+    <!-- UnityEngine 主引擎 -->
     <Reference Include="UnityEngine, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.dll</HintPath>
     </Reference>
+    
+    <!-- UnityEngine 各功能模块 -->
     <Reference Include="UnityEngine.AccessibilityModule">
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.AccessibilityModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.AccessibilityModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.AIModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.AIModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.AIModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.AndroidJNIModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.AndroidJNIModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.AndroidJNIModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.AnimationModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.AnimationModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.AnimationModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ARModule">
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.ARModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.ARModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.AssetBundleModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.AssetBundleModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.AssetBundleModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.AudioModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.AudioModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.AudioModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ClothModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.ClothModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.ClothModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ClusterInputModule">
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.ClusterInputModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.ClusterInputModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ClusterRendererModule">
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.ClusterRendererModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.ClusterRendererModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ContentLoadModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.ContentLoadModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.ContentLoadModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CrashReportingModule">
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.CrashReportingModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.CrashReportingModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.DirectorModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.DirectorModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.DirectorModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.DSPGraphModule">
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.DSPGraphModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.DSPGraphModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.GameCenterModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.GameCenterModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.GameCenterModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.GIModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.GIModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.GIModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.GridModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.GridModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.GridModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.HotReloadModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.HotReloadModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.HotReloadModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ImageConversionModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.ImageConversionModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.IMGUIModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.IMGUIModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.InputLegacyModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.InputLegacyModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.InputModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.InputModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.InputModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.JSONSerializeModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.JSONSerializeModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.JSONSerializeModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.LocalizationModule">
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.LocalizationModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.LocalizationModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ParticleSystemModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.ParticleSystemModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.ParticleSystemModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.Physics2DModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.Physics2DModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.Physics2DModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.PhysicsModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.PhysicsModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ProfilerModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.ProfilerModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.ProfilerModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.ScreenCaptureModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.ScreenCaptureModule.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.ScreenCaptureModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.TextRenderingModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null" />
     <Reference Include="UnityEngine.UI, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>E:\1111\鸭科夫联机Mod\bin\Release\UnityEngine.UI.dll</HintPath>
+      <HintPath>$(DuckovPath)\Duckov_Data\Managed\UnityEngine.UI.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.UnityWebRequestModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null" />
   </ItemGroup>

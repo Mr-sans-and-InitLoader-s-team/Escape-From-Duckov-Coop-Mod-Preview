@@ -34,11 +34,25 @@ Launch the game and enable the mod to start playing cooperatively.
 
 #### 编译
 
+##### 手动复制游戏文件
+
 1. 将 `Escape from Duckov\Duckov_Data\` 中的 `Managed` 文件夹中的内容复制到项目的 `Managed` 文件夹中
 
 2. 使用 Visual Studio 或其他 IDE 打开项目并编译
 
 3. 从 `鸭科夫联机Mod\bin\Debug` 或 `鸭科夫联机Mod\bin\Release` 中获取输出文件 `0Harmony.dll` `LiteNetLib.dll` `鸭科夫联机Mod.dll`
+
+##### 使用软链接
+
+1. 删除项目文件夹中的 `Managed` 文件
+
+2. 使用下列命令创建软链接
+
+```
+mklink /d 项目路径\Managed 你的游戏路径\Escape from Duckov\Duckov_Data\Managed
+```
+
+3. 后续步骤与之前相同
 
 #### 手动安装
 

@@ -287,3 +287,19 @@ __pycache__/
 *.btm.cs
 *.odx.cs
 *.xsd.cs
+
+# ==========================================
+# Duckov Coop Mod Specific
+# ==========================================
+
+# 用户自定义配置文件
+Directory.Build.props.user
+
+# 第三方DLL文件 (不提交,需开发者自行获取)
+Shared/*.dll
+
+# NuGet packages目录
+packages/
+
+# 游戏特定文件
+*.duckov

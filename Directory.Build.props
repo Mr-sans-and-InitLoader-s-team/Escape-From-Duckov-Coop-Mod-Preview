@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <PropertyGroup>
+    <DuckovGamePath Condition="'$(DuckovGamePath)' == ''">E:\SteamLibrary\steamapps\common\Escape from Duckov</DuckovGamePath>
+    <DuckovManagedPath>$(DuckovGamePath)\Duckov_Data\Managed</DuckovManagedPath>
+    <SharedLibPath>$(MSBuildThisFileDirectory)Shared</SharedLibPath>
+  </PropertyGroup>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <Target Name="ShowDuckovPaths" BeforeTargets="BeforeBuild">
+    <Message Text="==================================================" Importance="high" />
+    <Message Text="Duckov Coop Mod - 路径配置" Importance="high" />
+    <Message Text="==================================================" Importance="high" />
+    <Message Text="游戏目录: $(DuckovGamePath)" Importance="high" />
+    <Message Text="Managed目录: $(DuckovManagedPath)" Importance="high" />
+    <Message Text="Shared目录: $(SharedLibPath)" Importance="high" />
+    <Message Text="==================================================" Importance="high" />
+    <Warning Text="游戏Managed目录不存在: $(DuckovManagedPath)" Condition="!Exists('$(DuckovManagedPath)')" />
+    <Warning Text="Shared目录不存在: $(SharedLibPath)" Condition="!Exists('$(SharedLibPath)')" />
+  </Target>
+</Project>
+

@@ -12,7 +12,7 @@ This mod is to enable stable LAN and online co-op gameplay in a game originally 
 
 ## 使用方法 / How to Use
 
-无需手动安装或构建本项目。
+### 使用预构建的mod文件
 
 直接通过 Steam 创意工坊订阅即可使用：
 
@@ -30,6 +30,55 @@ Simply subscribe on Steam Workshop:
 
 Launch the game and enable the mod to start playing cooperatively.
 
+### 手动构建
+
+#### 编译
+
+1. 将 `Escape from Duckov\Duckov_Data\` 中的 `Managed` 文件夹复制到项目的 `Managed` 文件夹中
+
+2. 使用 Visual Studio 或其他 IDE 打开项目并编译
+
+3. 从 `鸭科夫联机Mod\bin\Debug` 或 `鸭科夫联机Mod\bin\Release` 中复制输出文件
+
+#### 手动安装
+
+1. 在 `Escape from Duckov\Duckov_Data` 文件夹中创建 `Mods` 文件夹
+
+2. 在 `Escape from Duckov\Duckov_Data\Mods` 文件夹中创建 `鸭科夫联机Mod` 文件夹
+
+3. 从编译输出中分别复制 `0Harmony.dll` `LiteNetLib.dll` `鸭科夫联机Mod.dll` 三个文件放入之前创建的 `鸭科夫联机Mod` 文件夹中
+
+4. 在 `鸭科夫联机Mod` 文件夹中创建 `info.ini` 与 `preview.png`
+
+5. 进入游戏在 `Mod` 菜单中弃用模组
+
+##### 文件说明
+
+```
+Mods/
+└── 鸭科夫联机Mod/
+    ├── 0Harmony.dll -- hook库 (注: 在创意工坊版本中此库是作为前置模组独立分发的，这里放一起只是为了开发方便，如之前已安装过前置就不要放这个文件)
+    ├── LiteNetLib.dll -- 网络库 (注: 在创意工坊版本中此库是作为前置模组独立分发的，这里放一起只是为了开发方便，如之前已安装过前置就不要放这个文件)
+    ├── 鸭科夫联机Mod.dll -- 模组本体
+    ├── info.ini -- 模组描述文件
+    └── preview.png -- 模组图标
+```
+
+##### 文件内容
+
+info.ini: 
+```
+name = 鸭科夫联机Mod
+displayName = 鸭科夫联机Mod
+description = 用于局域网联机
+
+; 模组创意工坊id 这里随便写的
+publishedFileId = 114514
+``` 
+
+preview.png:
+
+任意256 * 256的图片
 
 ## 致谢 / Credits
 

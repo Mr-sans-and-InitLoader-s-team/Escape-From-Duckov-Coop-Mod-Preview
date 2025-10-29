@@ -1,0 +1,9 @@
+<Project>
+	# Step1: Create `local.props` file
+	# Step2: Copy the content of this file to `local.props`
+	# Step3: Fill personal env variables
+	<PropertyGroup>
+		<DuckovPath></DuckovPath> # TODO: Fill path to game root folder
+	</PropertyGroup>
+</Project>
+

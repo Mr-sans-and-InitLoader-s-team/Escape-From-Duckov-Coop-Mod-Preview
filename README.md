@@ -34,11 +34,11 @@ Launch the game and enable the mod to start playing cooperatively.
 
 #### 编译
 
-1. 将 `Escape from Duckov\Duckov_Data\` 中的 `Managed` 文件夹复制到项目的 `Managed` 文件夹中
+1. 将 `Escape from Duckov\Duckov_Data\` 中的 `Managed` 文件夹中的内容复制到项目的 `Managed` 文件夹中
 
 2. 使用 Visual Studio 或其他 IDE 打开项目并编译
 
-3. 从 `鸭科夫联机Mod\bin\Debug` 或 `鸭科夫联机Mod\bin\Release` 中复制输出文件
+3. 从 `鸭科夫联机Mod\bin\Debug` 或 `鸭科夫联机Mod\bin\Release` 中获取输出文件 `0Harmony.dll` `LiteNetLib.dll` `鸭科夫联机Mod.dll`
 
 #### 手动安装
 
@@ -46,11 +46,11 @@ Launch the game and enable the mod to start playing cooperatively.
 
 2. 在 `Escape from Duckov\Duckov_Data\Mods` 文件夹中创建 `鸭科夫联机Mod` 文件夹
 
-3. 从编译输出中分别复制 `0Harmony.dll` `LiteNetLib.dll` `鸭科夫联机Mod.dll` 三个文件放入之前创建的 `鸭科夫联机Mod` 文件夹中
+3. 将输出文件 `0Harmony.dll` `LiteNetLib.dll` `鸭科夫联机Mod.dll` 放入之前创建的 `鸭科夫联机Mod` 文件夹中
 
 4. 在 `鸭科夫联机Mod` 文件夹中创建 `info.ini` 与 `preview.png`
 
-5. 进入游戏在 `Mod` 菜单中弃用模组
+5. 进入游戏在 `Mod` 菜单中启用模组
 
 ##### 文件说明
 

@@ -13,8 +13,12 @@
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
-    <!-- 游戏安装路径 - 根据实际情况修改 -->
-    <DuckovPath Condition=" '$(DuckovPath)' == '' ">E:\Program Files (x86)\Steam\steamapps\common\Escape from Duckov</DuckovPath>
+    <!-- 游戏安装路径 - 于local.props内实际情况修改 -->
+    <!-- Game root path - congiure in local.props -->
+	  <DuckovPath>$(DUCKOV_PATH)</DuckovPath>
+	  <DuckovPath Condition=" '$(DuckovPath)' == '' ">
+		  E:\Program Files (x86)\Steam\steamapps\common\Escape from Duckov
+	  </DuckovPath>  
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>

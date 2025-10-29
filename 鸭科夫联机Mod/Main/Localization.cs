@@ -419,6 +419,20 @@ namespace 鸭科夫联机Mod.Main
                 en: "No",
                 ja: "いいえ"
             );
+
+            AddTranslation("loading_waiting_for_host",
+                zh: "[Coop] 等待主机完成加载… (如迟迟没有进入等待100秒后自动进入)",
+                ko: "[Coop] 호스트가 로딩 완료하기를 기다리는 중… (진입하지 않으면 100초 후 자동 진입)",
+                en: "[Coop] Waiting for host to finish loading… (Auto-enter after 100s if delayed)",
+                ja: "[Coop] ホストのロード完了を待機中… (100秒後に自動進入)"
+            );
+
+            AddTranslation("loading_host_ready",
+                zh: "主机已完成，正在进入…",
+                ko: "호스트 완료, 진입 중…",
+                en: "Host ready, entering…",
+                ja: "ホスト完了、進入中…"
+            );
         }
 
         /// <summary>

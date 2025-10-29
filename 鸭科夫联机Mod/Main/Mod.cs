@@ -617,7 +617,7 @@ namespace 鸭科夫联机Mod
         private List<string> hostList = new List<string>();
         private HashSet<string> hostSet = new HashSet<string>();
         private bool isConnecting = false;
-        private string status = "未连接";
+        private string status = "";  // 초기화는 Start에서
         private string manualIP = "127.0.0.1";
         private string manualPort = "9050"; // GTX 5090 我也想要
         public NetPeer connectedPeer;
@@ -1028,9 +1028,13 @@ namespace 鸭科夫联机Mod
 
 
         void Awake()
-        {            
+        {
             Debug.Log("ModBehaviour Awake");
             Instance = this;
+
+            // 다국어 시스템 초기화
+            Main.Localization.Initialize();
+            status = Main.Localization.Get("status_disconnected");
         }
 
         private void OnEnable()
@@ -1112,7 +1116,7 @@ namespace 鸭科夫联机Mod
             }
 
             networkStarted = true;
-            status = "网络已启动";
+            status = Main.Localization.Get("status_network_started");
             hostList.Clear();
             hostSet.Clear();
             isConnecting = false;
@@ -2347,7 +2351,7 @@ namespace 鸭科夫联机Mod
 
             if (!IsServer)
             {
-                status = $"已连接到 {peer.EndPoint}";
+                status = Main.Localization.GetFormatted("status_connected_to", peer.EndPoint);
                 isConnecting = false;
                 SendClientStatusUpdate();
             }
@@ -4343,7 +4347,7 @@ namespace 鸭科夫联机Mod
             Debug.Log($"断开连接: {peer.EndPoint}, 原因: {disconnectInfo.Reason}");
             if (!IsServer)
             {
-                status = "连接断开";
+                status = Main.Localization.Get("status_connection_closed");
                 isConnecting = false;
             }
             if (connectedPeer == peer) connectedPeer = null;
@@ -4411,13 +4415,13 @@ namespace 鸭科夫联机Mod
             // 基础校验
             if (string.IsNullOrWhiteSpace(ip))
             {
-                status = "IP为空";
+                status = Main.Localization.Get("status_ip_empty");
                 isConnecting = false;
                 return;
             }
             if (port <= 0 || port > 65535)
             {
-                status = "端口不合法";
+                status = Main.Localization.Get("status_port_invalid");
                 isConnecting = false;
                 return;
             }
@@ -4443,7 +4447,7 @@ namespace 鸭科夫联机Mod
                 catch (Exception e)
                 {
                     Debug.LogError($"启动客户端网络失败：{e}");
-                    status = "客户端网络启动失败";
+                    status = Main.Localization.Get("status_client_network_failed");
                     isConnecting = false;
                     return;
                 }
@@ -4452,14 +4456,14 @@ namespace 鸭科夫联机Mod
             // 二次确认
             if (netManager == null || !netManager.IsRunning)
             {
-                status = "客户端未启动";
+                status = Main.Localization.Get("status_client_not_started");
                 isConnecting = false;
                 return;
             }
 
             try
             {
-                status = $"连接中: {ip}:{port}";
+                status = Main.Localization.GetFormatted("status_connecting", ip, port);
                 isConnecting = true;
 
                 // 若已有连接，先断开（以免残留状态）
@@ -4475,7 +4479,7 @@ namespace 鸭科夫联机Mod
             catch (Exception ex)
             {
                 Debug.LogError($"连接到主机失败: {ex}");
-                status = "连接失败";
+                status = Main.Localization.Get("status_connection_failed");
                 isConnecting = false;
                 connectedPeer = null;
             }
@@ -4641,11 +4645,11 @@ namespace 鸭科夫联机Mod
         {
             if (showUI)
             {
-                mainWindowRect = GUI.Window(94120, mainWindowRect, DrawMainWindow, "联机Mod控制面板");
+                mainWindowRect = GUI.Window(94120, mainWindowRect, DrawMainWindow, Main.Localization.Get("ui_main_window_title"));
 
                 if (showPlayerStatusWindow)
                 {
-                    playerStatusWindowRect = GUI.Window(94121, playerStatusWindowRect, DrawPlayerStatusWindow, "玩家状态");
+                    playerStatusWindowRect = GUI.Window(94121, playerStatusWindowRect, DrawPlayerStatusWindow, Main.Localization.Get("ui_player_status_title"));
                 }
             }
 
@@ -4654,15 +4658,15 @@ namespace 鸭科夫联机Mod
                 float h = 220f;
                 var area = new Rect(10, Screen.height * 0.5f - h * 0.5f, 320, h);
                 GUILayout.BeginArea(area, GUI.skin.box);
-                GUILayout.Label($"地图投票 / 准备  [{SceneInfoCollection.GetSceneInfo(sceneTargetId).DisplayName}]");
-                GUILayout.Label($"按 {readyKey} 切换准备（当前：{(localReady ? "已准备" : "未准备")}）");
+                GUILayout.Label($"{Main.Localization.Get("ui_scene_vote_ready")}  [{SceneInfoCollection.GetSceneInfo(sceneTargetId).DisplayName}]");
+                GUILayout.Label(Main.Localization.GetFormatted("ui_ready_status", readyKey, localReady ? Main.Localization.Get("ui_ready") : Main.Localization.Get("ui_not_ready")));
 
                 GUILayout.Space(8);
-                GUILayout.Label("玩家准备状态：");
+                GUILayout.Label(Main.Localization.Get("ui_player_ready_status"));
                 foreach (var pid in sceneParticipantIds)
                 {
                     bool r = false; sceneReady.TryGetValue(pid, out r);
-                    GUILayout.Label($"• {pid}  —— {(r ? "✅ 就绪" : "⌛ 未就绪")}");
+                    GUILayout.Label($"• {pid}  —— {(r ? Main.Localization.Get("ui_ready_checkmark") : Main.Localization.Get("ui_not_ready_hourglass"))}");
                 }
                 GUILayout.EndArea();
             }
@@ -4685,7 +4689,7 @@ namespace 鸭科夫联机Mod
                 catch { }
 
                 GUI.Label(new Rect(0, Screen.height - 40, Screen.width, 30),
-                    $"观战模式：左键 ▶ 下一个 | 右键 ◀ 上一个  | 正在观战", style);
+                    Main.Localization.Get("ui_spectator_mode"), style);
             }
 
 
@@ -4694,9 +4698,11 @@ namespace 鸭科夫联机Mod
         private void DrawMainWindow(int windowID)
         {
             GUILayout.BeginVertical();
-            GUILayout.Label($"当前模式: {(IsServer ? "服务器" : "客户端")}");
+            string currentMode = IsServer ? Main.Localization.Get("ui_mode_server") : Main.Localization.Get("ui_mode_client");
+            GUILayout.Label($"{Main.Localization.Get("ui_current_mode")}: {currentMode}");
 
-            if (GUILayout.Button("切换到" + (IsServer ? "客户端" : "服务器") + "模式"))
+            string switchMode = IsServer ? Main.Localization.Get("ui_mode_client") : Main.Localization.Get("ui_mode_server");
+            if (GUILayout.Button(Main.Localization.GetFormatted("ui_switch_to_mode", switchMode)))
             {
                 IsServer = !IsServer;
                 StartNetwork(IsServer);
@@ -4706,18 +4712,18 @@ namespace 鸭科夫联机Mod
 
             if (!IsServer)
             {
-                GUILayout.Label("🔍 局域网主机列表");
+                GUILayout.Label(Main.Localization.Get("ui_lan_host_list"));
 
                 if (hostList.Count == 0)
                 {
-                    GUILayout.Label("（等待广播回应，暂无主机）");
+                    GUILayout.Label(Main.Localization.Get("ui_no_hosts_found"));
                 }
                 else
                 {
                     foreach (var host in hostList)
                     {
                         GUILayout.BeginHorizontal();
-                        if (GUILayout.Button("连接", GUILayout.Width(60)))
+                        if (GUILayout.Button(Main.Localization.Get("ui_button_connect"), GUILayout.Width(60)))
                         {
                             var parts = host.Split(':');
                             if (parts.Length == 2 && int.TryParse(parts[1], out int p))
@@ -4736,16 +4742,16 @@ namespace 鸭科夫联机Mod
                 }
 
                 GUILayout.Space(20);
-                GUILayout.Label("手动输入 IP 和端口连接:");
+                GUILayout.Label(Main.Localization.Get("ui_manual_connect"));
                 GUILayout.BeginHorizontal();
                 GUILayout.Label("IP:", GUILayout.Width(40));
                 manualIP = GUILayout.TextField(manualIP, GUILayout.Width(150));
                 GUILayout.EndHorizontal();
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("端口:", GUILayout.Width(40));
+                GUILayout.Label(Main.Localization.Get("ui_port_label"), GUILayout.Width(40));
                 manualPort = GUILayout.TextField(manualPort, GUILayout.Width(150));
                 GUILayout.EndHorizontal();
-                if (GUILayout.Button("手动连接"))
+                if (GUILayout.Button(Main.Localization.Get("ui_button_manual_connect")))
                 {
                     if (int.TryParse(manualPort, out int p))
                     {
@@ -4758,23 +4764,23 @@ namespace 鸭科夫联机Mod
                     }
                     else
                     {
-                        status = "端口格式错误";
+                        status = Main.Localization.Get("status_port_format_error");
                     }
                 }
 
                 GUILayout.Space(20);
-                GUILayout.Label("状态: " + status);
+                GUILayout.Label(Main.Localization.Get("ui_status_label") + " " + status);
             }
             else
             {
-                GUILayout.Label($"服务器监听端口: {port}");
-                GUILayout.Label($"当前连接数: {netManager?.ConnectedPeerList.Count ?? 0}");
+                GUILayout.Label(Main.Localization.GetFormatted("ui_server_port", port));
+                GUILayout.Label(Main.Localization.GetFormatted("ui_connection_count", netManager?.ConnectedPeerList.Count ?? 0));
             }
 
             GUILayout.Space(10);
-            showPlayerStatusWindow = GUILayout.Toggle(showPlayerStatusWindow, $"显示玩家状态窗口 (切换键: {toggleWindowKey})");
+            showPlayerStatusWindow = GUILayout.Toggle(showPlayerStatusWindow, Main.Localization.GetFormatted("ui_toggle_player_status_window", toggleWindowKey));
 
-            if (GUILayout.Button("[Debug] 打印出该地图的所有lootbox"))
+            if (GUILayout.Button(Main.Localization.Get("ui_debug_print_lootboxes")))
             {
                 foreach (var i in LevelManager.LootBoxInventories)
                 {
@@ -4866,9 +4872,9 @@ namespace 鸭科夫联机Mod
                 GUILayout.Label($"ID: {localPlayerStatus.EndPoint}", GUILayout.Width(180));
                 GUILayout.EndHorizontal();
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"名称: {localPlayerStatus.PlayerName}", GUILayout.Width(180));
-                GUILayout.Label($"延迟: {localPlayerStatus.Latency}ms", GUILayout.Width(100));
-                GUILayout.Label($"游戏中: {(localPlayerStatus.IsInGame ? "是" : "否")}");
+                GUILayout.Label($"{Main.Localization.Get("ui_player_name_label")} {localPlayerStatus.PlayerName}", GUILayout.Width(180));
+                GUILayout.Label($"{Main.Localization.Get("ui_player_latency_label")} {localPlayerStatus.Latency}ms", GUILayout.Width(100));
+                GUILayout.Label($"{Main.Localization.Get("ui_player_in_game_label")} {(localPlayerStatus.IsInGame ? Main.Localization.Get("ui_yes") : Main.Localization.Get("ui_no"))}");
                 GUILayout.EndHorizontal();
                 GUILayout.Space(10);
             }
@@ -4882,9 +4888,9 @@ namespace 鸭科夫联机Mod
                     GUILayout.Label($"ID: {st.EndPoint}", GUILayout.Width(180));
                     GUILayout.EndHorizontal();
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label($"名称: {st.PlayerName}", GUILayout.Width(180));
-                    GUILayout.Label($"延迟: {st.Latency}ms", GUILayout.Width(100));
-                    GUILayout.Label($"游戏中: {(st.IsInGame ? "是" : "否")}");
+                    GUILayout.Label($"{Main.Localization.Get("ui_player_name_label")} {st.PlayerName}", GUILayout.Width(180));
+                    GUILayout.Label($"{Main.Localization.Get("ui_player_latency_label")} {st.Latency}ms", GUILayout.Width(100));
+                    GUILayout.Label($"{Main.Localization.Get("ui_player_in_game_label")} {(st.IsInGame ? Main.Localization.Get("ui_yes") : Main.Localization.Get("ui_no"))}");
                     GUILayout.EndHorizontal();
                     GUILayout.Space(10);
                 }
@@ -4898,9 +4904,9 @@ namespace 鸭科夫联机Mod
                     GUILayout.Label($"ID: {st.EndPoint}", GUILayout.Width(180));
                     GUILayout.EndHorizontal();
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label($"名称: {st.PlayerName}", GUILayout.Width(180));
-                    GUILayout.Label($"延迟: {st.Latency}ms", GUILayout.Width(100));
-                    GUILayout.Label($"游戏中: {(st.IsInGame ? "是" : "否")}");
+                    GUILayout.Label($"{Main.Localization.Get("ui_player_name_label")} {st.PlayerName}", GUILayout.Width(180));
+                    GUILayout.Label($"{Main.Localization.Get("ui_player_latency_label")} {st.Latency}ms", GUILayout.Width(100));
+                    GUILayout.Label($"{Main.Localization.Get("ui_player_in_game_label")} {(st.IsInGame ? Main.Localization.Get("ui_yes") : Main.Localization.Get("ui_no"))}");
                     GUILayout.EndHorizontal();
                     GUILayout.Space(10);
                 }

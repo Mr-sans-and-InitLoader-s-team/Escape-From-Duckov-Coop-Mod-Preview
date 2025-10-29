@@ -45,6 +45,7 @@
     <Compile Include="Main\COOPManager.cs" />
     <Compile Include="Main\HarmonyFix.cs" />
     <Compile Include="Main\Mod.cs" />
+    <Compile Include="Main\Localization.cs" />
     <Compile Include="NetTag\NetGrenadeTag.cs" />
     <Compile Include="Net\NetInterpolator.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

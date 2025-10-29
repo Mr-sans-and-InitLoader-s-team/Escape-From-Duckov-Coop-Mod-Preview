@@ -1,20 +1,26 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.34931.43
+# Visual Studio Version 18
+VisualStudioVersion = 18.0.11111.16 d18.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "鸭科夫联机Mod", "鸭科夫联机Mod\鸭科夫联机Mod.csproj", "{C8C48E3C-68BF-4A39-9FB4-DBDB1ECEADDA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
 		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{C8C48E3C-68BF-4A39-9FB4-DBDB1ECEADDA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{C8C48E3C-68BF-4A39-9FB4-DBDB1ECEADDA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C8C48E3C-68BF-4A39-9FB4-DBDB1ECEADDA}.Debug|x64.ActiveCfg = Debug|x64
+		{C8C48E3C-68BF-4A39-9FB4-DBDB1ECEADDA}.Debug|x64.Build.0 = Debug|x64
 		{C8C48E3C-68BF-4A39-9FB4-DBDB1ECEADDA}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C8C48E3C-68BF-4A39-9FB4-DBDB1ECEADDA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C8C48E3C-68BF-4A39-9FB4-DBDB1ECEADDA}.Release|x64.ActiveCfg = Release|x64
+		{C8C48E3C-68BF-4A39-9FB4-DBDB1ECEADDA}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -76,9 +76,11 @@
   <ItemGroup>
     <Reference Include="0Harmony, Version=2.4.1.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\Lib.Harmony.2.4.1\lib\net48\0Harmony.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="LiteNetLib, Version=1.1.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\LiteNetLib.1.1.0\lib\net471\LiteNetLib.dll</HintPath>
+      <Private>True</Private>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Collections" />
@@ -366,4 +368,8 @@
     </Reference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Target Name="CopyDependencies" AfterTargets="Build">
+    <Copy SourceFiles="..\packages\LiteNetLib.1.1.0\lib\net471\LiteNetLib.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="..\packages\Lib.Harmony.2.4.1\lib\net48\0Harmony.dll" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

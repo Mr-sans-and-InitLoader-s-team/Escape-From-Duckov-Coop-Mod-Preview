@@ -26,6 +26,7 @@ using ItemStatsSystem;
 using ItemStatsSystem.Items;
 using LiteNetLib;
 using LiteNetLib.Utils;
+using Steamworks;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -619,10 +620,54 @@ namespace 鸭科夫联机Mod
         private bool isConnecting = false;
         private string status = "未连接";
         private string manualIP = "127.0.0.1";
-        private string manualPort = "9050"; // GTX 5090 我也想要
+        private string manualPort = "9050";
         public NetPeer connectedPeer;
         public bool networkStarted = false;
         private float broadcastTimer = 0f;
+        
+        private enum NetworkMode { Traditional, SteamP2P }
+        private NetworkMode currentNetworkMode = NetworkMode.Traditional;
+        
+        private enum LobbyMode { LocalLAN, SteamFriends, DirectConnect, SteamLobbies }
+        private LobbyMode currentLobbyMode = LobbyMode.LocalLAN;
+        private Vector2 friendsScrollPos = Vector2.zero;
+        private Vector2 lobbiesScrollPos = Vector2.zero;
+        private List<SteamFriendInfo> steamFriends = new List<SteamFriendInfo>();
+        private List<SteamLobbyInfo> steamLobbies = new List<SteamLobbyInfo>();
+        private float friendsRefreshTimer = 0f;
+        
+        private CSteamID currentSteamLobby = CSteamID.Nil;
+        private bool isSteamLobbyOwner = false;
+        private bool steamLobbyPublic = true;
+        private string steamLobbyName = "";
+        private int steamLobbyMaxPlayers = 4;
+        private string steamLobbyPassword = "";
+        private string joinPassword = "";
+        
+        private Callback<LobbyCreated_t> lobbyCreatedCallback;
+        private Callback<LobbyEnter_t> lobbyEnterCallback;
+        private Callback<LobbyMatchList_t> lobbyMatchListCallback;
+        private Callback<LobbyChatUpdate_t> lobbyChatUpdateCallback;
+        private Callback<P2PSessionRequest_t> p2pSessionRequestCallback;
+        private Callback<P2PSessionConnectFail_t> p2pSessionConnectFailCallback;
+        
+        private class SteamFriendInfo
+        {
+            public CSteamID SteamID;
+            public string Name;
+            public string GameInfo;
+            public bool InGame;
+        }
+        
+        private class SteamLobbyInfo
+        {
+            public CSteamID LobbyID;
+            public string Name;
+            public int CurrentPlayers;
+            public int MaxPlayers;
+            public bool IsPublic;
+            public bool HasPassword;
+        }
         private float broadcastInterval = 5f;
         private float syncTimer = 0f;
         private float syncInterval = 0.015f; // =========== Mod开发者注意现在是TI版本也就是满血版无同步延迟，0.03 ~33ms ===================
@@ -716,6 +761,8 @@ namespace 鸭科夫联机Mod
             public List<WeaponSyncData> WeaponList { get; set; } = new List<WeaponSyncData>();
 
             public string SceneId;
+            public string SteamID { get; set; }
+            public string SteamName { get; set; }
         }
 
         private Rect mainWindowRect = new Rect(10, 10, 400, 700);
@@ -723,6 +770,11 @@ namespace 鸭科夫联机Mod
         private bool showPlayerStatusWindow = false;
         private Vector2 playerStatusScrollPos = Vector2.zero;
         private KeyCode toggleWindowKey = KeyCode.P;
+        
+        private bool showPasswordInputWindow = false;
+        private Rect passwordInputWindowRect = new Rect(Screen.width / 2 - 150, Screen.height / 2 - 75, 300, 150);
+        private string inputPassword = "";
+        private CSteamID pendingJoinLobbyID = CSteamID.Nil;
 
         private bool isinit; // 判断玩家装备slot监听初始哈的
 
@@ -1044,6 +1096,29 @@ namespace 鸭科夫联机Mod
 
             SceneManager.sceneLoaded += SceneManager_sceneLoaded;
             LevelManager.OnLevelInitialized += LevelManager_OnLevelInitialized;
+            
+            InitializeSteamCallbacks();
+        }
+        
+        private void InitializeSteamCallbacks()
+        {
+            if (!SteamManager.Initialized) return;
+            
+            try
+            {
+                lobbyCreatedCallback = Callback<LobbyCreated_t>.Create(OnLobbyCreated);
+                lobbyEnterCallback = Callback<LobbyEnter_t>.Create(OnLobbyEnter);
+                lobbyMatchListCallback = Callback<LobbyMatchList_t>.Create(OnLobbyMatchList);
+                lobbyChatUpdateCallback = Callback<LobbyChatUpdate_t>.Create(OnLobbyChatUpdate);
+                p2pSessionRequestCallback = Callback<P2PSessionRequest_t>.Create(OnP2PSessionRequest);
+                p2pSessionConnectFailCallback = Callback<P2PSessionConnectFail_t>.Create(OnP2PSessionConnectFail);
+                
+                Debug.Log("[Steam] Steam回调初始化成功");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Steam] 初始化Steam回调失败: {ex.Message}");
+            }
         }
 
         private void LevelManager_OnAfterLevelInitialized()
@@ -1131,9 +1206,256 @@ namespace 鸭科夫联机Mod
             }
         }
 
+        private void CreateSteamLobby(bool isPublic, int maxPlayers, string lobbyName, string password = "")
+        {
+            if (!SteamManager.Initialized)
+            {
+                status = "Steam未初始化";
+                return;
+            }
+            
+            steamLobbyPublic = isPublic;
+            steamLobbyMaxPlayers = maxPlayers;
+            steamLobbyName = lobbyName;
+            steamLobbyPassword = password;
+            
+            bool hasPassword = !string.IsNullOrEmpty(password);
+            
+            ELobbyType lobbyType;
+            if (hasPassword)
+            {
+                lobbyType = ELobbyType.k_ELobbyTypeFriendsOnly;
+            }
+            else
+            {
+                lobbyType = isPublic ? ELobbyType.k_ELobbyTypePublic : ELobbyType.k_ELobbyTypeFriendsOnly;
+            }
+            
+            SteamMatchmaking.CreateLobby(lobbyType, maxPlayers);
+            status = "正在创建Steam房间...";
+            
+            string typeStr = hasPassword ? "好友可见+密码" : (isPublic ? "公开" : "好友可见");
+            Debug.Log($"[Steam] 创建房间 - 类型:{typeStr}, 最大人数:{maxPlayers}");
+        }
+        
+        private void OnLobbyCreated(LobbyCreated_t callback)
+        {
+            if (callback.m_eResult != EResult.k_EResultOK)
+            {
+                status = $"创建房间失败: {callback.m_eResult}";
+                Debug.LogError($"[Steam] 创建房间失败: {callback.m_eResult}");
+                return;
+            }
+            
+            currentSteamLobby = new CSteamID(callback.m_ulSteamIDLobby);
+            isSteamLobbyOwner = true;
+            currentNetworkMode = NetworkMode.SteamP2P;
+            IsServer = true;
+            
+            SteamMatchmaking.SetLobbyData(currentSteamLobby, "name", steamLobbyName);
+            SteamMatchmaking.SetLobbyData(currentSteamLobby, "version", "1.0");
+            
+            bool hasPassword = !string.IsNullOrEmpty(steamLobbyPassword);
+            SteamMatchmaking.SetLobbyData(currentSteamLobby, "hasPassword", hasPassword ? "1" : "0");
+            if (hasPassword)
+            {
+                SteamMatchmaking.SetLobbyData(currentSteamLobby, "password", steamLobbyPassword);
+            }
+            
+            string typeStr = hasPassword ? "好友可见+密码" : (steamLobbyPublic ? "公开" : "好友可见");
+            status = $"Steam房间已创建 - {typeStr}";
+            Debug.Log($"[Steam] 房间创建成功 - ID: {currentSteamLobby}");
+            
+            StartNetwork(true);
+        }
+        
+        private void OnLobbyEnter(LobbyEnter_t callback)
+        {
+            currentSteamLobby = new CSteamID(callback.m_ulSteamIDLobby);
+            
+            // 检查密码
+            string hasPasswordStr = SteamMatchmaking.GetLobbyData(currentSteamLobby, "hasPassword");
+            bool hasPassword = hasPasswordStr == "1";
+            
+            if (hasPassword)
+            {
+                string correctPassword = SteamMatchmaking.GetLobbyData(currentSteamLobby, "password");
+                if (joinPassword != correctPassword)
+                {
+                    status = "密码错误，无法加入房间";
+                    Debug.LogError("[Steam] 密码错误");
+                    SteamMatchmaking.LeaveLobby(currentSteamLobby);
+                    currentSteamLobby = CSteamID.Nil;
+                    joinPassword = "";
+                    return;
+                }
+            }
+            
+            isSteamLobbyOwner = false;
+            currentNetworkMode = NetworkMode.SteamP2P;
+            IsServer = false;
+            
+            CSteamID lobbyOwner = SteamMatchmaking.GetLobbyOwner(currentSteamLobby);
+            string lobbyName = SteamMatchmaking.GetLobbyData(currentSteamLobby, "name");
+            
+            status = $"已加入房间: {lobbyName}";
+            Debug.Log($"[Steam] 加入房间成功 - ID: {currentSteamLobby}, 房主: {lobbyOwner}");
+            
+            joinPassword = "";
+            StartNetwork(false);
+        }
+        
+        private void OnLobbyChatUpdate(LobbyChatUpdate_t callback)
+        {
+            CSteamID userID = new CSteamID(callback.m_ulSteamIDUserChanged);
+            EChatMemberStateChange stateChange = (EChatMemberStateChange)callback.m_rgfChatMemberStateChange;
+            
+            string userName = SteamFriends.GetFriendPersonaName(userID);
+            Debug.Log($"[Steam] 房间更新 - {userName} {stateChange}");
+        }
+        
+        private void OnP2PSessionRequest(P2PSessionRequest_t callback)
+        {
+            CSteamID remoteID = callback.m_steamIDRemote;
+            Debug.Log($"[Steam] 收到P2P会话请求: {remoteID}");
+            SteamNetworking.AcceptP2PSessionWithUser(remoteID);
+        }
+        
+        private void OnP2PSessionConnectFail(P2PSessionConnectFail_t callback)
+        {
+            Debug.LogError($"[Steam] P2P连接失败: {callback.m_steamIDRemote}, Error: {callback.m_eP2PSessionError}");
+            status = "P2P连接失败";
+        }
+        
+        private void RefreshSteamLobbies()
+        {
+            if (!SteamManager.Initialized) return;
+            
+            SteamMatchmaking.AddRequestLobbyListDistanceFilter(ELobbyDistanceFilter.k_ELobbyDistanceFilterWorldwide);
+            SteamMatchmaking.AddRequestLobbyListResultCountFilter(50);
+            SteamMatchmaking.RequestLobbyList();
+            status = "正在刷新房间列表...";
+        }
+        
+        private void OnLobbyMatchList(LobbyMatchList_t callback)
+        {
+            steamLobbies.Clear();
+            
+            for (int i = 0; i < callback.m_nLobbiesMatching; i++)
+            {
+                CSteamID lobbyID = SteamMatchmaking.GetLobbyByIndex(i);
+                string name = SteamMatchmaking.GetLobbyData(lobbyID, "name");
+                int currentPlayers = SteamMatchmaking.GetNumLobbyMembers(lobbyID);
+                int maxPlayers = SteamMatchmaking.GetLobbyMemberLimit(lobbyID);
+                string hasPasswordStr = SteamMatchmaking.GetLobbyData(lobbyID, "hasPassword");
+                bool hasPassword = hasPasswordStr == "1";
+                
+                steamLobbies.Add(new SteamLobbyInfo
+                {
+                    LobbyID = lobbyID,
+                    Name = string.IsNullOrEmpty(name) ? "未命名房间" : name,
+                    CurrentPlayers = currentPlayers,
+                    MaxPlayers = maxPlayers,
+                    IsPublic = true,
+                    HasPassword = hasPassword
+                });
+            }
+            
+            status = $"找到 {steamLobbies.Count} 个房间";
+            Debug.Log($"[Steam] 找到 {steamLobbies.Count} 个房间");
+        }
+        
+        private void JoinSteamLobby(CSteamID lobbyID, string password = "")
+        {
+            joinPassword = password;
+            SteamMatchmaking.JoinLobby(lobbyID);
+            status = "正在加入房间...";
+        }
+        
+        private void RefreshSteamFriends()
+        {
+            steamFriends.Clear();
+            
+            if (!SteamManager.Initialized) return;
+            
+            try
+            {
+                int friendCount = SteamFriends.GetFriendCount(EFriendFlags.k_EFriendFlagImmediate);
+                for (int i = 0; i < friendCount; i++)
+                {
+                    CSteamID friendID = SteamFriends.GetFriendByIndex(i, EFriendFlags.k_EFriendFlagImmediate);
+                    string friendName = SteamFriends.GetFriendPersonaName(friendID);
+                    
+                    FriendGameInfo_t gameInfo;
+                    bool inGame = SteamFriends.GetFriendGamePlayed(friendID, out gameInfo);
+                    
+                    steamFriends.Add(new SteamFriendInfo
+                    {
+                        SteamID = friendID,
+                        Name = friendName,
+                        GameInfo = inGame ? "游戏中" : "在线",
+                        InGame = inGame
+                    });
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"刷新Steam好友列表失败: {ex.Message}");
+            }
+        }
+        
+        private string GetPlayerDisplayName(string pid)
+        {
+            if (string.IsNullOrEmpty(pid)) return "未知玩家";
+            
+            if (localPlayerStatus != null && localPlayerStatus.EndPoint == pid)
+            {
+                return localPlayerStatus.SteamName ?? localPlayerStatus.PlayerName ?? pid;
+            }
+            
+            if (IsServer)
+            {
+                foreach (var kvp in playerStatuses)
+                {
+                    if (kvp.Value != null && kvp.Value.EndPoint == pid)
+                    {
+                        return kvp.Value.SteamName ?? kvp.Value.PlayerName ?? pid;
+                    }
+                }
+            }
+            else
+            {
+                foreach (var kvp in clientPlayerStatuses)
+                {
+                    if (kvp.Value != null && kvp.Value.EndPoint == pid)
+                    {
+                        return kvp.Value.SteamName ?? kvp.Value.PlayerName ?? pid;
+                    }
+                }
+            }
+            
+            return pid;
+        }
+
         private void InitializeLocalPlayer()
         {
             var bool1 = ComputeIsInGame(out var ids);
+            
+            string steamName = "未知";
+            string steamID = "未知";
+            try
+            {
+                if (SteamManager.Initialized)
+                {
+                    steamName = Steamworks.SteamFriends.GetPersonaName();
+                    steamID = Steamworks.SteamUser.GetSteamID().ToString();
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"获取Steam信息失败: {ex.Message}");
+            }
+            
             localPlayerStatus = new PlayerStatus
             {
 
@@ -1145,7 +1467,9 @@ namespace 鸭科夫联机Mod
                 Position = Vector3.zero,
                 Rotation = Quaternion.identity,
                 SceneId = ids,
-                CustomFaceJson = LoadLocalCustomFaceJson()
+                CustomFaceJson = LoadLocalCustomFaceJson(),
+                SteamName = steamName,
+                SteamID = steamID
             };
         }
 
@@ -2461,6 +2785,8 @@ namespace 鸭科夫联机Mod
         {
             string endPoint = reader.GetString();
             string playerName = reader.GetString();
+            string steamName = reader.GetString();
+            string steamID = reader.GetString();
             bool isInGame = reader.GetBool();
             Vector3 position = reader.GetVector3();
             Quaternion rotation = reader.GetQuaternion();
@@ -2483,6 +2809,8 @@ namespace 鸭科夫联机Mod
             var st = playerStatuses[peer];
             st.EndPoint = endPoint;
             st.PlayerName = playerName;
+            st.SteamName = steamName;
+            st.SteamID = steamID;
             st.Latency = peer.Ping;
             st.IsInGame = isInGame;
             st.LastIsInGame = isInGame;
@@ -3343,6 +3671,8 @@ namespace 鸭科夫联机Mod
                         {
                             string endPoint = reader.GetString();
                             string playerName = reader.GetString();
+                            string steamName = reader.GetString();
+                            string steamID = reader.GetString();
                             int latency = reader.GetInt();
                             bool isInGame = reader.GetBool();
                             Vector3 position = reader.GetVector3();        
@@ -3368,6 +3698,8 @@ namespace 鸭科夫联机Mod
 
                             st.EndPoint = endPoint;
                             st.PlayerName = playerName;
+                            st.SteamName = steamName;
+                            st.SteamID = steamID;
                             st.Latency = latency;
                             st.IsInGame = isInGame;
                             st.LastIsInGame = isInGame;
@@ -4204,11 +4536,29 @@ namespace 鸭科夫联机Mod
 
                         var snap = ReadItemSnapshot(reader);        
                         var tmpRoot = BuildItemFromSnapshot(snap);  
-                        if (!tmpRoot) { Debug.LogWarning("[LOOT] PLAYER_DEAD_TREE BuildItemFromSnapshot failed."); break; }
+                        if (!tmpRoot) 
+                        { 
+                            Debug.LogWarning("[LOOT] PLAYER_DEAD_TREE BuildItemFromSnapshot failed."); 
+                            break; 
+                        }
 
+                        Debug.Log($"[LOOT] Guest player died, creating tomb at {pos}");
                         var deadPfb = ResolveDeadLootPrefabOnServer();
+                        if (!deadPfb)
+                        {
+                            Debug.LogWarning("[LOOT] ResolveDeadLootPrefabOnServer returned null, using fallback");
+                        }
+                        
                         var box = InteractableLootbox.CreateFromItem(tmpRoot, pos + Vector3.up * 0.10f, rot, true, deadPfb, false);
-                        if (box) Server_OnDeadLootboxSpawned(box, null);   // 用新版重载：会发 lootUid + aiId + 随后 LOOT_STATE
+                        if (box) 
+                        {
+                            Debug.Log("[LOOT] Tomb created successfully, broadcasting to clients");
+                            Server_OnDeadLootboxSpawned(box, null);
+                        }
+                        else
+                        {
+                            Debug.LogError("[LOOT] InteractableLootbox.CreateFromItem returned null for guest player death");
+                        }
 
                         if (remoteCharacters.TryGetValue(peer, out var proxy) && proxy)
                         {
@@ -4216,15 +4566,13 @@ namespace 鸭科夫联机Mod
                             remoteCharacters.Remove(peer);
                         }
 
-                        // B) 广播给所有客户端：这个玩家的远程代理需要销毁
                         if (playerStatuses.TryGetValue(peer, out var st) && !string.IsNullOrEmpty(st.EndPoint))
                         {
                             var w2 = writer; w2.Reset();
                             w2.Put((byte)Op.REMOTE_DESPAWN);
-                            w2.Put(st.EndPoint);                 // 客户端用 EndPoint 当 key
+                            w2.Put(st.EndPoint);
                             netManager.SendToAll(w2, DeliveryMethod.ReliableOrdered);
                         }
-
 
                         if (tmpRoot && tmpRoot.gameObject) UnityEngine.Object.Destroy(tmpRoot.gameObject);
                         break;
@@ -4493,6 +4841,8 @@ namespace 鸭科夫联机Mod
             writer.Put((byte)Op.CLIENT_STATUS_UPDATE);     // opcode
             writer.Put(localPlayerStatus.EndPoint);
             writer.Put(localPlayerStatus.PlayerName);
+            writer.Put(localPlayerStatus.SteamName ?? "未知");
+            writer.Put(localPlayerStatus.SteamID ?? "未知");
             writer.Put(localPlayerStatus.IsInGame);
             writer.PutVector3(localPlayerStatus.Position); 
             writer.PutQuaternion(localPlayerStatus.Rotation);
@@ -4526,6 +4876,8 @@ namespace 鸭科夫联机Mod
             {
                 writer.Put(st.EndPoint);
                 writer.Put(st.PlayerName);
+                writer.Put(st.SteamName ?? "未知");
+                writer.Put(st.SteamID ?? "未知");
                 writer.Put(st.Latency);
                 writer.Put(st.IsInGame);
                 writer.PutVector3(st.Position);            
@@ -4662,7 +5014,8 @@ namespace 鸭科夫联机Mod
                 foreach (var pid in sceneParticipantIds)
                 {
                     bool r = false; sceneReady.TryGetValue(pid, out r);
-                    GUILayout.Label($"• {pid}  —— {(r ? "✅ 就绪" : "⌛ 未就绪")}");
+                    string displayName = GetPlayerDisplayName(pid);
+                    GUILayout.Label($"• {displayName}  —— {(r ? "就绪" : "未就绪")}");
                 }
                 GUILayout.EndArea();
             }
@@ -4688,87 +5041,306 @@ namespace 鸭科夫联机Mod
                     $"观战模式：左键 ▶ 下一个 | 右键 ◀ 上一个  | 正在观战", style);
             }
 
+            if (showPasswordInputWindow)
+            {
+                passwordInputWindowRect = GUI.Window(94122, passwordInputWindowRect, DrawPasswordInputWindow, "输入房间密码");
+            }
 
         }
 
         private void DrawMainWindow(int windowID)
         {
             GUILayout.BeginVertical();
-            GUILayout.Label($"当前模式: {(IsServer ? "服务器" : "客户端")}");
-
-            if (GUILayout.Button("切换到" + (IsServer ? "客户端" : "服务器") + "模式"))
+            
+            GUILayout.Label($"网络模式: {(currentNetworkMode == NetworkMode.SteamP2P ? "Steam P2P" : "传统服务器")}");
+            GUILayout.Label($"当前角色: {(IsServer ? "房主/服务器" : "客户端")}");
+            
+            if (currentSteamLobby != CSteamID.Nil)
             {
-                IsServer = !IsServer;
-                StartNetwork(IsServer);
+                int memberCount = SteamMatchmaking.GetNumLobbyMembers(currentSteamLobby);
+                int maxMembers = SteamMatchmaking.GetLobbyMemberLimit(currentSteamLobby);
+                string lobbyName = SteamMatchmaking.GetLobbyData(currentSteamLobby, "name");
+                GUILayout.Label($"房间: {lobbyName} ({memberCount}/{maxMembers})");
+                
+                if (GUILayout.Button("离开房间"))
+                {
+                    SteamMatchmaking.LeaveLobby(currentSteamLobby);
+                    currentSteamLobby = CSteamID.Nil;
+                    StopNetwork();
+                    status = "已离开房间";
+                }
+            }
+            else
+            {
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Toggle(currentNetworkMode == NetworkMode.Traditional, "传统服务器", GUILayout.Width(120)))
+                    currentNetworkMode = NetworkMode.Traditional;
+                if (GUILayout.Toggle(currentNetworkMode == NetworkMode.SteamP2P, "Steam网络", GUILayout.Width(120)))
+                    currentNetworkMode = NetworkMode.SteamP2P;
+                GUILayout.EndHorizontal();
             }
 
             GUILayout.Space(10);
 
-            if (!IsServer)
+            if (currentNetworkMode == NetworkMode.Traditional && !networkStarted)
             {
-                GUILayout.Label("🔍 局域网主机列表");
-
-                if (hostList.Count == 0)
+                if (GUILayout.Button("切换到" + (IsServer ? "客户端" : "服务器") + "模式"))
                 {
-                    GUILayout.Label("（等待广播回应，暂无主机）");
+                    IsServer = !IsServer;
+                    StartNetwork(IsServer);
                 }
-                else
+            }
+
+            GUILayout.Space(10);
+
+            if (currentNetworkMode == NetworkMode.SteamP2P && currentSteamLobby == CSteamID.Nil)
+            {
+                if (GUILayout.Button("创建Steam房间"))
                 {
-                    foreach (var host in hostList)
+                    CreateSteamLobby(steamLobbyPublic, steamLobbyMaxPlayers, string.IsNullOrEmpty(steamLobbyName) ? $"{SteamFriends.GetPersonaName()}的房间" : steamLobbyName, steamLobbyPassword);
+                }
+                
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("房间名称:", GUILayout.Width(80));
+                steamLobbyName = GUILayout.TextField(steamLobbyName, GUILayout.Width(200));
+                GUILayout.EndHorizontal();
+                
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("密码:", GUILayout.Width(80));
+                steamLobbyPassword = GUILayout.TextField(steamLobbyPassword, GUILayout.Width(200));
+                GUILayout.EndHorizontal();
+                
+                if (!string.IsNullOrEmpty(steamLobbyPassword))
+                {
+                    GUILayout.Label("提示: 设置密码后房间将自动变为好友可见");
+                }
+                
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("类型:", GUILayout.Width(80));
+                steamLobbyPublic = GUILayout.Toggle(steamLobbyPublic, "公开");
+                GUILayout.Label("最大人数:", GUILayout.Width(80));
+                GUILayout.Label(steamLobbyMaxPlayers.ToString(), GUILayout.Width(30));
+                if (GUILayout.Button("-", GUILayout.Width(30)) && steamLobbyMaxPlayers > 2) steamLobbyMaxPlayers--;
+                if (GUILayout.Button("+", GUILayout.Width(30)) && steamLobbyMaxPlayers < 16) steamLobbyMaxPlayers++;
+                GUILayout.EndHorizontal();
+                
+                GUILayout.Space(10);
+                
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Toggle(currentLobbyMode == LobbyMode.SteamLobbies, "公开大厅", GUILayout.Width(90)))
+                {
+                    currentLobbyMode = LobbyMode.SteamLobbies;
+                    RefreshSteamLobbies();
+                }
+                if (GUILayout.Toggle(currentLobbyMode == LobbyMode.SteamFriends, "Steam好友", GUILayout.Width(100)))
+                {
+                    currentLobbyMode = LobbyMode.SteamFriends;
+                    RefreshSteamFriends();
+                }
+                GUILayout.EndHorizontal();
+                
+                GUILayout.Space(10);
+                
+                if (currentLobbyMode == LobbyMode.SteamLobbies)
+                {
+                    GUILayout.Label("Steam公开大厅");
+                    
+                    if (steamLobbies.Count == 0)
                     {
-                        GUILayout.BeginHorizontal();
-                        if (GUILayout.Button("连接", GUILayout.Width(60)))
+                        GUILayout.Label("暂无可用房间");
+                        if (GUILayout.Button("刷新列表"))
                         {
-                            var parts = host.Split(':');
-                            if (parts.Length == 2 && int.TryParse(parts[1], out int p))
+                            RefreshSteamLobbies();
+                        }
+                    }
+                    else
+                    {
+                        lobbiesScrollPos = GUILayout.BeginScrollView(lobbiesScrollPos, GUILayout.Height(200));
+                        foreach (var lobby in steamLobbies)
+                        {
+                            GUILayout.BeginHorizontal(GUI.skin.box);
+                            GUILayout.BeginVertical();
+                            GUILayout.Label($"房间: {lobby.Name}{(lobby.HasPassword ? " 🔒" : "")}", GUILayout.Width(200));
+                            GUILayout.Label($"人数: {lobby.CurrentPlayers}/{lobby.MaxPlayers}");
+                            GUILayout.EndVertical();
+                            if (GUILayout.Button("加入", GUILayout.Width(60)))
+                            {
+                                if (lobby.HasPassword)
+                                {
+                                    pendingJoinLobbyID = lobby.LobbyID;
+                                    showPasswordInputWindow = true;
+                                    inputPassword = "";
+                                }
+                                else
+                                {
+                                    JoinSteamLobby(lobby.LobbyID);
+                                }
+                            }
+                            GUILayout.EndHorizontal();
+                        }
+                        GUILayout.EndScrollView();
+                        
+                        if (GUILayout.Button("刷新"))
+                        {
+                            RefreshSteamLobbies();
+                        }
+                    }
+                }
+                else if (currentLobbyMode == LobbyMode.SteamFriends)
+                {
+                    GUILayout.Label("Steam好友列表");
+                    
+                    if (!SteamManager.Initialized)
+                    {
+                        GUILayout.Label("Steam未初始化");
+                    }
+                    else if (steamFriends.Count == 0)
+                    {
+                        GUILayout.Label("暂无在线好友");
+                        if (GUILayout.Button("刷新好友列表"))
+                        {
+                            RefreshSteamFriends();
+                        }
+                    }
+                    else
+                    {
+                        friendsScrollPos = GUILayout.BeginScrollView(friendsScrollPos, GUILayout.Height(200));
+                        foreach (var friend in steamFriends)
+                        {
+                            GUILayout.BeginHorizontal(GUI.skin.box);
+                            GUILayout.BeginVertical();
+                            GUILayout.Label(friend.Name, GUILayout.Width(150));
+                            GUILayout.Label(friend.GameInfo, GUILayout.Width(80));
+                            GUILayout.EndVertical();
+                            if (GUILayout.Button("邀请", GUILayout.Width(60)))
+                            {
+                                SteamFriends.InviteUserToGame(friend.SteamID, "");
+                                Debug.Log($"邀请好友: {friend.Name}");
+                            }
+                            GUILayout.EndHorizontal();
+                        }
+                        GUILayout.EndScrollView();
+                        
+                        if (GUILayout.Button("刷新"))
+                        {
+                            RefreshSteamFriends();
+                        }
+                    }
+                }
+                
+                GUILayout.Space(10);
+                GUILayout.Label("状态: " + status);
+            }
+            else if (currentNetworkMode == NetworkMode.Traditional)
+            {
+                if (!IsServer)
+                {
+                    GUILayout.BeginHorizontal();
+                    if (GUILayout.Toggle(currentLobbyMode == LobbyMode.LocalLAN, "局域网", GUILayout.Width(80)))
+                        currentLobbyMode = LobbyMode.LocalLAN;
+                    if (GUILayout.Toggle(currentLobbyMode == LobbyMode.DirectConnect, "直接连接", GUILayout.Width(100)))
+                        currentLobbyMode = LobbyMode.DirectConnect;
+                    GUILayout.EndHorizontal();
+                    
+                    GUILayout.Space(10);
+                    
+                    if (currentLobbyMode == LobbyMode.LocalLAN)
+                    {
+                        GUILayout.Label("局域网主机列表");
+                        
+                        if (hostList.Count == 0)
+                        {
+                            GUILayout.Label("（等待广播回应，暂无主机）");
+                        }
+                        else
+                        {
+                            foreach (var host in hostList)
+                            {
+                                GUILayout.BeginHorizontal();
+                                if (GUILayout.Button("连接", GUILayout.Width(60)))
+                                {
+                                    var parts = host.Split(':');
+                                    if (parts.Length == 2 && int.TryParse(parts[1], out int p))
+                                    {
+                                        if (netManager == null || !netManager.IsRunning || IsServer || !networkStarted)
+                                        {
+                                            StartNetwork(false);
+                                        }
+
+                                        ConnectToHost(parts[0], p);
+                                    }
+                                }
+                                GUILayout.Label(host);
+                                GUILayout.EndHorizontal();
+                            }
+                        }
+                    }
+                    else if (currentLobbyMode == LobbyMode.DirectConnect)
+                    {
+                        GUILayout.Label("直接连接");
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label("IP:", GUILayout.Width(40));
+                        manualIP = GUILayout.TextField(manualIP, GUILayout.Width(150));
+                        GUILayout.EndHorizontal();
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label("端口:", GUILayout.Width(40));
+                        manualPort = GUILayout.TextField(manualPort, GUILayout.Width(150));
+                        GUILayout.EndHorizontal();
+                        if (GUILayout.Button("连接"))
+                        {
+                            if (int.TryParse(manualPort, out int p))
                             {
                                 if (netManager == null || !netManager.IsRunning || IsServer || !networkStarted)
                                 {
                                     StartNetwork(false);
                                 }
 
-                                ConnectToHost(parts[0], p);
+                                ConnectToHost(manualIP, p);
+                            }
+                            else
+                            {
+                                status = "端口格式错误";
                             }
                         }
-                        GUILayout.Label(host);
-                        GUILayout.EndHorizontal();
                     }
-                }
 
-                GUILayout.Space(20);
-                GUILayout.Label("手动输入 IP 和端口连接:");
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("IP:", GUILayout.Width(40));
-                manualIP = GUILayout.TextField(manualIP, GUILayout.Width(150));
-                GUILayout.EndHorizontal();
-                GUILayout.BeginHorizontal();
-                GUILayout.Label("端口:", GUILayout.Width(40));
-                manualPort = GUILayout.TextField(manualPort, GUILayout.Width(150));
-                GUILayout.EndHorizontal();
-                if (GUILayout.Button("手动连接"))
+                    GUILayout.Space(10);
+                    GUILayout.Label("状态: " + status);
+                }
+                else
                 {
-                    if (int.TryParse(manualPort, out int p))
+                    GUILayout.Label($"服务器监听端口: {port}");
+                    GUILayout.Label($"当前连接数: {netManager?.ConnectedPeerList.Count ?? 0}");
+                    
+                    GUILayout.Space(10);
+                    GUILayout.Label("=== 在线玩家列表 ===");
+                    
+                    if (localPlayerStatus != null)
                     {
-                        if (netManager == null || !netManager.IsRunning || IsServer || !networkStarted)
-                        {
-                            StartNetwork(false);
-                        }
-
-                        ConnectToHost(manualIP, p);
+                        GUILayout.BeginVertical(GUI.skin.box);
+                        GUILayout.Label($"主机 (本地)");
+                        GUILayout.Label($"Steam名称: {localPlayerStatus.SteamName ?? "未设置"}");
+                        GUILayout.Label($"Steam ID: {localPlayerStatus.SteamID ?? "未设置"}");
+                        GUILayout.Label($"状态: {(localPlayerStatus.IsInGame ? "游戏中" : "大厅中")}");
+                        GUILayout.EndVertical();
+                        GUILayout.Space(5);
                     }
-                    else
+                    
+                    int playerIndex = 1;
+                    foreach (var kvp in playerStatuses)
                     {
-                        status = "端口格式错误";
+                        var st = kvp.Value;
+                        GUILayout.BeginVertical(GUI.skin.box);
+                        GUILayout.Label($"玩家 #{playerIndex}");
+                        GUILayout.Label($"Steam名称: {st.SteamName ?? "未设置"}");
+                        GUILayout.Label($"Steam ID: {st.SteamID ?? "未设置"}");
+                        GUILayout.Label($"延迟: {st.Latency}ms");
+                        GUILayout.Label($"状态: {(st.IsInGame ? "游戏中" : "大厅中")}");
+                        GUILayout.EndVertical();
+                        GUILayout.Space(5);
+                        playerIndex++;
                     }
                 }
-
-                GUILayout.Space(20);
-                GUILayout.Label("状态: " + status);
-            }
-            else
-            {
-                GUILayout.Label($"服务器监听端口: {port}");
-                GUILayout.Label($"当前连接数: {netManager?.ConnectedPeerList.Count ?? 0}");
             }
 
             GUILayout.Space(10);
@@ -4907,6 +5479,39 @@ namespace 鸭科夫联机Mod
             }
 
             GUILayout.EndScrollView();
+            GUI.DragWindow();
+        }
+
+        private void DrawPasswordInputWindow(int windowID)
+        {
+            GUILayout.BeginVertical();
+            
+            GUILayout.Label("此房间需要密码");
+            GUILayout.Space(10);
+            
+            GUILayout.Label("请输入密码:");
+            inputPassword = GUILayout.TextField(inputPassword, GUILayout.Width(250));
+            
+            GUILayout.Space(10);
+            
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("加入"))
+            {
+                showPasswordInputWindow = false;
+                JoinSteamLobby(pendingJoinLobbyID, inputPassword);
+                pendingJoinLobbyID = CSteamID.Nil;
+                inputPassword = "";
+            }
+            
+            if (GUILayout.Button("取消"))
+            {
+                showPasswordInputWindow = false;
+                pendingJoinLobbyID = CSteamID.Nil;
+                inputPassword = "";
+            }
+            GUILayout.EndHorizontal();
+            
+            GUILayout.EndVertical();
             GUI.DragWindow();
         }
 
@@ -5236,6 +5841,19 @@ namespace 鸭科夫联机Mod
 
         public void WriteItemSnapshot(NetDataWriter w, Item item)
         {
+            if (item == null)
+            {
+                Debug.LogWarning("[ITEM] WriteItemSnapshot: item is null, writing empty snapshot");
+                w.Put(0);
+                w.Put(0);
+                w.Put(0f);
+                w.Put(0f);
+                w.Put(false);
+                w.Put((ushort)0);
+                w.Put((ushort)0);
+                return;
+            }
+            
             w.Put(item.TypeID);
             w.Put(item.StackCount);
             w.Put(item.Durability);

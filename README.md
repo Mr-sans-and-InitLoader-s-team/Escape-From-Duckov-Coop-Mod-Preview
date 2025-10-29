@@ -12,24 +12,40 @@ This mod is to enable stable LAN and online co-op gameplay in a game originally 
 
 ## 使用方法 / How to Use
 
-无需手动安装或构建本项目。
+### 方式一：Steam创意工坊（推荐）/ Method 1: Steam Workshop (Recommended)
 
 直接通过 Steam 创意工坊订阅即可使用：
 
-[Steam 创意工坊链接](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
+Simply subscribe on Steam Workshop:
+
+[Steam 创意工坊链接 / Steam Workshop Page](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
 
 订阅后，启动游戏并启用该模组，即可体验联机功能。
 
----
-
-No manual installation or build is required.
-
-Simply subscribe on Steam Workshop:
-
-[Steam Workshop Page](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
-
 Launch the game and enable the mod to start playing cooperatively.
 
+### 方式二：手动安装 / Method 2: Manual Installation
+
+如果需要手动安装或使用开发版本，请参阅：
+
+For manual installation or development builds, see:
+
+[安装指南 / Installation Guide](INSTALLATION.md)
+
+**重要提示 / Important:** 手动安装时必须复制所有依赖DLL（LiteNetLib.dll和0Harmony.dll），否则会出现加载错误。
+
+**Important:** When installing manually, you must copy all dependency DLLs (LiteNetLib.dll and 0Harmony.dll), otherwise loading errors will occur.
+
+
+## 贡献 / Contributing
+
+欢迎贡献代码、报告问题或提出建议！
+
+Contributions are welcome! Feel free to contribute code, report issues, or suggest features!
+
+请阅读我们的[贡献指南 / Contributing Guidelines](CONTRIBUTING.md)了解更多信息。
+
+查看[开发环境设置指南 / Setup Guide](SETUP_GUIDE.md)来配置开发环境。
 
 ## 致谢 / Credits
 

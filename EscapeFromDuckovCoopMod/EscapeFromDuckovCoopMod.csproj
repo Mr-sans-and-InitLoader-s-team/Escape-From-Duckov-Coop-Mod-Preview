@@ -58,6 +58,7 @@
     <Compile Include="Main\Item_\ItemTool.cs" />
     <Compile Include="Main\LoaclPlayer\Spectator.cs" />
     <Compile Include="Main\Loader\Loader.cs" />
+    <Compile Include="Main\Localization\LocalizationManager.cs" />
     <Compile Include="Main\Op.cs" />
     <Compile Include="Main\PublicHandleUpdate.cs" />
     <Compile Include="Main\HostService\Host_Handle.cs" />

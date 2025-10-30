@@ -74,7 +74,7 @@ namespace EscapeFromDuckovCoopMod
         private readonly HashSet<string> _hostSet = new HashSet<string>();
         private string _manualIP = "127.0.0.1";
         private string _manualPort = "9050";
-        private string _status = "未连接";
+        private string _status = "";
         private int _port = 9050;
 
         private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
@@ -108,15 +108,21 @@ namespace EscapeFromDuckovCoopMod
             }
         }
 
+        void Update()
+        {
+            // 언어 변경 감지 및 자동 리로드
+            CoopLocalization.CheckLanguageChange();
+        }
+
         void OnGUI()
         {
             if (showUI)
             {
-                mainWindowRect = GUI.Window(94120, mainWindowRect, DrawMainWindow, "联机Mod控制面板");
+                mainWindowRect = GUI.Window(94120, mainWindowRect, DrawMainWindow, CoopLocalization.Get("ui.window.title"));
 
                 if (showPlayerStatusWindow)
                 {
-                    playerStatusWindowRect = GUI.Window(94121, playerStatusWindowRect, DrawPlayerStatusWindow, "玩家状态");
+                    playerStatusWindowRect = GUI.Window(94121, playerStatusWindowRect, DrawPlayerStatusWindow, CoopLocalization.Get("ui.window.playerStatus"));
                 }
             }
 
@@ -125,15 +131,16 @@ namespace EscapeFromDuckovCoopMod
                 float h = 220f;
                 var area = new Rect(10, Screen.height * 0.5f - h * 0.5f, 320, h);
                 GUILayout.BeginArea(area, GUI.skin.box);
-                GUILayout.Label($"地图投票 / 准备  [{SceneInfoCollection.GetSceneInfo(SceneNet.Instance.sceneTargetId).DisplayName}]");
-                GUILayout.Label($"按 {readyKey} 切换准备（当前：{(SceneNet.Instance.localReady ? "已准备" : "未准备")}）");
+                GUILayout.Label(CoopLocalization.Get("ui.vote.mapVote", SceneInfoCollection.GetSceneInfo(SceneNet.Instance.sceneTargetId).DisplayName));
+                var readyStatus = SceneNet.Instance.localReady ? CoopLocalization.Get("ui.vote.ready") : CoopLocalization.Get("ui.vote.notReady");
+                GUILayout.Label(CoopLocalization.Get("ui.vote.pressKey", readyKey, readyStatus));
 
                 GUILayout.Space(8);
-                GUILayout.Label("玩家准备状态：");
+                GUILayout.Label(CoopLocalization.Get("ui.vote.playerReadyStatus"));
                 foreach (var pid in SceneNet.Instance.sceneParticipantIds)
                 {
                     bool r = false; SceneNet.Instance.sceneReady.TryGetValue(pid, out r);
-                    GUILayout.Label($"• {pid}  —— {(r ? "✅ 就绪" : "⌛ 未就绪")}");
+                    GUILayout.Label($"• {pid}  —— {(r ? CoopLocalization.Get("ui.vote.readyIcon") : CoopLocalization.Get("ui.vote.notReadyIcon"))}");
                 }
                 GUILayout.EndArea();
             }
@@ -156,7 +163,7 @@ namespace EscapeFromDuckovCoopMod
                 catch { }
 
                 GUI.Label(new Rect(0, Screen.height - 40, Screen.width, 30),
-                    $"观战模式：左键 ▶ 下一个 | 右键 ◀ 上一个  | 正在观战", style);
+                    CoopLocalization.Get("ui.spectator.mode"), style);
             }
 
 
@@ -165,9 +172,9 @@ namespace EscapeFromDuckovCoopMod
         private void DrawMainWindow(int windowID)
         {
             GUILayout.BeginVertical();
-            GUILayout.Label($"当前模式: {(IsServer ? "服务器" : "客户端")}");
+            GUILayout.Label($"{CoopLocalization.Get("ui.mode.current")}: {(IsServer ? CoopLocalization.Get("ui.mode.server") : CoopLocalization.Get("ui.mode.client"))}");
 
-            if (GUILayout.Button("切换到" + (IsServer ? "客户端" : "服务器") + "模式"))
+            if (GUILayout.Button(CoopLocalization.Get("ui.mode.switchTo", IsServer ? CoopLocalization.Get("ui.mode.client") : CoopLocalization.Get("ui.mode.server"))))
             {
                 var target = !IsServer;
                 NetService.Instance.StartNetwork(target);
@@ -177,18 +184,18 @@ namespace EscapeFromDuckovCoopMod
 
             if (!IsServer)
             {
-                GUILayout.Label("🔍 局域网主机列表");
+                GUILayout.Label(CoopLocalization.Get("ui.hostList.title"));
 
                 if (hostList.Count == 0)
                 {
-                    GUILayout.Label("（等待广播回应，暂无主机）");
+                    GUILayout.Label(CoopLocalization.Get("ui.hostList.empty"));
                 }
                 else
                 {
                     foreach (var host in hostList)
                     {
                         GUILayout.BeginHorizontal();
-                        if (GUILayout.Button("连接", GUILayout.Width(60)))
+                        if (GUILayout.Button(CoopLocalization.Get("ui.hostList.connect"), GUILayout.Width(60)))
                         {
                             var parts = host.Split(':');
                             if (parts.Length == 2 && int.TryParse(parts[1], out int p))
@@ -207,16 +214,16 @@ namespace EscapeFromDuckovCoopMod
                 }
 
                 GUILayout.Space(20);
-                GUILayout.Label("手动输入 IP 和端口连接:");
+                GUILayout.Label(CoopLocalization.Get("ui.manualConnect.title"));
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("IP:", GUILayout.Width(40));
+                GUILayout.Label(CoopLocalization.Get("ui.manualConnect.ip"), GUILayout.Width(40));
                 manualIP = GUILayout.TextField(manualIP, GUILayout.Width(150));
                 GUILayout.EndHorizontal();
                 GUILayout.BeginHorizontal();
-                GUILayout.Label("端口:", GUILayout.Width(40));
+                GUILayout.Label(CoopLocalization.Get("ui.manualConnect.port"), GUILayout.Width(40));
                 manualPort = GUILayout.TextField(manualPort, GUILayout.Width(150));
                 GUILayout.EndHorizontal();
-                if (GUILayout.Button("手动连接"))
+                if (GUILayout.Button(CoopLocalization.Get("ui.manualConnect.button")))
                 {
                     if (int.TryParse(manualPort, out int p))
                     {
@@ -229,23 +236,24 @@ namespace EscapeFromDuckovCoopMod
                     }
                     else
                     {
-                        status = "端口格式错误";
+                        status = CoopLocalization.Get("ui.manualConnect.portError");
                     }
                 }
 
                 GUILayout.Space(20);
-                GUILayout.Label("状态: " + status);
+                var displayStatus = string.IsNullOrEmpty(status) ? CoopLocalization.Get("ui.status.notConnected") : status;
+                GUILayout.Label($"{CoopLocalization.Get("ui.status.label")} {displayStatus}");
             }
             else
             {
-                GUILayout.Label($"服务器监听端口: {port}");
-                GUILayout.Label($"当前连接数: {netManager?.ConnectedPeerList.Count ?? 0}");
+                GUILayout.Label($"{CoopLocalization.Get("ui.server.listenPort")} {port}");
+                GUILayout.Label($"{CoopLocalization.Get("ui.server.connections")} {netManager?.ConnectedPeerList.Count ?? 0}");
             }
 
             GUILayout.Space(10);
-            showPlayerStatusWindow = GUILayout.Toggle(showPlayerStatusWindow, $"显示玩家状态窗口 (切换键: {toggleWindowKey})");
+            showPlayerStatusWindow = GUILayout.Toggle(showPlayerStatusWindow, CoopLocalization.Get("ui.playerStatus.toggle", toggleWindowKey));
 
-            if (GUILayout.Button("[Debug] 打印出该地图的所有lootbox"))
+            if (GUILayout.Button(CoopLocalization.Get("ui.debug.printLootBoxes")))
             {
                 foreach (var i in LevelManager.LootBoxInventories)
                 {
@@ -306,12 +314,12 @@ namespace EscapeFromDuckovCoopMod
             if (localPlayerStatus != null)
             {
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"ID: {localPlayerStatus.EndPoint}", GUILayout.Width(180));
+                GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.id")} {localPlayerStatus.EndPoint}", GUILayout.Width(180));
                 GUILayout.EndHorizontal();
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"名称: {localPlayerStatus.PlayerName}", GUILayout.Width(180));
-                GUILayout.Label($"延迟: {localPlayerStatus.Latency}ms", GUILayout.Width(100));
-                GUILayout.Label($"游戏中: {(localPlayerStatus.IsInGame ? "是" : "否")}");
+                GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.name")} {localPlayerStatus.PlayerName}", GUILayout.Width(180));
+                GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.latency")} {localPlayerStatus.Latency}ms", GUILayout.Width(100));
+                GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.inGame")} {(localPlayerStatus.IsInGame ? CoopLocalization.Get("ui.playerStatus.yes") : CoopLocalization.Get("ui.playerStatus.no"))}");
                 GUILayout.EndHorizontal();
                 GUILayout.Space(10);
             }
@@ -322,12 +330,12 @@ namespace EscapeFromDuckovCoopMod
                 {
                     var st = kvp.Value;
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label($"ID: {st.EndPoint}", GUILayout.Width(180));
+                    GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.id")} {st.EndPoint}", GUILayout.Width(180));
                     GUILayout.EndHorizontal();
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label($"名称: {st.PlayerName}", GUILayout.Width(180));
-                    GUILayout.Label($"延迟: {st.Latency}ms", GUILayout.Width(100));
-                    GUILayout.Label($"游戏中: {(st.IsInGame ? "是" : "否")}");
+                    GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.name")} {st.PlayerName}", GUILayout.Width(180));
+                    GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.latency")} {st.Latency}ms", GUILayout.Width(100));
+                    GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.inGame")} {(st.IsInGame ? CoopLocalization.Get("ui.playerStatus.yes") : CoopLocalization.Get("ui.playerStatus.no"))}");
                     GUILayout.EndHorizontal();
                     GUILayout.Space(10);
                 }
@@ -338,12 +346,12 @@ namespace EscapeFromDuckovCoopMod
                 {
                     var st = kvp.Value;
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label($"ID: {st.EndPoint}", GUILayout.Width(180));
+                    GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.id")} {st.EndPoint}", GUILayout.Width(180));
                     GUILayout.EndHorizontal();
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label($"名称: {st.PlayerName}", GUILayout.Width(180));
-                    GUILayout.Label($"延迟: {st.Latency}ms", GUILayout.Width(100));
-                    GUILayout.Label($"游戏中: {(st.IsInGame ? "是" : "否")}");
+                    GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.name")} {st.PlayerName}", GUILayout.Width(180));
+                    GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.latency")} {st.Latency}ms", GUILayout.Width(100));
+                    GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.inGame")} {(st.IsInGame ? CoopLocalization.Get("ui.playerStatus.yes") : CoopLocalization.Get("ui.playerStatus.no"))}");
                     GUILayout.EndHorizontal();
                     GUILayout.Space(10);
                 }

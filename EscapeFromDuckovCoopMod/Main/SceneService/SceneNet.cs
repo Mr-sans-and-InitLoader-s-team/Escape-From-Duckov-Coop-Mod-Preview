@@ -630,13 +630,13 @@ namespace EscapeFromDuckovCoopMod
 
             while (!_cliSceneGateReleased && Time.realtimeSinceStartup < _cliGateDeadline)
             {
-                try { SceneLoader.LoadingComment = "[Coop] 等待主机完成加载… (如迟迟没有进入等待100秒后自动进入)"; } catch { }
+                try { SceneLoader.LoadingComment = CoopLocalization.Get("scene.waitingForHost"); } catch { }
                 await UniTask.Delay(100);
             }
 
 
             //Client_ReportSelfHealth_IfReadyOnce();
-            try { SceneLoader.LoadingComment = "主机已完成，正在进入…"; } catch { }
+            try { SceneLoader.LoadingComment = CoopLocalization.Get("scene.hostReady"); } catch { }
         }
 
         // 主机：自身初始化完成 → 开门；已举手的立即放行；之后若有迟到的 READY，也会单放行

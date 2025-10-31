@@ -1,0 +1,287 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>netstandard2.1</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>disable</Nullable>
+        <LangVersion>latest</LangVersion>
+        <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- Shared Dependencies -->
+        <Reference Include="0Harmony">
+            <HintPath>..\Shared\0Harmony.dll</HintPath>
+        </Reference>
+        <Reference Include="LiteNetLib">
+            <HintPath>..\Shared\LiteNetLib.dll</HintPath>
+        </Reference>
+
+        <Reference Include="ALINE">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\ALINE.dll</HintPath>
+        </Reference>
+        <Reference Include="andywiecko.BurstTriangulator">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\andywiecko.BurstTriangulator.dll</HintPath>
+        </Reference>
+        <Reference Include="Animancer">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Animancer.dll</HintPath>
+        </Reference>
+        <Reference Include="Animancer.FSM">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Animancer.FSM.dll</HintPath>
+        </Reference>
+        <Reference Include="AstarPathfindingProject">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\AstarPathfindingProject.dll</HintPath>
+        </Reference>
+        <Reference Include="BakeryRuntimeAssembly">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\BakeryRuntimeAssembly.dll</HintPath>
+        </Reference>
+        <Reference Include="Bilibili.BDS">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Bilibili.BDS.dll</HintPath>
+        </Reference>
+        <Reference Include="Cinemachine">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Cinemachine.dll</HintPath>
+        </Reference>
+        <Reference Include="Clipper2Lib">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Clipper2Lib.dll</HintPath>
+        </Reference>
+        <Reference Include="com.rlabrecque.steamworks.net">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\com.rlabrecque.steamworks.net.dll</HintPath>
+        </Reference>
+        <Reference Include="DOTween">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\DOTween.dll</HintPath>
+        </Reference>
+        <Reference Include="DOTween.Modules">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\DOTween.Modules.dll</HintPath>
+        </Reference>
+        <Reference Include="DOTweenPro">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\DOTweenPro.dll</HintPath>
+        </Reference>
+        <Reference Include="Drawing">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Drawing.dll</HintPath>
+        </Reference>
+        <Reference Include="Eflatun.SceneReference">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Eflatun.SceneReference.dll</HintPath>
+        </Reference>
+        <Reference Include="FMODUnity">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\FMODUnity.dll</HintPath>
+        </Reference>
+        <Reference Include="ICSharpCode.SharpZipLib">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\ICSharpCode.SharpZipLib.dll</HintPath>
+        </Reference>
+        <Reference Include="ItemStatsSystem">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\ItemStatsSystem.dll</HintPath>
+        </Reference>
+        <Reference Include="LeTai.TranslucentImage">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\LeTai.TranslucentImage.dll</HintPath>
+        </Reference>
+        <Reference Include="LeTai.TranslucentImage.Demo">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\LeTai.TranslucentImage.Demo.dll</HintPath>
+        </Reference>
+        <Reference Include="LeTai.TranslucentImage.UniversalRP">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\LeTai.TranslucentImage.UniversalRP.dll</HintPath>
+        </Reference>
+        <Reference Include="LeTai.TrueShadow">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\LeTai.TrueShadow.dll</HintPath>
+        </Reference>
+        <Reference Include="Newtonsoft.Json">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Newtonsoft.Json.dll</HintPath>
+        </Reference>
+        <Reference Include="NodeCanvas">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\NodeCanvas.dll</HintPath>
+        </Reference>
+        <Reference Include="PackageTools">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\PackageTools.dll</HintPath>
+        </Reference>
+        <Reference Include="ParadoxNotion">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\ParadoxNotion.dll</HintPath>
+        </Reference>
+        <Reference Include="Pathfinding.Ionic.Zip.Reduced">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Pathfinding.Ionic.Zip.Reduced.dll</HintPath>
+        </Reference>
+        <Reference Include="Plugins">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Plugins.dll</HintPath>
+        </Reference>
+        <Reference Include="ShapesSamples">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\ShapesSamples.dll</HintPath>
+        </Reference>
+        <Reference Include="Sirenix.OdinInspector.Attributes">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Sirenix.OdinInspector.Attributes.dll</HintPath>
+        </Reference>
+        <Reference Include="Sirenix.Serialization">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Sirenix.Serialization.dll</HintPath>
+        </Reference>
+        <Reference Include="Sirenix.Serialization.Config">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Sirenix.Serialization.Config.dll</HintPath>
+        </Reference>
+        <Reference Include="Sirenix.Utilities">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Sirenix.Utilities.dll</HintPath>
+        </Reference>
+        <Reference Include="SodaLocalization">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\SodaLocalization.dll</HintPath>
+        </Reference>
+        <Reference Include="SymmetryBreak.TastyGrassShader">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\SymmetryBreak.TastyGrassShader.dll</HintPath>
+        </Reference>
+        <Reference Include="SymmetryBreakStudio.TastyGrassShader.Examples">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\SymmetryBreakStudio.TastyGrassShader.Examples.dll</HintPath>
+        </Reference>
+        <Reference Include="System" />
+        <Reference Include="System.Collections" />
+        <Reference Include="System.ComponentModel.Composition" />
+        <Reference Include="System.Configuration" />
+        <Reference Include="TeamSoda.Duckov.Core">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\TeamSoda.Duckov.Core.dll</HintPath>
+        </Reference>
+        <Reference Include="TeamSoda.Duckov.Utilities">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\TeamSoda.Duckov.Utilities.dll</HintPath>
+        </Reference>
+        <Reference Include="TeamSoda.MiniLocalizor">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\TeamSoda.MiniLocalizor.dll</HintPath>
+        </Reference>
+        <Reference Include="UISplineRenderer">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UISplineRenderer.dll</HintPath>
+        </Reference>
+        <Reference Include="UniTask">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UniTask.dll</HintPath>
+        </Reference>
+        <Reference Include="UniTask.Addressables">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UniTask.Addressables.dll</HintPath>
+        </Reference>
+        <Reference Include="UniTask.DOTween">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UniTask.DOTween.dll</HintPath>
+        </Reference>
+        <Reference Include="UniTask.TextMeshPro">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UniTask.TextMeshPro.dll</HintPath>
+        </Reference>
+        <Reference Include="Unity.Burst">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Unity.Burst.dll</HintPath>
+        </Reference>
+        <Reference Include="Unity.InputSystem">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Unity.InputSystem.dll</HintPath>
+        </Reference>
+        <Reference Include="Unity.InputSystem.ForUI">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Unity.InputSystem.ForUI.dll</HintPath>
+        </Reference>
+        <Reference Include="Unity.TextMeshPro">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Unity.TextMeshPro.dll</HintPath>
+        </Reference>
+        <Reference Include="Unity.VisualScripting.Core">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Unity.VisualScripting.Core.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.AccessibilityModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.AccessibilityModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.AIModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.AIModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.AndroidJNIModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.AndroidJNIModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.AnimationModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.AnimationModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.ARModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.ARModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.AssetBundleModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.AssetBundleModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.AudioModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.AudioModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.ClothModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.ClothModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.ClusterInputModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.ClusterInputModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.ClusterRendererModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.ClusterRendererModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.ContentLoadModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.ContentLoadModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.CoreModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.CoreModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.CrashReportingModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.CrashReportingModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.DirectorModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.DirectorModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.DSPGraphModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.DSPGraphModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.GameCenterModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.GameCenterModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.GIModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.GIModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.GridModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.GridModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.HotReloadModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.HotReloadModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.ImageConversionModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.ImageConversionModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.IMGUIModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.IMGUIModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.InputLegacyModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.InputLegacyModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.InputModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.InputModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.JSONSerializeModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.JSONSerializeModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.LocalizationModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.LocalizationModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.ParticleSystemModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.ParticleSystemModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.Physics2DModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.Physics2DModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.PhysicsModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.PhysicsModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.ProfilerModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.ProfilerModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.TextRenderingModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.TextRenderingModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.ScreenCaptureModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.ScreenCaptureModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.UI">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.UI.dll</HintPath>
+        </Reference>
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Polyfill" Version="8.9.0">
+        <PrivateAssets>all</PrivateAssets>
+        <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      </PackageReference>
+    </ItemGroup>
+
+    <Target Name="CopyToModsFolder" AfterTargets="Build">
+        <PropertyGroup>
+            <_ModFolder>$(DUCKOV_MODS_DIRECTORY)\$(ProjectName)</_ModFolder>
+        </PropertyGroup>
+
+        <Copy SourceFiles="$(OutputPath)\$(AssemblyName).dll" DestinationFolder="$(_ModFolder)" SkipUnchangedFiles="true" />
+        <Message Text="Copied DLL -&gt; $(_ModFolder)\$(AssemblyName).dll" Importance="High" />
+    </Target>
+</Project>

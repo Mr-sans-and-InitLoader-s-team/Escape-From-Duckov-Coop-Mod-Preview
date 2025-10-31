@@ -98,8 +98,8 @@ namespace EscapeFromDuckovCoopMod
         private static NetPeer connectedPeer => Service?.connectedPeer;
         private static PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private static bool networkStarted => Service != null && Service.networkStarted;
-        private static Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private static Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private static Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private static Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private static Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         static readonly Dictionary<ItemAgent_Gun, GameObject> _muzzleFxByGun = new Dictionary<ItemAgent_Gun, GameObject>();
         static readonly Dictionary<ItemAgent_Gun, ParticleSystem> _shellPsByGun = new Dictionary<ItemAgent_Gun, ParticleSystem>();
@@ -131,13 +131,8 @@ namespace EscapeFromDuckovCoopMod
                 {
                     if (IsServer)
                     {
-                        // Server：EndPoint -> NetPeer -> remoteCharacters
-                        NetPeer foundPeer = null;
-                        foreach (var kv in playerStatuses)
-                        {
-                            if (kv.Value != null && kv.Value.EndPoint == shooterId) { foundPeer = kv.Key; break; }
-                        }
-                        if (foundPeer != null) remoteCharacters.TryGetValue(foundPeer, out shooterGo);
+                        // Server：直接用 shooterId (EndPoint) 查远端克隆
+                        remoteCharacters.TryGetValue(shooterId, out shooterGo);
                     }
                     else
                     {

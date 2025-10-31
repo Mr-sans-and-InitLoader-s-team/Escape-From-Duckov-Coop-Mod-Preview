@@ -38,8 +38,8 @@ namespace EscapeFromDuckovCoopMod
         private NetPeer connectedPeer => Service?.connectedPeer;
         private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private bool networkStarted => Service != null && Service.networkStarted;
-        private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         public void HandleClientStatusUpdate(NetPeer peer, NetPacketReader reader)
         {
@@ -61,10 +61,10 @@ namespace EscapeFromDuckovCoopMod
             for (int i = 0; i < weaponCount; i++)
                 weaponList.Add(WeaponSyncData.Deserialize(reader));
 
-            if (!playerStatuses.ContainsKey(peer))
-                playerStatuses[peer] = new PlayerStatus();
+            if (!playerStatuses.ContainsKey(endPoint))
+                playerStatuses[endPoint] = new PlayerStatus();
 
-            var st = playerStatuses[peer];
+            var st = playerStatuses[endPoint];
             st.EndPoint = endPoint;
             st.PlayerName = playerName;
             st.Latency = peer.Ping;
@@ -78,24 +78,24 @@ namespace EscapeFromDuckovCoopMod
             st.WeaponList = weaponList;
             st.SceneId = sceneId;
 
-            if (isInGame && !remoteCharacters.ContainsKey(peer))
+            if (isInGame && !remoteCharacters.ContainsKey(endPoint))
             {
-               CreateRemoteCharacter.CreateRemoteCharacterAsync(peer, position, rotation, customFaceJson).Forget();
-                foreach (var e in equipmentList) COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(peer, e.SlotHash, e.ItemId).Forget();
-                foreach (var w in weaponList) COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(peer, w.SlotHash, w.ItemId).Forget();
+               CreateRemoteCharacter.CreateRemoteCharacterAsync(endPoint, position, rotation, customFaceJson).Forget();
+                foreach (var e in equipmentList) COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(endPoint, e.SlotHash, e.ItemId).Forget();
+                foreach (var w in weaponList) COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(endPoint, w.SlotHash, w.ItemId).Forget();
             }
             else if (isInGame)
             {
-                if (remoteCharacters.TryGetValue(peer, out var go) && go != null)
+                if (remoteCharacters.TryGetValue(endPoint, out var go) && go != null)
                 {
                     go.transform.position = position;
                     go.GetComponentInChildren<CharacterMainControl>().modelRoot.transform.rotation = rotation;
                 }
-                foreach (var e in equipmentList) COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(peer, e.SlotHash, e.ItemId).Forget();
-                foreach (var w in weaponList) COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(peer, w.SlotHash, w.ItemId).Forget();
+                foreach (var e in equipmentList) COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(endPoint, e.SlotHash, e.ItemId).Forget();
+                foreach (var w in weaponList) COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(endPoint, w.SlotHash, w.ItemId).Forget();
             }
 
-            playerStatuses[peer] = st;
+            playerStatuses[endPoint] = st;
 
             Send_LoaclPlayerStatus.Instance.SendPlayerStatusUpdate();
 

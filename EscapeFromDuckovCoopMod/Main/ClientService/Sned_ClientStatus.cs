@@ -44,7 +44,13 @@ namespace EscapeFromDuckovCoopMod
 
         public void SendClientStatusUpdate()
         {
-            if (IsServer || connectedPeer == null) return;
+            if (IsServer) return;
+
+            if (writer == null)
+            {
+                Debug.LogWarning("[SendClientStatusUpdate] writer is null");
+                return;
+            }
 
             localPlayerStatus.CustomFaceJson = CustomFace.LoadLocalCustomFaceJson();
             var equipmentList = LoaclPlayerManager.Instance.GetLocalEquipment();
@@ -68,7 +74,18 @@ namespace EscapeFromDuckovCoopMod
             writer.Put(weaponList.Count);
             foreach (var w in weaponList) w.Serialize(writer);
 
-            connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+            if (connectedPeer != null)
+            {
+                connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.SendData(writer.Data, writer.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
 

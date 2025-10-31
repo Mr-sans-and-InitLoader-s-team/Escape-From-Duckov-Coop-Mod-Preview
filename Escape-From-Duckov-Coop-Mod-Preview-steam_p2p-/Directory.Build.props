@@ -1,0 +1,12 @@
+<Project>
+    <PropertyGroup>
+        <GameDirectory Condition="Exists('$(DUCKOV_GAME_DIRECTORY)')">$(DUCKOV_GAME_DIRECTORY)</GameDirectory>
+        <DUCKOV_DATA_DIRECTORY>$(GameDirectory)\Duckov_Data</DUCKOV_DATA_DIRECTORY>
+        <DUCKOV_MODS_DIRECTORY>$(DUCKOV_DATA_DIRECTORY)\Mods</DUCKOV_MODS_DIRECTORY>
+        <DUCKOV_GAME_MANAGED>$(DUCKOV_DATA_DIRECTORY)\Managed</DUCKOV_GAME_MANAGED>
+    </PropertyGroup>
+
+    <ItemDefinitionGroup>
+        <Reference Private="false"/>
+    </ItemDefinitionGroup>
+</Project>

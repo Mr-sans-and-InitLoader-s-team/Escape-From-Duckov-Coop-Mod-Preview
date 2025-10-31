@@ -37,6 +37,29 @@ namespace EscapeFromDuckovCoopMod
             DontDestroyOnLoad(go);
 
             go.AddComponent<NetService>();
+            
+            var steamGo = new GameObject("STEAM_NETWORKING_SOCKETS");
+            DontDestroyOnLoad(steamGo);
+            var steamNetSockets = steamGo.AddComponent<EscapeFromDuckovCoopMod.Net.Steam.SteamNetworkingSocketsManager>();
+            var steamTransport = steamGo.AddComponent<EscapeFromDuckovCoopMod.Net.Steam.SteamNetworkTransport>();
+            steamGo.AddComponent<EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService>();
+            
+            if (steamNetSockets != null)
+            {
+                steamNetSockets.Initialize();
+            }
+            
+            if (steamTransport != null)
+            {
+                steamTransport.Initialize();
+            }
+            
+            var p2pGo = new GameObject("STEAM_P2P_VIRTUAL_NETWORK");
+            DontDestroyOnLoad(p2pGo);
+            var p2pLoader = p2pGo.AddComponent<EscapeFromDuckovCoopMod.Net.Steam.SteamP2PLoader>();
+            p2pLoader.Init();
+            Debug.Log("[Mod] Steam P2P虚拟网络系统已初始化");
+            
             COOPManager.InitManager();
             go.AddComponent<EscapeFromDuckovCoopMod.ModBehaviourF>();
             Loader();

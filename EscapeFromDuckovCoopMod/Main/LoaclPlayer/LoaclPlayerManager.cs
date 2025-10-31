@@ -38,7 +38,7 @@ namespace EscapeFromDuckovCoopMod
         //public PlayerStatus LocalPlayerStatus => Service?.localPlayerStatus;
         private bool networkStarted => Service != null && Service.networkStarted;
         private int port => Service?.port ?? 0;
-        private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
         private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         // weaponTypeId(= Item.TypeID) -> projectile prefab
         public readonly Dictionary<int, Projectile> _projCacheByWeaponType = new Dictionary<int, Projectile>();
@@ -68,7 +68,7 @@ namespace EscapeFromDuckovCoopMod
             Service.localPlayerStatus = new PlayerStatus
             {
 
-                EndPoint = IsServer ? $"Host:{port}" : $"Client:{Guid.NewGuid().ToString().Substring(0, 8)}",
+                EndPoint = IsServer ? ("Host:" + port) : ("Client:" + Guid.NewGuid().ToString().Substring(0, 8)),
                 PlayerName = IsServer ? "Host" : "Client",
                 Latency = 0,
                 IsInGame = bool1,
@@ -146,7 +146,7 @@ namespace EscapeFromDuckovCoopMod
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"获取槽位 {slotNames[i]} 时发生错误: {ex.Message}");
+                    Debug.LogError("获取槽位 " + slotNames[i] + " 时发生错误: " + ex.Message);
                 }
             }
 
@@ -177,7 +177,7 @@ namespace EscapeFromDuckovCoopMod
             }
             catch (Exception ex)
             {
-                Debug.LogError($"获取本地武器数据时发生错误: {ex.Message}");
+                Debug.LogError("获取本地武器数据时发生错误: " + ex.Message);
             }
 
             return weaponList;

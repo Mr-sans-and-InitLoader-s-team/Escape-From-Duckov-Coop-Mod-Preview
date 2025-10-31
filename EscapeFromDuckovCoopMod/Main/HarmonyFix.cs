@@ -61,15 +61,9 @@ namespace EscapeFromDuckovCoopMod
         {
             var mod = EscapeFromDuckovCoopMod.ModBehaviourF.Instance;
 
-            // 不在联网、在主机、或没到“本地近战结算阶段”，都不拦
+            // 不在联网、在主机、或没到"本地近战结算阶段"，都不拦
             if (mod == null || !mod.networkStarted || mod.IsServer || !MeleeLocalGuard.LocalMeleeTryingToHurt)
                 return true;
-
-            if (mod.connectedPeer == null)
-            {
-                Debug.LogWarning("[CLIENT] MELEE_HIT_REPORT aborted: connectedPeer==null, fallback to local Hurt");
-                return true; // 让原始 Hurt 生效，避免“无伤”
-            }
 
             try
             {
@@ -102,13 +96,28 @@ namespace EscapeFromDuckovCoopMod
                 catch { }
                 w.Put(range);
 
-               
-                mod.connectedPeer.Send(w, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                if (mod.connectedPeer != null)
+                {
+                    mod.connectedPeer.Send(w, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                }
+                else
+                {
+                    var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                    if (hybrid != null && hybrid.IsConnected)
+                    {
+                        hybrid.SendData(w.Data, w.Length, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[CLIENT] MELEE_HIT_REPORT aborted: no valid connection");
+                        return true;
+                    }
+                }
             }
             catch (Exception e)
             {
                 Debug.LogWarning("[CLIENT] Melee hit report failed: " + e);
-                return true; // 发送失败时回退到本地 Hurt，避免“无伤”
+                return true; // 发送失败时回退到本地 Hurt，避免"无伤"
             }
 
             try
@@ -154,7 +163,7 @@ namespace EscapeFromDuckovCoopMod
     static class Patch_SABPD_FixedUpdate_AllPlayersUnion
     {
         private static NetService Service => NetService.Instance;
-        private static Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private static Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         static bool Prefix(Duckov.Utilities.SetActiveByPlayerDistance __instance)
         {
             var mod = ModBehaviourF.Instance;

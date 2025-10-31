@@ -36,8 +36,8 @@ namespace EscapeFromDuckovCoopMod
         private NetPeer connectedPeer => Service?.connectedPeer;
         private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private bool networkStarted => Service != null && Service.networkStarted;
-        private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         public void HandleEquipmentUpdate(NetPeer sender, NetPacketReader reader)
         {
@@ -45,17 +45,38 @@ namespace EscapeFromDuckovCoopMod
             int slotHash = reader.GetInt();
             string itemId = reader.GetString();
 
-           COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(sender, slotHash, itemId).Forget();
+           COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(sender.EndPoint.ToString(), slotHash, itemId).Forget();
 
-            foreach (var p in netManager.ConnectedPeerList)
+            var w = new NetDataWriter();
+            w.Put((byte)Op.EQUIPMENT_UPDATE);
+            w.Put(endPoint);
+            w.Put(slotHash);
+            w.Put(itemId);
+            
+            if (netManager != null)
             {
-                if (p == sender) continue;
-                var w = new NetDataWriter();
-                w.Put((byte)Op.EQUIPMENT_UPDATE);
-                w.Put(endPoint);
-                w.Put(slotHash);
-                w.Put(itemId);
-                p.Send(w, DeliveryMethod.ReliableOrdered);
+                foreach (var p in netManager.ConnectedPeerList)
+                {
+                    if (p == sender) continue;
+                    p.Send(w, DeliveryMethod.ReliableOrdered);
+                }
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.CurrentMode == EscapeFromDuckovCoopMod.Net.Steam.NetworkMode.SteamP2P)
+                {
+                    var steamNet = EscapeFromDuckovCoopMod.Net.Steam.SteamNetworkingSocketsManager.Instance;
+                    if (steamNet != null && steamNet.peerConnections != null)
+                    {
+                        string senderEndPoint = sender != null ? sender.EndPoint.ToString() : null;
+                        foreach (var peer in steamNet.peerConnections.Keys)
+                        {
+                            if (peer.ToString() == senderEndPoint) continue;
+                            steamNet.SendPacket(peer, w.Data, w.Length);
+                        }
+                    }
+                }
             }
 
         }
@@ -67,22 +88,42 @@ namespace EscapeFromDuckovCoopMod
             int slotHash = reader.GetInt();
             string itemId = reader.GetString();
 
-            COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(sender, slotHash, itemId).Forget();
+            COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(sender.EndPoint.ToString(), slotHash, itemId).Forget();
 
-            foreach (var p in netManager.ConnectedPeerList)
+            var w = new NetDataWriter();
+            w.Put((byte)Op.PLAYERWEAPON_UPDATE);
+            w.Put(endPoint);
+            w.Put(slotHash);
+            w.Put(itemId);
+            
+            if (netManager != null)
             {
-                if (p == sender) continue;
-                var w = new NetDataWriter();
-                w.Put((byte)Op.PLAYERWEAPON_UPDATE);
-                w.Put(endPoint);
-                w.Put(slotHash);
-                w.Put(itemId);
-                p.Send(w, DeliveryMethod.ReliableOrdered);
+                foreach (var p in netManager.ConnectedPeerList)
+                {
+                    if (p == sender) continue;
+                    p.Send(w, DeliveryMethod.ReliableOrdered);
+                }
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.CurrentMode == EscapeFromDuckovCoopMod.Net.Steam.NetworkMode.SteamP2P)
+                {
+                    var steamNet = EscapeFromDuckovCoopMod.Net.Steam.SteamNetworkingSocketsManager.Instance;
+                    if (steamNet != null && steamNet.peerConnections != null)
+                    {
+                        string senderEndPoint = sender != null ? sender.EndPoint.ToString() : null;
+                        foreach (var peer in steamNet.peerConnections.Keys)
+                        {
+                            if (peer.ToString() == senderEndPoint) continue;
+                            steamNet.SendPacket(peer, w.Data, w.Length);
+                        }
+                    }
+                }
             }
 
         }
 
-        // 主机接收客户端动画，并转发给其他客户端（携带来源玩家ID）
         public void HandleClientAnimationStatus(NetPeer sender, NetPacketReader reader)
         {
             float moveSpeed = reader.GetFloat();
@@ -95,39 +136,59 @@ namespace EscapeFromDuckovCoopMod
             int stateHash = reader.GetInt();
             float normTime = reader.GetFloat();
 
-            // 主机本地（用 NetPeer）
-            HandleRemoteAnimationStatus(sender, moveSpeed, moveDirX, moveDirY, isDashing, isAttacking, handState, gunReady, stateHash, normTime);
+            string senderEndPoint = sender != null ? sender.EndPoint.ToString() : null;
+            
+            HandleRemoteAnimationStatus(senderEndPoint, moveSpeed, moveDirX, moveDirY, isDashing, isAttacking, handState, gunReady, stateHash, normTime);
 
-            string playerId = playerStatuses.TryGetValue(sender, out var st) && !string.IsNullOrEmpty(st.EndPoint)
+            string playerId = playerStatuses.TryGetValue(senderEndPoint, out var st) && !string.IsNullOrEmpty(st.EndPoint)
                 ? st.EndPoint
-                : sender.EndPoint.ToString();
+                : senderEndPoint;
 
-            foreach (var p in netManager.ConnectedPeerList)
+            var w = new NetDataWriter();
+            w.Put((byte)Op.ANIM_SYNC);
+            w.Put(playerId);
+            w.Put(moveSpeed);
+            w.Put(moveDirX);
+            w.Put(moveDirY);
+            w.Put(isDashing);
+            w.Put(isAttacking);
+            w.Put(handState);
+            w.Put(gunReady);
+            w.Put(stateHash);
+            w.Put(normTime);
+            
+            if (netManager != null)
             {
-                if (p == sender) continue;
-                var w = new NetDataWriter();
-                w.Put((byte)Op.ANIM_SYNC);           //  改动：用 opcode
-                w.Put(playerId);
-                w.Put(moveSpeed);
-                w.Put(moveDirX);
-                w.Put(moveDirY);
-                w.Put(isDashing);
-                w.Put(isAttacking);
-                w.Put(handState);
-                w.Put(gunReady);
-                w.Put(stateHash);
-                w.Put(normTime);
-                p.Send(w, DeliveryMethod.Sequenced);
+                foreach (var p in netManager.ConnectedPeerList)
+                {
+                    if (p == sender) continue;
+                    p.Send(w, DeliveryMethod.Sequenced);
+                }
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.CurrentMode == EscapeFromDuckovCoopMod.Net.Steam.NetworkMode.SteamP2P)
+                {
+                    var steamNet = EscapeFromDuckovCoopMod.Net.Steam.SteamNetworkingSocketsManager.Instance;
+                    if (steamNet != null && steamNet.peerConnections != null)
+                    {
+                        foreach (var peer in steamNet.peerConnections.Keys)
+                        {
+                            if (peer.ToString() == senderEndPoint) continue;
+                            steamNet.SendPacket(peer, w.Data, w.Length);
+                        }
+                    }
+                }
             }
 
         }
 
-        // 主机侧：按 NetPeer 应用动画
-        void HandleRemoteAnimationStatus(NetPeer peer, float moveSpeed, float moveDirX, float moveDirY,
+        void HandleRemoteAnimationStatus(string endPoint, float moveSpeed, float moveDirX, float moveDirY,
                                   bool isDashing, bool isAttacking, int handState, bool gunReady,
                                   int stateHash, float normTime)
         {
-            if (!remoteCharacters.TryGetValue(peer, out var remoteObj) || remoteObj == null) return;
+            if (string.IsNullOrEmpty(endPoint) || !remoteCharacters.TryGetValue(endPoint, out var remoteObj) || remoteObj == null) return;
 
             var ai = AnimInterpUtil.Attach(remoteObj);
             ai?.Push(new AnimSample
@@ -167,27 +228,51 @@ namespace EscapeFromDuckovCoopMod
 
         public void HandlePositionUpdate_Q(NetPeer peer, string endPoint, Vector3 position, Quaternion rotation)
         {
-            if (peer != null && playerStatuses.TryGetValue(peer, out var st))
+            if (string.IsNullOrEmpty(endPoint) || playerStatuses == null) return;
+            
+            if (!playerStatuses.TryGetValue(endPoint, out var st)) return;
+            
+            st.Position = position;
+            st.Rotation = rotation;
+
+            if (remoteCharacters != null && remoteCharacters.TryGetValue(endPoint, out var go) && go != null)
             {
-                st.Position = position;
-                st.Rotation = rotation;
+                var ni = NetInterpUtil.Attach(go);
+                ni?.Push(position, rotation);
+            }
 
-                if (remoteCharacters.TryGetValue(peer, out var go) && go != null)
-                {
-                    var ni = NetInterpUtil.Attach(go);
-                    ni?.Push(position, rotation);
-                }
-
+            if (writer == null) return;
+            
+            writer.Reset();
+            writer.Put((byte)Op.POSITION_UPDATE);
+            writer.Put(st.EndPoint ?? endPoint);
+            writer.PutV3cm(position);
+            Vector3 fwd = rotation * Vector3.forward;
+            writer.PutDir(fwd);
+            
+            if (netManager != null)
+            {
                 foreach (var p in netManager.ConnectedPeerList)
                 {
                     if (p == peer) continue;
-                    writer.Reset();
-                    writer.Put((byte)Op.POSITION_UPDATE);
-                    writer.Put(st.EndPoint ?? endPoint);
-                    writer.PutV3cm(position);
-                    Vector3 fwd = rotation * Vector3.forward;
-                    writer.PutDir(fwd);
                     p.Send(writer, DeliveryMethod.Unreliable);
+                }
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.CurrentMode == EscapeFromDuckovCoopMod.Net.Steam.NetworkMode.SteamP2P)
+                {
+                    var steamNet = EscapeFromDuckovCoopMod.Net.Steam.SteamNetworkingSocketsManager.Instance;
+                    if (steamNet != null && steamNet.peerConnections != null)
+                    {
+                        string senderEndPoint = peer != null ? peer.EndPoint.ToString() : null;
+                        foreach (var peerKey in steamNet.peerConnections.Keys)
+                        {
+                            if (peerKey.ToString() == senderEndPoint) continue;
+                            steamNet.SendPacket(peerKey, writer.Data, writer.Length);
+                        }
+                    }
                 }
             }
         }

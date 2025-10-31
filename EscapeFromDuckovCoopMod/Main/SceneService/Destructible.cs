@@ -260,7 +260,19 @@ namespace EscapeFromDuckovCoopMod
             // Hit视觉信息足够：点+法线
             w.PutV3cm(dmg.damagePoint);
             w.PutDir(dmg.damageNormal.sqrMagnitude < 1e-6f ? Vector3.forward : dmg.damageNormal.normalized);
-            netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            
+            if (netManager != null)
+            {
+                netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.BroadcastData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
         public void Server_BroadcastDestructibleDead(uint id, DamageInfo dmg)
@@ -270,7 +282,19 @@ namespace EscapeFromDuckovCoopMod
             w.Put(id);
             w.PutV3cm(dmg.damagePoint);
             w.PutDir(dmg.damageNormal.sqrMagnitude < 1e-6f ? Vector3.up : dmg.damageNormal.normalized);
-            netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            
+            if (netManager != null)
+            {
+                netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.BroadcastData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
         // 客户端：复现受击视觉（不改血量，不触发本地 OnHurt）

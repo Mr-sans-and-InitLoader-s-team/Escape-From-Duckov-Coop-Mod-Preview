@@ -129,7 +129,7 @@ namespace EscapeFromDuckovCoopMod
             {
                 if (aiId > 0 && AITool.aiById.TryGetValue(aiId, out var cmc) && cmc)
                 {
-                    Debug.LogWarning($"[SpawnDeadloot] AiID:{cmc.GetComponent<NetAiTag>().aiId}");
+                    Debug.LogWarning("[SpawnDeadloot] AiID:" + cmc.GetComponent<NetAiTag>().aiId);
                     if (cmc.deadLootBoxPrefab.gameObject == null)
                     {
                         Debug.LogWarning("[SPawnDead] deadLootBoxPrefab.gameObject null!");
@@ -215,7 +215,19 @@ namespace EscapeFromDuckovCoopMod
                 writer.Put(lootUid);                              // 稳定 ID
                 writer.PutV3cm(box.transform.position);
                 writer.PutQuaternion(box.transform.rotation);
-                netManager.SendToAll(writer, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                
+                if (netManager != null)
+                {
+                    netManager.SendToAll(writer, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                }
+                else
+                {
+                    var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                    if (hybrid != null && hybrid.IsConnected)
+                    {
+                        hybrid.BroadcastData(writer.Data, writer.Length, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                    }
+                }
 
                 if (EAGER_BROADCAST_LOOT_STATE_ON_SPAWN)
                     StartCoroutine(RebroadcastDeadLootStateAfterFill(box));
@@ -253,7 +265,19 @@ namespace EscapeFromDuckovCoopMod
                 writer.Put(UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
                 writer.PutV3cm(box.transform.position);
                 writer.PutQuaternion(box.transform.rotation);
-                netManager.SendToAll(writer, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                
+                if (netManager != null)
+                {
+                    netManager.SendToAll(writer, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                }
+                else
+                {
+                    var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                    if (hybrid != null && hybrid.IsConnected)
+                    {
+                        hybrid.BroadcastData(writer.Data, writer.Length, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                    }
+                }
 
                 // 2) 可选：是否立刻广播整箱内容（默认不广播，等客户端真正打开时再按需请求）
                 if (EAGER_BROADCAST_LOOT_STATE_ON_SPAWN)

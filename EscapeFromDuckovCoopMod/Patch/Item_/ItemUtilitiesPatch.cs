@@ -209,7 +209,7 @@ namespace EscapeFromDuckovCoopMod
 
             if (srcLoot && LootboxDetectUtil.IsLootboxInventory(srcLoot) && !LootboxDetectUtil.IsPrivateInventory(srcLoot))
             {
-                Debug.Log($"[Coop] AddAndMerge(slot->backpack) -> UNPLUG(takeToBackpack), prefer={preferedFirstPosition}");
+                Debug.Log("[Coop] AddAndMerge(slot->backpack) -> UNPLUG(takeToBackpack), prefer=" + preferedFirstPosition);
                 // 直接携带目标格（preferedFirstPosition）做精确落位
                 COOPManager.LootNet.Client_RequestSlotUnplugToBackpack(srcLoot, master, slot.Key, inventory, preferedFirstPosition);
                 __result = true;

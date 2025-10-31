@@ -40,8 +40,8 @@ namespace EscapeFromDuckovCoopMod
         private static (float max, float cur) _cliLastSentHp = HealthTool._cliLastSentHp;
         private static float _cliNextSendHp = HealthTool._cliNextSendHp;
 
-        private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
 
         public bool _cliApplyingSelfSnap = false;
@@ -51,7 +51,7 @@ namespace EscapeFromDuckovCoopMod
         private readonly Dictionary<Health, (float max, float cur)> _srvLastSent = new Dictionary<Health, (float max, float cur)>();
         private readonly Dictionary<Health, float> _srvNextSend = new Dictionary<Health, float>();
         private const float SRV_HP_SEND_COOLDOWN = 0.05f; // 20Hz
-        private readonly Dictionary<Health, NetPeer> _srvHealthOwner = HealthTool._srvHealthOwner;
+        private readonly Dictionary<Health, string> _srvHealthOwner = HealthTool._srvHealthOwner;
 
         public void Init()
         {
@@ -66,7 +66,10 @@ namespace EscapeFromDuckovCoopMod
         {
             if (_cliApplyingSelfSnap || Time.time < _cliEchoMuteUntil) return;
 
-            if (!networkStarted || IsServer || connectedPeer == null || h == null) return;
+            if (!networkStarted || IsServer || h == null) return;
+            
+            var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+            if (connectedPeer == null && (hybrid == null || !hybrid.IsConnected)) return;
 
             float max = 0f, cur = 0f;
             try { max = h.MaxHealth; } catch { }
@@ -83,7 +86,15 @@ namespace EscapeFromDuckovCoopMod
             w.Put((byte)Op.PLAYER_HEALTH_REPORT);
             w.Put(max);
             w.Put(cur);
-            connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            
+            if (connectedPeer != null)
+            {
+                connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            }
+            else if (hybrid != null && hybrid.IsConnected)
+            {
+                hybrid.SendData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+            }
 
             _cliLastSentHp = (max, cur);
             _cliNextSendHp = Time.time + 0.05f;
@@ -93,7 +104,7 @@ namespace EscapeFromDuckovCoopMod
         public void Server_ForceAuthSelf(Health h)
         {
             if (!networkStarted || !IsServer || h == null) return;
-            if (!_srvHealthOwner.TryGetValue(h, out var ownerPeer) || ownerPeer == null) return;
+            if (!_srvHealthOwner.TryGetValue(h, out var ownerEndPoint) || string.IsNullOrEmpty(ownerEndPoint)) return;
 
             var w = writer;
             if (w == null) return;
@@ -103,13 +114,13 @@ namespace EscapeFromDuckovCoopMod
             try { max = h.MaxHealth; cur = h.CurrentHealth; } catch { }
             w.Put(max);
             w.Put(cur);
-            ownerPeer.Send(w, LiteNetLib.DeliveryMethod.ReliableOrdered);
+            CoopTool.SendToEndPoint(ownerEndPoint, w.Data, w.Length, LiteNetLib.DeliveryMethod.ReliableOrdered);
         }
 
         // 主机：把 DamageInfo（简化字段）发给拥有者客户端，让其本地执行 Hurt
-        public void Server_ForwardHurtToOwner(NetPeer owner, global::DamageInfo di)
+        public void Server_ForwardHurtToOwner(string ownerEndPoint, global::DamageInfo di)
         {
-            if (!IsServer || owner == null) return;
+            if (!IsServer || string.IsNullOrEmpty(ownerEndPoint)) return;
 
             var w = new NetDataWriter();
             w.Put((byte)Op.PLAYER_HURT_EVENT);
@@ -126,7 +137,7 @@ namespace EscapeFromDuckovCoopMod
             w.Put(di.bleedChance);
             w.Put(di.isExplosion);
 
-            owner.Send(w, DeliveryMethod.ReliableOrdered);
+            CoopTool.SendToEndPoint(ownerEndPoint, w.Data, w.Length, DeliveryMethod.ReliableOrdered);
         }
 
 
@@ -182,7 +193,6 @@ namespace EscapeFromDuckovCoopMod
         {
             if (_cliApplyingSelfSnap || Time.time < _cliEchoMuteUntil) return;
             if (IsServer || HealthTool._cliInitHpReported) return;
-            if (connectedPeer == null || connectedPeer.ConnectionState != ConnectionState.Connected) return;
 
             var main = CharacterMainControl.Main;
             var h = main ? main.GetComponentInChildren<Health>(true) : null;
@@ -196,12 +206,28 @@ namespace EscapeFromDuckovCoopMod
             w.Put((byte)Op.PLAYER_HEALTH_REPORT);
             w.Put(max);
             w.Put(cur);
-            connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+
+            if (connectedPeer != null && connectedPeer.ConnectionState == ConnectionState.Connected)
+            {
+                connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.SendData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+                }
+                else
+                {
+                    return;
+                }
+            }
 
             HealthTool._cliInitHpReported = true;
         }
 
-        public void Server_OnHealthChanged(NetPeer ownerPeer, Health h)
+        public void Server_OnHealthChanged(string ownerEndPoint, Health h)
         {
             if (!IsServer || !h) return;
 
@@ -223,29 +249,48 @@ namespace EscapeFromDuckovCoopMod
             _srvNextSend[h] = now + SRV_HP_SEND_COOLDOWN;
 
             // 计算 playerId（你已有的辅助方法）
-            string pid = NetService.Instance.GetPlayerId(ownerPeer);
+            string pid = NetService.Instance.GetPlayerId(ownerEndPoint);
 
-            // ✅ 回传本人快照：AUTH_HEALTH_SELF（修复“自己本地看起来没伤害”的现象）
-            if (ownerPeer != null && ownerPeer.ConnectionState == ConnectionState.Connected)
+           
+            if (!string.IsNullOrEmpty(ownerEndPoint))
             {
                 var w1 = new NetDataWriter();
                 w1.Put((byte)Op.AUTH_HEALTH_SELF);
                 w1.Put(max);
                 w1.Put(cur);
-                ownerPeer.Send(w1, DeliveryMethod.ReliableOrdered);
+                CoopTool.SendToEndPoint(ownerEndPoint, w1.Data, w1.Length, DeliveryMethod.ReliableOrdered);
             }
 
-            // ✅ 广播给其他玩家：AUTH_HEALTH_REMOTE（带 playerId）
+            
             var w2 = new NetDataWriter();
             w2.Put((byte)Op.AUTH_HEALTH_REMOTE);
             w2.Put(pid);
             w2.Put(max);
             w2.Put(cur);
 
-            foreach (var p in netManager.ConnectedPeerList)
+            if (netManager != null)
             {
-                if (p == ownerPeer) continue; // 跳过本人，避免重复
-                p.Send(w2, DeliveryMethod.ReliableOrdered);
+                foreach (var p in netManager.ConnectedPeerList)
+                {
+                    if (p.EndPoint.ToString() == ownerEndPoint) continue;
+                    p.Send(w2, DeliveryMethod.ReliableOrdered);
+                }
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.CurrentMode == EscapeFromDuckovCoopMod.Net.Steam.NetworkMode.SteamP2P)
+                {
+                    var steamNet = EscapeFromDuckovCoopMod.Net.Steam.SteamNetworkingSocketsManager.Instance;
+                    if (steamNet != null && steamNet.peerConnections != null)
+                    {
+                        foreach (var peer in steamNet.peerConnections.Keys)
+                        {
+                            if (peer.ToString() == ownerEndPoint) continue;
+                            steamNet.SendPacket(peer, w2.Data, w2.Length);
+                        }
+                    }
+                }
             }
         }
 
@@ -261,10 +306,10 @@ namespace EscapeFromDuckovCoopMod
             {
                 foreach (var kv in remoteCharacters)
                 {
-                    var peer = kv.Key;
+                    var endPoint = kv.Key;
                     var go = kv.Value;
-                    if (peer == null || !go) continue;
-                    HealthTool.Server_HookOneHealth(peer, go);
+                    if (string.IsNullOrEmpty(endPoint) || !go) continue;
+                    HealthTool.Server_HookOneHealth(endPoint, go);
                 }
             }
         }

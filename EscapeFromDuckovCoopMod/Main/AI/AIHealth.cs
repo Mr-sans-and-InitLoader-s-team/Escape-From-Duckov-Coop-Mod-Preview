@@ -37,8 +37,8 @@ namespace EscapeFromDuckovCoopMod
         private NetPeer connectedPeer => Service?.connectedPeer;
         private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private bool networkStarted => Service != null && Service.networkStarted;
-        private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         private readonly Dictionary<int, float> _cliLastAiHp = new Dictionary<int, float>();
 
@@ -49,12 +49,31 @@ namespace EscapeFromDuckovCoopMod
         public void Server_BroadcastAiHealth(int aiId, float maxHealth, float currentHealth)
         {
             if (!networkStarted || !IsServer) return;
-            var w = new NetDataWriter();
-            w.Put((byte)Op.AI_HEALTH_SYNC);
-            w.Put(aiId);
-            w.Put(maxHealth);
-            w.Put(currentHealth);
-            netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            
+            if (writer == null)
+            {
+                Debug.LogWarning("[AIHealth] writer is null");
+                return;
+            }
+            
+            writer.Reset();
+            writer.Put((byte)Op.AI_HEALTH_SYNC);
+            writer.Put(aiId);
+            writer.Put(maxHealth);
+            writer.Put(currentHealth);
+            
+            if (netManager != null)
+            {
+                netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.BroadcastData(writer.Data, writer.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
 
@@ -68,7 +87,7 @@ namespace EscapeFromDuckovCoopMod
             {
                 COOPManager.AIHandle._cliPendingAiHealth[aiId] = cur;
                 if (max > 0f) COOPManager.AIHandle._cliPendingAiMax[aiId] = max;
-                Debug.Log($"[AI-HP][CLIENT] pending aiId={aiId} max={max} cur={cur}");
+                Debug.Log("[AI-HP][CLIENT] pending aiId=" + aiId + " max=" + max + " cur=" + cur);
                 return;
             }
 

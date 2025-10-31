@@ -78,7 +78,19 @@ namespace EscapeFromDuckovCoopMod
                 dmg.damagePoint, dmg.damageNormal, dmg.fromWeaponItemID, dmg.bleedChance, dmg.isExplosion,
                 0f
             );
-            connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            
+            if (connectedPeer != null)
+            {
+                connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.SendData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
      

@@ -50,7 +50,7 @@ namespace EscapeFromDuckovCoopMod
                 Mathf.RoundToInt(p.y),
                 Mathf.RoundToInt(p.z)
             );
-            return $"Door_{k}".GetHashCode();
+            return ("Door_" + k).GetHashCode();
         }
 
         // 通过 key 找场景里的 Door（优先用其缓存字段 doorClosedDataKeyCached）
@@ -96,7 +96,19 @@ namespace EscapeFromDuckovCoopMod
             w.Put((byte)Op.DOOR_REQ_SET);
             w.Put(key);
             w.Put(closed);
-            connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            
+            if (connectedPeer != null)
+            {
+                connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.SendData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
         // 主机：处理客户端的设门请求
@@ -126,7 +138,19 @@ namespace EscapeFromDuckovCoopMod
             w.Put((byte)Op.DOOR_STATE);
             w.Put(key);
             w.Put(closed);
-            netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            
+            if (netManager != null)
+            {
+                netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.BroadcastData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
         // 客户端：应用门状态（反射调用 SetClosed，确保 NavMeshCut/插值/存档一致）

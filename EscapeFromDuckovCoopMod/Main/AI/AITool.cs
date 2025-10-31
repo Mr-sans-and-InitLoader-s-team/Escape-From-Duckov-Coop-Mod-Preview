@@ -38,8 +38,8 @@ namespace EscapeFromDuckovCoopMod
         private static NetPeer connectedPeer => Service?.connectedPeer;
         private static PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private static bool networkStarted => Service != null && Service.networkStarted;
-        private static Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private static Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private static Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private static Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private static Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         public static readonly Dictionary<int, CharacterMainControl> aiById = new Dictionary<int, CharacterMainControl>();
 
@@ -81,7 +81,7 @@ namespace EscapeFromDuckovCoopMod
             int qz = Mathf.RoundToInt(p.z * 10f);
 
             // 名称 + 位置 + 场景索引 → FNV1a
-            string key = $"{sceneIndex}:{r.name}:{qx},{qy},{qz}";
+            string key = sceneIndex + ":" + r.name + ":" + qx + "," + qy + "," + qz;
             return StableHash(key);
         }
 
@@ -105,7 +105,7 @@ namespace EscapeFromDuckovCoopMod
             int qy = Mathf.RoundToInt(p.y * 10f);
             int qz = Mathf.RoundToInt(p.z * 10f);
 
-            string key = $"{sceneIndex}:{r.name}:{qx},{qy},{qz}";
+            string key = sceneIndex + ":" + r.name + ":" + qx + "," + qy + "," + qz;
             return StableHash(key);
         }
 
@@ -309,7 +309,7 @@ namespace EscapeFromDuckovCoopMod
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogError($"获取槽位 {slotNames[i]} 时发生错误: {ex.Message}");
+                    Debug.LogError("获取槽位 " + slotNames[i] + " 时发生错误: " + ex.Message);
                 }
             }
 

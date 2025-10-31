@@ -36,8 +36,8 @@ namespace EscapeFromDuckovCoopMod
         private NetPeer connectedPeer => Service?.connectedPeer;
         private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private bool networkStarted => Service != null && Service.networkStarted;
-        private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         private const float WeaponApplyDebounce = 0.20f; // 200ms 去抖窗口
 
@@ -79,7 +79,7 @@ namespace EscapeFromDuckovCoopMod
                     var item = await COOPManager.GetItemAsync(ids);
                     if (item == null)
                     {
-                        Debug.LogWarning($"无法获取物品: ItemId={itemId}，槽位 {slotHash} 未更新");
+                        Debug.LogWarning("无法获取物品: ItemId=" + itemId + "，槽位 " + slotHash + " 未更新");
                     }
                     if (slotHash == 100)
                     {
@@ -122,7 +122,7 @@ namespace EscapeFromDuckovCoopMod
             }
             catch (Exception ex)
             {
-                Debug.LogError($"更新装备失败(客户端): {playerId}, SlotHash={slotHash}, ItemId={itemId}, 错误: {ex.Message}");
+                Debug.LogError("更新装备失败(客户端): " + playerId + ", SlotHash=" + slotHash + ", ItemId=" + itemId + ", 错误: " + ex.Message);
             }
         }
 
@@ -136,7 +136,7 @@ namespace EscapeFromDuckovCoopMod
             var model = cm ? cm.characterModel : null;
             if (model == null) return;
 
-            string key = $"{playerId}:{slotHash}";
+            string key = playerId + ":" + slotHash.ToString();
             string want = itemId ?? string.Empty;
             if (_lastWeaponAppliedByPlayer.TryGetValue(key, out var last) && last == want)
             {
@@ -181,7 +181,7 @@ namespace EscapeFromDuckovCoopMod
             }
             catch (Exception ex)
             {
-                Debug.LogError($"更新武器失败(客户端): {playerId}, Slot={socket}, ItemId={itemId}, 错误: {ex.Message}");
+                Debug.LogError("更新武器失败(客户端): " + playerId + ", Slot=" + socket + ", ItemId=" + itemId + ", 错误: " + ex.Message);
             }
         }
 

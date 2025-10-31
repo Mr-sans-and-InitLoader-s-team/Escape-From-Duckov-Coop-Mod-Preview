@@ -37,10 +37,10 @@ namespace EscapeFromDuckovCoopMod
         private static NetPeer connectedPeer => Service?.connectedPeer;
         private static PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private static bool networkStarted => Service != null && Service.networkStarted;
-        private static Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private static Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private static Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private static Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private static Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
-        public static readonly Dictionary<NetPeer, string> _srvPeerScene = new Dictionary<NetPeer, string>();
+        public static readonly Dictionary<string, string> _srvPeerScene = new Dictionary<string, string>();
 
 
         // —— 仅统计“本地图”的存活玩家；本机已死时就看同图是否还有活人 —— 
@@ -130,8 +130,9 @@ namespace EscapeFromDuckovCoopMod
 
             foreach (var p in netManager.ConnectedPeerList)
             {
+                string endPoint = p.EndPoint.ToString();
                 string peerScene = null;
-                if (!_srvPeerScene.TryGetValue(p, out peerScene) && playerStatuses.TryGetValue(p, out var st))
+                if (!_srvPeerScene.TryGetValue(endPoint, out peerScene) && playerStatuses.TryGetValue(endPoint, out var st))
                     peerScene = st.SceneId;
 
                 if (!string.IsNullOrEmpty(peerScene) && peerScene == hostSceneId)

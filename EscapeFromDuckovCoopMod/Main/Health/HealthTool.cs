@@ -30,21 +30,21 @@ namespace EscapeFromDuckovCoopMod
     {
 
         private static NetService Service => NetService.Instance;
-        private static Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private static Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
         public static bool _cliHookedSelf = false;
         public static UnityEngine.Events.UnityAction<Health> _cbSelfHpChanged, _cbSelfMaxChanged;
         public static UnityEngine.Events.UnityAction<DamageInfo> _cbSelfHurt, _cbSelfDead;
         public static float _cliNextSendHp = 0f;
         public static (float max, float cur) _cliLastSentHp = (0f, 0f);
 
-        // 主机端：Health -> 所属 Peer 的映射（host 自己用 null）
-        public static readonly Dictionary<Health, NetPeer> _srvHealthOwner = new Dictionary<Health, NetPeer>();
+        // 主机端：Health -> 所属 EndPoint 的映射（host 自己用 null）
+        public static readonly Dictionary<Health, string> _srvHealthOwner = new Dictionary<Health, string>();
         public static readonly HashSet<Health> _srvHooked = new HashSet<Health>();
         public static float _cliLastSelfHurtAt = -999f;         // 最后本地受击时间
         public static float _cliLastSelfHpLocal = -1f;          // 受击后本地血量（用于对比回显）
         public static bool _cliInitHpReported = false;
 
-        public static readonly Dictionary<NetPeer, (float max, float cur)> _srvPendingHp = new Dictionary<NetPeer, (float max, float cur)>();
+        public static readonly Dictionary<string, (float max, float cur)> _srvPendingHp = new Dictionary<string, (float max, float cur)>();
 
 
         // 小工具：仅做UI表现，不改数值与事件
@@ -96,7 +96,7 @@ namespace EscapeFromDuckovCoopMod
             }
         }
 
-        public static NetPeer Server_FindOwnerPeerByHealth(Health h)
+        public static string Server_FindOwnerPeerByHealth(Health h)
         {
             if (h == null) return null;
             CharacterMainControl cmc = null;
@@ -104,7 +104,7 @@ namespace EscapeFromDuckovCoopMod
             if (!cmc) { try { cmc = h.GetComponentInParent<CharacterMainControl>(); } catch { } }
             if (!cmc) return null;
 
-            foreach (var kv in remoteCharacters) // remoteCharacters: NetPeer -> GameObject（主机维护）
+            foreach (var kv in remoteCharacters) // remoteCharacters: string -> GameObject（主机维护）
             {
                 if (kv.Value == cmc.gameObject) return kv.Key;
             }
@@ -112,7 +112,7 @@ namespace EscapeFromDuckovCoopMod
         }
 
 
-        public static void Server_HookOneHealth(NetPeer peer, GameObject instance)
+        public static void Server_HookOneHealth(string endPoint, GameObject instance)
         {
             if (!instance) return;
 
@@ -124,20 +124,20 @@ namespace EscapeFromDuckovCoopMod
             BindHealthToCharacter(h, cmc); // 你已有：修正 hasCharacter 以便 UI/Hidden 逻辑正常
 
             // 记录归属 + 绑定事件（避免重复）
-            _srvHealthOwner[h] = peer;      // host 自己传 null
+            _srvHealthOwner[h] = endPoint;      // host 自己传 null
             if (!_srvHooked.Contains(h))
             {
-                h.OnHealthChange.AddListener(_ => HealthM.Instance.Server_OnHealthChanged(peer, h));
-                h.OnMaxHealthChange.AddListener(_ => HealthM.Instance.Server_OnHealthChanged(peer, h));
+                h.OnHealthChange.AddListener(_ => HealthM.Instance.Server_OnHealthChanged(endPoint, h));
+                h.OnMaxHealthChange.AddListener(_ => HealthM.Instance.Server_OnHealthChanged(endPoint, h));
                 _srvHooked.Add(h);
             }
 
-            // 1) 若服务器已缓存了该客户端“自报”的权威血量，先套用并广给其他客户端
-            if (peer != null && _srvPendingHp.TryGetValue(peer, out var snap))
+            // 1) 若服务器已缓存了该客户端"自报"的权威血量，先套用并广给其他客户端
+            if (!string.IsNullOrEmpty(endPoint) && _srvPendingHp.TryGetValue(endPoint, out var snap))
             {
                 HealthM.Instance.ApplyHealthAndEnsureBar(instance, snap.max, snap.cur);
-                _srvPendingHp.Remove(peer);
-                HealthM.Instance.Server_OnHealthChanged(peer, h);
+                _srvPendingHp.Remove(endPoint);
+                HealthM.Instance.Server_OnHealthChanged(endPoint, h);
                 return;
             }
 
@@ -149,7 +149,7 @@ namespace EscapeFromDuckovCoopMod
             if (max <= 0f) { max = 40f; if (cur <= 0f) cur = max; }
 
             HealthM.Instance.ApplyHealthAndEnsureBar(instance, max, cur); // 会确保 showHealthBar + RequestHealthBar + 多帧重试
-            HealthM.Instance.Server_OnHealthChanged(peer, h);             // 立刻推一帧给“其他玩家”
+            HealthM.Instance.Server_OnHealthChanged(endPoint, h);             // 立刻推一帧给"其他玩家"
         }
       
 

@@ -37,13 +37,30 @@ namespace EscapeFromDuckovCoopMod
         private bool networkStarted => Service != null && Service.networkStarted;
         public void BroadcastMeleeSwing(string playerId, float dealDelay)
         {
-            foreach (var p in netManager.ConnectedPeerList)
+            if (!networkStarted || !IsServer) return;
+
+            if (writer == null)
             {
-                var w = new NetDataWriter();
-                w.Put((byte)Op.MELEE_ATTACK_SWING);
-                w.Put(playerId);
-                w.Put(dealDelay);
-                p.Send(w, DeliveryMethod.ReliableOrdered);
+                Debug.LogWarning("[WeaponRequest] writer is null");
+                return;
+            }
+
+            writer.Reset();
+            writer.Put((byte)Op.MELEE_ATTACK_SWING);
+            writer.Put(playerId);
+            writer.Put(dealDelay);
+
+            if (netManager != null)
+            {
+                netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.BroadcastData(writer.Data, writer.Length, DeliveryMethod.ReliableOrdered);
+                }
             }
         }
 
@@ -128,19 +145,50 @@ namespace EscapeFromDuckovCoopMod
             catch { /* 忽略 */ }
 
             writer.PutProjectilePayload(hint);  // 带着提示载荷发给主机
-            connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+            
+            if (connectedPeer != null)
+            {
+                connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.SendData(writer.Data, writer.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
         // 客户端：近战起手用于远端看得见
         public void Net_OnClientMeleeAttack(float dealDelay, Vector3 snapPos, Vector3 snapDir)
         {
-            if (!networkStarted || IsServer || connectedPeer == null) return;
+            if (!networkStarted || IsServer) return;
+
+            if (writer == null)
+            {
+                Debug.LogWarning("[WeaponRequest] writer is null in Net_OnClientMeleeAttack");
+                return;
+            }
+
             writer.Reset();
             writer.Put((byte)Op.MELEE_ATTACK_REQUEST);
             writer.Put(dealDelay);
             writer.PutV3cm(snapPos);
             writer.PutDir(snapDir);
-            connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+
+            if (connectedPeer != null)
+            {
+                connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.SendData(writer.Data, writer.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
 

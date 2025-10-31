@@ -37,8 +37,8 @@ namespace EscapeFromDuckovCoopMod
         private NetPeer connectedPeer => Service?.connectedPeer;
         private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private bool networkStarted => Service != null && Service.networkStarted;
-        private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         public readonly Dictionary<int, int> aiRootSeeds = new Dictionary<int, int>(); // rootId -> seed
         public int sceneSeed = 0;
@@ -114,7 +114,7 @@ namespace EscapeFromDuckovCoopMod
             if (target == null) CoopTool.BroadcastReliable(w);
             else target.Send(w, DeliveryMethod.ReliableOrdered);
 
-            Debug.Log($"[AI-SEED] 已发送 {pairs.Count} 条 Root 映射（原 Root 数={roots.Length}）目标={(target == null ? "ALL" : target.EndPoint.ToString())}");
+            Debug.Log("[AI-SEED] 已发送 " + pairs.Count + " 条 Root 映射（原 Root 数=" + roots.Length + "）目标=" + (target == null ? "ALL" : target.EndPoint.ToString()));
         }
 
 
@@ -129,7 +129,7 @@ namespace EscapeFromDuckovCoopMod
                 int seed = r.GetInt();
                 aiRootSeeds[id] = seed;
             }
-            Debug.Log($"[AI-SEED] 收到 {n} 个 Root 的种子");
+            Debug.Log("[AI-SEED] 收到 " + n + " 个 Root 的种子");
         }
 
 
@@ -298,8 +298,7 @@ namespace EscapeFromDuckovCoopMod
             if (!string.IsNullOrEmpty(displayName))
                 writer.Put(displayName);
 
-
-                Debug.Log($"[AI-SEND] ver={AI_LOADOUT_VER} aiId={aiId} model='{modelName}' icon={iconType} showName={showName}");
+            Debug.Log("[AI-SEND] ver=" + AI_LOADOUT_VER + " aiId=" + aiId + " model='" + modelName + "' icon=" + iconType + " showName=" + showName);
 
            CoopTool.BroadcastReliable(writer);
 
@@ -349,7 +348,7 @@ namespace EscapeFromDuckovCoopMod
                 if (prefab && !string.Equals(curName, tgtName, StringComparison.OrdinalIgnoreCase))
                 {
                     var inst = UnityEngine.Object.Instantiate(prefab);
-                   Debug.Log($"[AI-APPLY] aiId={aiId} SetCharacterModel -> '{tgtName}' (cur='{curName}')");
+                    Debug.Log("[AI-APPLY] aiId=" + aiId + " SetCharacterModel -> '" + tgtName + "' (cur='" + curName + "')");
                     cmc.SetCharacterModel(inst);
                 }
             }
@@ -388,9 +387,8 @@ namespace EscapeFromDuckovCoopMod
 
                 await AIName.RefreshNameIconWithRetries(cmc, iconType, showName, displayNameFromHost);
 
-
-                    Debug.Log($"[AI-APPLY] aiId={aiId} icon={(CharacterIconTypes)iconType} showName={showName} name='{displayName ?? "(null)"}'");
-                Debug.Log($"[NOW AI] aiId={aiId} icon={Traverse.Create(cmc.characterPreset).Field<CharacterIconTypes>("characterIconType").Value} showName={showName} name='{Traverse.Create(cmc.characterPreset).Field<string>("nameKey").Value ?? "(null)"}'");
+                Debug.Log("[AI-APPLY] aiId=" + aiId + " icon=" + (CharacterIconTypes)iconType + " showName=" + showName + " name='" + (displayName ?? "(null)") + "'");
+                Debug.Log("[NOW AI] aiId=" + aiId + " icon=" + Traverse.Create(cmc.characterPreset).Field<CharacterIconTypes>("characterIconType").Value + " showName=" + showName + " name='" + (Traverse.Create(cmc.characterPreset).Field<string>("nameKey").Value ?? "(null)") + "'");
             }
             catch { }
 
@@ -569,7 +567,19 @@ namespace EscapeFromDuckovCoopMod
                     writer.Put(e.st.gunReady);
                     writer.Put(e.st.dashing);
                 }
-                netManager.SendToAll(writer, METHOD);
+                
+                if (netManager != null)
+                {
+                    netManager.SendToAll(writer, METHOD);
+                }
+                else
+                {
+                    var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                    if (hybrid != null && hybrid.IsConnected)
+                    {
+                        hybrid.BroadcastData(writer.Data, writer.Length, METHOD);
+                    }
+                }
             }
         }
 

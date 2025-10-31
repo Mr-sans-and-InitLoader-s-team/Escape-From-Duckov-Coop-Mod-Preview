@@ -79,7 +79,18 @@ namespace EscapeFromDuckovCoopMod
             if (!LootManager.Instance.TryGetLootboxWorldPos(lootInv, out pos)) pos = Vector3.zero;
             w.PutV3cm(pos);
 
-            connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            if (connectedPeer != null)
+            {
+                connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.SendData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
 
@@ -219,7 +230,7 @@ namespace EscapeFromDuckovCoopMod
                 if (pending && ItemTool.ReferenceEquals(pending, item))
                 {
                     // 已经有一个在途请求了，丢弃重复点击
-                    Debug.Log($"[LOOT] Duplicate PUT suppressed for item: {item.DisplayName}");
+                    Debug.Log("[LOOT] Duplicate PUT suppressed for item: " + item.DisplayName);
                     return;
                 }
             }
@@ -235,7 +246,19 @@ namespace EscapeFromDuckovCoopMod
             w.Put(preferPos);
             w.Put(token);
             ItemTool.WriteItemSnapshot(w, item);
-            connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            
+            if (connectedPeer != null)
+            {
+                connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.SendData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
 
@@ -303,13 +326,13 @@ namespace EscapeFromDuckovCoopMod
             }
             catch (DecoderFallbackException ex)
             {
-                Debug.LogError($"[LOOT][PUT] snapshot decode failed: {ex.Message}");
+                Debug.LogError("[LOOT][PUT] snapshot decode failed: " + ex.Message);
                 Server_SendLootDeny(peer, "bad_snapshot");
                 return;
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[LOOT][PUT] snapshot parse failed: {ex}");
+                Debug.LogError("[LOOT][PUT] snapshot parse failed: " + ex);
                 Server_SendLootDeny(peer, "bad_snapshot");
                 return;
             }
@@ -339,7 +362,7 @@ namespace EscapeFromDuckovCoopMod
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[LOOT][PUT] AddAndMerge exception: {ex}");
+                Debug.LogError("[LOOT][PUT] AddAndMerge exception: " + ex);
                 ok = false;
             }
             finally { _serverApplyingLoot = false; }
@@ -720,7 +743,7 @@ namespace EscapeFromDuckovCoopMod
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"[LOOT][PLUG] {ex}");
+                Debug.LogError("[LOOT][PLUG] " + ex);
                 ok = false;
             }
             finally { _serverApplyingLoot = false; }
@@ -909,7 +932,7 @@ namespace EscapeFromDuckovCoopMod
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"[LOOT][UNPLUG] {ex}");
+                Debug.LogError("[LOOT][UNPLUG] " + ex);
                 ok = false;
             }
             finally { _serverApplyingLoot = false; }

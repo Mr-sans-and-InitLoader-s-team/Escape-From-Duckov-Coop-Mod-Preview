@@ -38,8 +38,8 @@ namespace EscapeFromDuckovCoopMod
         private NetPeer connectedPeer => Service?.connectedPeer;
         private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private bool networkStarted => Service != null && Service.networkStarted;
-        private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         public bool _spectatorEndOnVotePending = false;
 
@@ -135,7 +135,7 @@ namespace EscapeFromDuckovCoopMod
                 }
             }
 
-            Debug.Log($"[SPECTATE] 候选={cand}, 同图保留={kept}, mySceneId={mySceneId} (canon={myK})");
+            Debug.Log("[SPECTATE] 候选=" + cand + ", 同图保留=" + kept + ", mySceneId=" + mySceneId + " (canon=" + myK + ")");
         }
 
         //说实话这个方法没多大用   //说实话这个方法没多大用   //说实话这个方法没多大用   //说实话这个方法没多大用

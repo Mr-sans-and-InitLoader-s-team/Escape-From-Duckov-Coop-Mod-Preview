@@ -42,8 +42,8 @@ namespace EscapeFromDuckovCoopMod
         private static NetPeer connectedPeer => Service?.connectedPeer;
         private static PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private static bool networkStarted => Service != null && Service.networkStarted;
-        private static Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private static Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private static Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private static Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private static Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         private static readonly Dictionary<int, string> _aiFaceJsonById = new Dictionary<int, string>();
 
@@ -231,7 +231,7 @@ namespace EscapeFromDuckovCoopMod
                               || (CharacterIconTypes)iconType == CharacterIconTypes.elete);
                         tag.nameOverride = displayNameFromHost ?? string.Empty;
 
-                        Debug.Log($"[AI_icon_Name 10s] {cmc.GetComponent<NetAiTag>().aiId} {cmc.characterPreset.Name} {cmc.characterPreset.GetCharacterIcon().name}");
+                        Debug.Log("[AI_icon_Name 10s] " + cmc.GetComponent<NetAiTag>().aiId + " " + cmc.characterPreset.Name + " " + cmc.characterPreset.GetCharacterIcon().name);
                         break; // 成功一次即可
                     }
                 }
@@ -303,8 +303,8 @@ namespace EscapeFromDuckovCoopMod
                 // 仅当“有图标”或“需要显示名字”时才重播，避免无意义带宽
                 if (e != global::CharacterIconTypes.none || showName)
                 {
-                        UnityEngine.Debug.Log($"[AI-REBROADCAST-10s] aiId={aiId} icon={e} showName={showName}");
-                   COOPManager.AIHandle.Server_BroadcastAiLoadout(aiId, cmc); // 你现有的方法，里头会把名字一起下发
+                    UnityEngine.Debug.Log("[AI-REBROADCAST-10s] aiId=" + aiId + " icon=" + e + " showName=" + showName);
+                    COOPManager.AIHandle.Server_BroadcastAiLoadout(aiId, cmc);
                 }
             }
         }
@@ -373,7 +373,7 @@ namespace EscapeFromDuckovCoopMod
                 }
             }
             catch { }
-            Debug.Log($"[Server AIIcon_Name 10s] AI:{aiId} {cmc.characterPreset.Name} Icon{(CharacterIconTypes)FR_IconType(cmc.characterPreset)}");
+            Debug.Log("[Server AIIcon_Name 10s] AI:" + aiId + " " + cmc.characterPreset.Name + " Icon" + (CharacterIconTypes)FR_IconType(cmc.characterPreset));
             var w = new NetDataWriter();
             w.Put((byte)Op.AI_NAME_ICON);
             w.Put(aiId);

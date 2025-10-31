@@ -1,0 +1,24 @@
+  Pursuant to Section 7 of the main License (AGPLv3), the following additional restrictions are applied: 
+
+  Notwithstanding any other provision of the main License, you are not granted
+permission to, and you may not, use the "Program" (as defined in the License) or 
+any portion thereof, for the purpose of:
+
+  1. Game Server Operation: Developing, operating, maintaining, distributing, 
+or otherwise supporting any form of "Game Server". A "Game Server" is defined 
+as any headless software component that runs on a server, in the cloud, 
+or on any other network-connected computer, and is used to relay, 
+host, manage, or facilitate interaction between multiple users within the same game session.
+  2. Commercial Purpose: For any activity primarily intended for or directed toward 
+commercial advantage or monetary compensation. This includes, but is not limited to: 
+(a) charging fees for access to or use of the Program or its derivative features; 
+(b) displaying advertisements in connection with services related to the Program; 
+(c) soliciting donations as a precondition for access or use;
+(d) selling, licensing, or distributing the Program or its derivatives as part of a for-profit business.
+
+  Any distribution, conveyance, or public display of the Program, 
+or any modified version thereof, must include a conspicuous notice of attribution 
+to Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview as the original author. 
+This notice must be placed in a location reasonably accessible to the end-user, such as 
+(but not limited to) an "About" dialog, a credits screen, or the primary documentation 
+(e.g., README.md) accompanying the software.

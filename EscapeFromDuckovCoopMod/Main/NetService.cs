@@ -54,11 +54,9 @@ namespace EscapeFromDuckovCoopMod
         //本地玩家状态
         public PlayerStatus localPlayerStatus;
 
-        //服务器主机玩家管理
-        public readonly Dictionary<NetPeer, PlayerStatus> playerStatuses = new Dictionary<NetPeer, PlayerStatus>();
-        public readonly Dictionary<NetPeer, GameObject> remoteCharacters = new Dictionary<NetPeer, GameObject>();
+        public readonly Dictionary<string, PlayerStatus> playerStatuses = new Dictionary<string, PlayerStatus>();
+        public readonly Dictionary<string, GameObject> remoteCharacters = new Dictionary<string, GameObject>();
 
-        // 客户端：按 endPoint(玩家ID) 管理
         public readonly Dictionary<string, PlayerStatus> clientPlayerStatuses = new Dictionary<string, PlayerStatus>();
         public readonly Dictionary<string, GameObject> clientRemoteCharacters = new Dictionary<string, GameObject>();
 
@@ -69,22 +67,24 @@ namespace EscapeFromDuckovCoopMod
 
         public void OnPeerConnected(NetPeer peer)
         {
-            Debug.Log($"连接成功: {peer.EndPoint}");
+            Debug.Log("连接成功: " + peer.EndPoint);
             connectedPeer = peer;
+            
+            string endPoint = peer.EndPoint.ToString();
 
             if (!IsServer)
             {
-                status = $"已连接到 {peer.EndPoint}";
+                status = "已连接到 " + peer.EndPoint;
                 isConnecting = false;
                 Send_ClientStatus.Instance.SendClientStatusUpdate();
             }
 
-            if (!playerStatuses.ContainsKey(peer))
+            if (!playerStatuses.ContainsKey(endPoint))
             {
-                playerStatuses[peer] = new PlayerStatus
+                playerStatuses[endPoint] = new PlayerStatus
                 {
-                    EndPoint = peer.EndPoint.ToString(),
-                    PlayerName = IsServer ? $"Player_{peer.Id}" : "Host",
+                    EndPoint = endPoint,
+                    PlayerName = IsServer ? ("Player_" + peer.Id) : "Host",
                     Latency = peer.Ping,
                     IsInGame = false,
                     LastIsInGame = false,
@@ -115,17 +115,17 @@ namespace EscapeFromDuckovCoopMod
                 {
                     foreach (var kv in remoteCharacters)
                     {
-                        var owner = kv.Key;
+                        var ownerEndPoint = kv.Key;
                         var go = kv.Value;
 
-                        if (owner == null || go == null) continue;
+                        if (string.IsNullOrEmpty(ownerEndPoint) || go == null) continue;
 
                         var h = go.GetComponentInChildren<Health>(true);
                         if (!h) continue;
 
                         var w = new NetDataWriter();
                         w.Put((byte)Op.AUTH_HEALTH_REMOTE);
-                        w.Put(GetPlayerId(owner)); // 原主的 playerId
+                        w.Put(ownerEndPoint);
                         try { w.Put(h.MaxHealth); } catch { w.Put(0f); }
                         try { w.Put(h.CurrentHealth); } catch { w.Put(0f); }
                         peer.Send(w, DeliveryMethod.ReliableOrdered);
@@ -136,7 +136,9 @@ namespace EscapeFromDuckovCoopMod
 
         public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
         {
-            Debug.Log($"断开连接: {peer.EndPoint}, 原因: {disconnectInfo.Reason}");
+            Debug.Log("断开连接: " + peer.EndPoint + ", 原因: " + disconnectInfo.Reason);
+            string endPoint = peer.EndPoint.ToString();
+            
             if (!IsServer)
             {
                 status = "连接断开";
@@ -144,23 +146,23 @@ namespace EscapeFromDuckovCoopMod
             }
             if (connectedPeer == peer) connectedPeer = null;
 
-            if (playerStatuses.ContainsKey(peer))
+            if (playerStatuses.ContainsKey(endPoint))
             {
-                var _st = playerStatuses[peer];
+                var _st = playerStatuses[endPoint];
                 if (_st != null && !string.IsNullOrEmpty(_st.EndPoint))
                     SceneNet.Instance._cliLastSceneIdByPlayer.Remove(_st.EndPoint);
-                playerStatuses.Remove(peer);
+                playerStatuses.Remove(endPoint);
             }
-            if (remoteCharacters.ContainsKey(peer) && remoteCharacters[peer] != null)
+            if (remoteCharacters.ContainsKey(endPoint) && remoteCharacters[endPoint] != null)
             {
-                Destroy(remoteCharacters[peer]);
-                remoteCharacters.Remove(peer);
+                Destroy(remoteCharacters[endPoint]);
+                remoteCharacters.Remove(endPoint);
             }
         }
 
         public void OnNetworkError(IPEndPoint endPoint, System.Net.Sockets.SocketError socketError)
         {
-            Debug.LogError($"网络错误: {socketError} 来自 {endPoint}");
+            Debug.LogError("网络错误: " + socketError + " 来自 " + endPoint);
         }
 
         public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
@@ -192,8 +194,9 @@ namespace EscapeFromDuckovCoopMod
 
         public void OnNetworkLatencyUpdate(NetPeer peer, int latency)
         {
-            if (playerStatuses.ContainsKey(peer))
-                playerStatuses[peer].Latency = latency;
+            string endPoint = peer.EndPoint.ToString();
+            if (playerStatuses.ContainsKey(endPoint))
+                playerStatuses[endPoint].Latency = latency;
         }
 
         public void OnConnectionRequest(ConnectionRequest request)
@@ -204,6 +207,42 @@ namespace EscapeFromDuckovCoopMod
                 else request.Reject();
             }
             else request.Reject();
+        }
+
+        public void InitializeGameLogic(bool isServer)
+        {
+            Debug.Log("[NetService] 初始化游戏逻辑, IsServer=" + isServer);
+            
+            COOPManager.AIHandle.freezeAI = !isServer;
+            IsServer = isServer;
+            
+            if (writer == null)
+            {
+                writer = new NetDataWriter();
+                Debug.Log("[NetService] NetDataWriter 已初始化");
+            }
+            
+            networkStarted = true;
+            status = "网络已启动(P2P模式)";
+            hostList.Clear();
+            hostSet.Clear();
+            isConnecting = false;
+            connectedPeer = null;
+
+            playerStatuses.Clear();
+            remoteCharacters.Clear();
+            clientPlayerStatuses.Clear();
+            clientRemoteCharacters.Clear();
+
+            LoaclPlayerManager.Instance.InitializeLocalPlayer();
+            if (IsServer)
+            {
+                ItemAgent_Gun.OnMainCharacterShootEvent -= COOPManager.WeaponHandle.Host_OnMainCharacterShoot;
+                ItemAgent_Gun.OnMainCharacterShootEvent += COOPManager.WeaponHandle.Host_OnMainCharacterShoot;
+                Debug.Log("[NetService] 服务器事件已注册");
+            }
+            
+            Debug.Log("[NetService] 游戏逻辑初始化完成");
         }
 
         public void StartNetwork(bool isServer)
@@ -220,7 +259,7 @@ namespace EscapeFromDuckovCoopMod
             if (IsServer)
             {
                 bool started = netManager.Start(port);
-                if (started) Debug.Log($"服务器启动，监听端口 {port}");
+                if (started) Debug.Log("服务器启动，监听端口 " + port);
                 else Debug.LogError("服务器启动失败，请检查端口是否被占用");
             }
             else
@@ -316,7 +355,7 @@ namespace EscapeFromDuckovCoopMod
                 }
                 catch (Exception e)
                 {
-                    Debug.LogError($"启动客户端网络失败：{e}");
+                    Debug.LogError("启动客户端网络失败：" + e);
                     status = "客户端网络启动失败";
                     isConnecting = false;
                     return;
@@ -333,7 +372,7 @@ namespace EscapeFromDuckovCoopMod
 
             try
             {
-                status = $"连接中: {ip}:{port}";
+                status = "连接中: " + ip + ":" + port;
                 isConnecting = true;
 
                 // 若已有连接，先断开（以免残留状态）
@@ -348,7 +387,7 @@ namespace EscapeFromDuckovCoopMod
             }
             catch (Exception ex)
             {
-                Debug.LogError($"连接到主机失败: {ex}");
+                Debug.LogError("连接到主机失败: " + ex);
                 status = "连接失败";
                 isConnecting = false;
                 connectedPeer = null;
@@ -363,17 +402,17 @@ namespace EscapeFromDuckovCoopMod
             return !string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(mine) && id == mine;
         }
 
-        public string GetPlayerId(NetPeer peer)
+        public string GetPlayerId(string endPoint)
         {
-            if (peer == null)
+            if (string.IsNullOrEmpty(endPoint))
             {
                 if (localPlayerStatus != null && !string.IsNullOrEmpty(localPlayerStatus.EndPoint))
-                    return localPlayerStatus.EndPoint;   // 例如 "Host:9050"
-                return $"Host:{port}";
+                    return localPlayerStatus.EndPoint;
+                return "Host:" + port;
             }
-            if (playerStatuses != null && playerStatuses.TryGetValue(peer, out var st) && !string.IsNullOrEmpty(st.EndPoint))
+            if (playerStatuses != null && playerStatuses.TryGetValue(endPoint, out var st) && !string.IsNullOrEmpty(st.EndPoint))
                 return st.EndPoint;
-            return peer.EndPoint.ToString();
+            return endPoint;
         }
 
 

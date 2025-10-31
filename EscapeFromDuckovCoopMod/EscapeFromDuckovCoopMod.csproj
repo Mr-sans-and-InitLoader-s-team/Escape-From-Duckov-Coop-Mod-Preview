@@ -73,6 +73,7 @@
     <Compile Include="Main\SceneService\SceneM.cs" />
     <Compile Include="Main\SceneService\SceneNet.cs" />
     <Compile Include="Main\UI\ModUI.cs" />
+    <Compile Include="Main\UI\ModUI_SteamUI.cs" />
     <Compile Include="Main\Weapon_\GrenadeM.cs" />
     <Compile Include="Main\Weapon_\WeaponHandle.cs" />
     <Compile Include="Main\Weapon_\WeaponRequest.cs" />
@@ -94,7 +95,15 @@
     <Compile Include="Net\NetPack\NetPack_Projectile.cs" />
     <Compile Include="Net\NetPack\PackFlag.cs" />
     <Compile Include="Net\NetSilenceGuards.cs" />
+    <Compile Include="Net\Steam\SteamNetworkingSocketsManager.cs" />
+    <Compile Include="Net\Steam\SteamNetworkTransport.cs" />
+    <Compile Include="Net\Steam\HybridNetworkService.cs" />
+    <Compile Include="Net\Steam\SteamP2PLoader.cs" />
     <Compile Include="Net\Steam\SteamP2PManager.cs" />
+    <Compile Include="Net\Steam\SteamEndPointMapper.cs" />
+    <Compile Include="Net\Steam\SteamLobbyManager.cs" />
+    <Compile Include="Net\Steam\SteamLobbyHelper.cs" />
+    <Compile Include="Net\Steam\SteamLobbyOptions.cs" />
     <Compile Include="Patch\Character_\AICharacterControllerPatch.cs" />
     <Compile Include="Patch\Character_\AnimPacth.cs" />
     <Compile Include="Patch\Character_\BuffPatch.cs" />
@@ -118,6 +127,9 @@
     <Compile Include="Patch\Scene\DoorPatch.cs" />
     <Compile Include="Patch\Scene\LevelManagerPatch.cs" />
     <Compile Include="Patch\Scene\ScenePatch.cs" />
+    <Compile Include="Patch\SteamP2P\PacketSignature.cs" />
+    <Compile Include="Patch\SteamP2P\Patch_Socket.cs" />
+    <Compile Include="Patch\SteamP2P\Patch_LiteNetLib.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SyncData\SyncDataManger.cs" />
     <Compile Include="_BuffLateBinder.cs" />

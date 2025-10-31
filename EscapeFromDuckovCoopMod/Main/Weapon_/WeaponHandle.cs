@@ -37,8 +37,8 @@ namespace EscapeFromDuckovCoopMod
         private NetPeer connectedPeer => Service?.connectedPeer;
         private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private bool networkStarted => Service != null && Service.networkStarted;
-        private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         public bool _hasPayloadHint;
         public ProjectileContext _payloadHint;
@@ -279,14 +279,26 @@ namespace EscapeFromDuckovCoopMod
             catch { }
 
             w.PutProjectilePayload(payloadCtx);
-            netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            
+            if (netManager != null)
+            {
+                netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.BroadcastData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
 
            FxManager.PlayMuzzleFxAndShell(localPlayerStatus.EndPoint, gun.Item.TypeID, muzzleWorld, finalDir);
         }
 
         public void HandleFireEvent(NetPacketReader r)
         {
-            // —— 主机广播的“射击视觉事件”的基础参数 —— 
+            // —— 主机广播的"射击视觉事件"的基础参数 —— 
             string shooterId = r.GetString();
             int weaponType = r.GetInt();
             Vector3 muzzle = r.GetV3cm();
@@ -294,10 +306,11 @@ namespace EscapeFromDuckovCoopMod
             float speed = r.GetFloat();
             float distance = r.GetFloat();
 
-            // 尝试找到“开火者”的枪口（仅用于起点兜底/特效）
+            // 尝试找到"开火者"的枪口（仅用于起点兜底/特效）
             CharacterMainControl shooterCMC = null;
-            if (NetService.Instance.IsSelfId(shooterId)) shooterCMC = CharacterMainControl.Main;
-            else if (clientRemoteCharacters.TryGetValue(shooterId, out var shooterGo) && shooterGo)
+            if (NetService.Instance != null && NetService.Instance.IsSelfId(shooterId)) 
+                shooterCMC = CharacterMainControl.Main;
+            else if (clientRemoteCharacters != null && clientRemoteCharacters.TryGetValue(shooterId, out var shooterGo) && shooterGo)
                 shooterCMC = shooterGo.GetComponent<CharacterMainControl>();
 
             ItemAgent_Gun gun = null; Transform muzzleTf = null;
@@ -437,7 +450,7 @@ namespace EscapeFromDuckovCoopMod
             CoopTool.TryPlayShootAnim(shooterId);
         }
 
-        public void HandleFireRequest(NetPeer peer, NetPacketReader r)
+        public void HandleFireRequest(string endPoint, NetPacketReader r)
         {
             string shooterId = r.GetString();
             int weaponType = r.GetInt();
@@ -462,7 +475,7 @@ namespace EscapeFromDuckovCoopMod
             _payloadHint = default;
             _hasPayloadHint = NetPack_Projectile.TryGetProjectilePayload(r, ref _payloadHint);
 
-            if (!remoteCharacters.TryGetValue(peer, out var who) || !who) { _hasPayloadHint = false; return; }
+            if (!remoteCharacters.TryGetValue(endPoint, out var who) || !who) { _hasPayloadHint = false; return; }
 
             var cm = who.GetComponent<CharacterMainControl>().characterModel;
 
@@ -594,45 +607,69 @@ namespace EscapeFromDuckovCoopMod
             netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
 
             FxManager.PlayMuzzleFxAndShell(shooterId, weaponType, muzzle, finalDir);
-            COOPManager.HostPlayer_Apply.PlayShootAnimOnServerPeer(peer);
+            COOPManager.HostPlayer_Apply.PlayShootAnimOnServerPeer(endPoint);
 
             // 清理本次 hint 状态
             _hasPayloadHint = false;
         }
 
-        // 主机：收到客户端“近战起手”，播动作 + 强制挥空 FX（避免动画事件缺失）
-        public void HandleMeleeAttackRequest(NetPeer sender, NetPacketReader reader)
+        // 主机：收到客户端"近战起手"，播动作 + 强制挥空 FX（避免动画事件缺失）
+        public void HandleMeleeAttackRequest(string endPoint, NetPacketReader reader)
         {
 
             float delay = reader.GetFloat();
             Vector3 pos = reader.GetV3cm();
             Vector3 dir = reader.GetDir();
 
-            if (remoteCharacters.TryGetValue(sender, out var who) && who)
+            if (remoteCharacters != null && remoteCharacters.TryGetValue(endPoint, out var who) && who)
             {
-                var anim = who.GetComponent<CharacterMainControl>().characterModel.GetComponent<CharacterAnimationControl_MagicBlend>();
-                if (anim != null) anim.OnAttack();
+                var cmc = who.GetComponent<CharacterMainControl>();
+                if (cmc != null && cmc.characterModel != null)
+                {
+                    var anim = cmc.characterModel.GetComponent<CharacterAnimationControl_MagicBlend>();
+                    if (anim != null) anim.OnAttack();
 
-                var model = who.GetComponent<CharacterMainControl>().characterModel;
-                if (model) EscapeFromDuckovCoopMod.MeleeFx.SpawnSlashFx(model);
+                    EscapeFromDuckovCoopMod.MeleeFx.SpawnSlashFx(cmc.characterModel);
+                }
             }
 
-            string pid = (playerStatuses.TryGetValue(sender, out var st) && !string.IsNullOrEmpty(st.EndPoint))
-                          ? st.EndPoint : sender.EndPoint.ToString();
-            foreach (var p in netManager.ConnectedPeerList)
+            string pid = (playerStatuses != null && playerStatuses.TryGetValue(endPoint, out var st) && !string.IsNullOrEmpty(st.EndPoint))
+                          ? st.EndPoint : endPoint;
+            
+            var w = new NetDataWriter();
+            w.Put((byte)Op.MELEE_ATTACK_SWING);
+            w.Put(pid);
+            w.Put(delay);
+
+            if (netManager != null)
             {
-                if (p == sender) continue;
-                var w = new NetDataWriter();
-                w.Put((byte)Op.MELEE_ATTACK_SWING);
-                w.Put(pid);
-                w.Put(delay);
-                p.Send(w, DeliveryMethod.ReliableOrdered);
+                foreach (var p in netManager.ConnectedPeerList)
+                {
+                    if (p.EndPoint.ToString() == endPoint) continue;
+                    p.Send(w, DeliveryMethod.ReliableOrdered);
+                }
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.CurrentMode == EscapeFromDuckovCoopMod.Net.Steam.NetworkMode.SteamP2P)
+                {
+                    var steamNet = EscapeFromDuckovCoopMod.Net.Steam.SteamNetworkingSocketsManager.Instance;
+                    if (steamNet != null && steamNet.peerConnections != null)
+                    {
+                        foreach (var peer in steamNet.peerConnections.Keys)
+                        {
+                            if (peer.ToString() == endPoint) continue;
+                            steamNet.SendPacket(peer, w.Data, w.Length);
+                        }
+                    }
+                }
             }
         }
 
-        public void HandleMeleeHitReport(NetPeer sender, NetPacketReader reader)
+        public void HandleMeleeHitReport(string endPoint, NetPacketReader reader)
         {
-            Debug.Log($"[SERVER] HandleMeleeHitReport begin, from={sender?.EndPoint}, bytes={reader.AvailableBytes}");
+            Debug.Log("[SERVER] HandleMeleeHitReport begin, from=" + endPoint + ", bytes=" + reader.AvailableBytes);
 
             string attackerId = reader.GetString();
 
@@ -650,7 +687,7 @@ namespace EscapeFromDuckovCoopMod
             bool boom = reader.GetBool();
             float range = reader.GetFloat();
 
-            if (!remoteCharacters.TryGetValue(sender, out var attackerGo) || !attackerGo)
+            if (!remoteCharacters.TryGetValue(endPoint, out var attackerGo) || !attackerGo)
             {
                 Debug.LogWarning("[SERVER] melee: attackerGo missing for sender");
                 return;
@@ -717,7 +754,7 @@ namespace EscapeFromDuckovCoopMod
 
             if (!best)
             {
-                Debug.Log($"[SERVER] melee hit miss @ {hitPoint} r={radius}");
+                Debug.Log("[SERVER] melee hit miss @ " + hitPoint + " r=" + radius);
                 return;
             }
 
@@ -744,7 +781,7 @@ namespace EscapeFromDuckovCoopMod
             float scale = victimIsChar ? ServerTuning.RemoteMeleeCharScale : ServerTuning.RemoteMeleeEnvScale;
             if (Mathf.Abs(scale - 1f) > 1e-3f) di.damageValue = Mathf.Max(0f, di.damageValue * scale);
 
-            Debug.Log($"[SERVER] melee hit -> target={best.name} raw={dmg} scaled={di.damageValue} env={!victimIsChar}");
+            Debug.Log("[SERVER] melee hit -> target=" + best.name + " raw=" + dmg + " scaled=" + di.damageValue + " env=" + !victimIsChar);
             best.Hurt(di);
         }
 

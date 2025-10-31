@@ -65,8 +65,8 @@ namespace EscapeFromDuckovCoopMod
         public float syncTimer = 0f;
         public float syncInterval => Service?.syncInterval ?? 0.015f; // =========== Mod开发者注意现在是TI版本也就是满血版无同步延迟，0.03 ~33ms ===================
 
-        public Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        public Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        public Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        public Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         public Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         public Dictionary<string, PlayerStatus> clientPlayerStatuses => Service?.clientPlayerStatuses;
 
@@ -251,7 +251,10 @@ namespace EscapeFromDuckovCoopMod
 
             if (networkStarted)
             {
-                netManager.PollEvents();
+                if (netManager != null)
+                {
+                    netManager.PollEvents();
+                }
                 SceneNet.Instance.TrySendSceneReadyOnce();
                 if (!isinit2)
                 {
@@ -487,9 +490,22 @@ namespace EscapeFromDuckovCoopMod
 
         public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
         {
+            string peerEndPoint = peer?.EndPoint?.ToString();
 
-            // 统一：读取 1 字节的操作码（Op）
-            if (reader.AvailableBytes <= 0) { reader.Recycle(); return; }
+            if (reader == null)
+            {
+                Debug.LogWarning("[Mod] OnNetworkReceive: reader为null");
+                return;
+            }
+            
+            if (reader.AvailableBytes <= 0)
+            {
+                if (peer != null && peer.EndPoint != null && !peer.EndPoint.Address.Equals(System.Net.IPAddress.Parse("127.0.0.1")))
+                {
+                    reader.Recycle();
+                }
+                return;
+            }
             var op = (Op)reader.GetByte();
             //  Debug.Log($"[RECV OP] {(byte)op}, avail={reader.AvailableBytes}");
 
@@ -632,7 +648,12 @@ namespace EscapeFromDuckovCoopMod
                 case Op.ANIM_SYNC:
                     if (IsServer)
                     {
-                        // 保持客户端 -> 主机
+                        // 诊断：记录收到客户端动画更新
+                        if (Time.frameCount % 120 == 0) // 每2秒记录一次
+                        {
+                            Debug.Log("[主机收包] ANIM_SYNC from " + peer.EndPoint.ToString());
+                        }
+                        
                        COOPManager.PublicHandleUpdate.HandleClientAnimationStatus(peer, reader);
                     }
                     else
@@ -706,7 +727,8 @@ namespace EscapeFromDuckovCoopMod
                 case Op.FIRE_REQUEST:
                     if (IsServer)
                     {
-                       COOPManager.WeaponHandle.HandleFireRequest(peer, reader);
+                        Debug.Log("[主机收包] FIRE_REQUEST from " + peer.EndPoint.ToString());
+                       COOPManager.WeaponHandle.HandleFireRequest(peer.EndPoint.ToString(), reader);
                     }
                     break;
 
@@ -719,8 +741,7 @@ namespace EscapeFromDuckovCoopMod
                     break;
 
                 default:
-                    // 有未知 opcode 时给出警告，便于排查（比如双端没一起更新）
-                    Debug.LogWarning($"Unknown opcode: {(byte)op}");
+                    Debug.LogWarning("Unknown opcode: " + (byte)op);
                     break;
 
                 case Op.GRENADE_THROW_REQUEST:
@@ -754,7 +775,7 @@ namespace EscapeFromDuckovCoopMod
                     break;
 
                 case Op.MELEE_ATTACK_REQUEST:
-                    if (IsServer) COOPManager.WeaponHandle.HandleMeleeAttackRequest(peer, reader);
+                    if (IsServer) COOPManager.WeaponHandle.HandleMeleeAttackRequest(peer.EndPoint.ToString(), reader);
                     break;
                 case Op.MELEE_ATTACK_SWING:
                     {
@@ -790,7 +811,7 @@ namespace EscapeFromDuckovCoopMod
                     }
 
                 case Op.MELEE_HIT_REPORT:
-                    if (IsServer) COOPManager.WeaponHandle.HandleMeleeHitReport(peer, reader);
+                    if (IsServer) COOPManager.WeaponHandle.HandleMeleeHitReport(peer.EndPoint.ToString(), reader);
                     break;
 
                 case Op.ENV_HURT_REQUEST:
@@ -807,26 +828,24 @@ namespace EscapeFromDuckovCoopMod
                     {
                         if (IsServer)
                         {
+                            Debug.Log("[主机收包] PLAYER_HEALTH_REPORT from " + peer.EndPoint.ToString());
                             float max = reader.GetFloat();
                             float cur = reader.GetFloat();
                             if (max <= 0f)
                             {
-                                HealthTool._srvPendingHp[peer] = (max, cur);
+                                HealthTool._srvPendingHp[peerEndPoint] = (max, cur);
                                 break;
                             }
-                            if (remoteCharacters != null && remoteCharacters.TryGetValue(peer, out var go) && go)
+                            if (remoteCharacters != null && remoteCharacters.TryGetValue(peerEndPoint, out var go) && go)
                             {
-                                // 主机本地先写实自己能立刻看到
                                 HealthM.Instance.ApplyHealthAndEnsureBar(go, max, cur);
 
-                                // 再用统一广播流程，发给本人 + 其他客户端
                                 var h = go.GetComponentInChildren<Health>(true);
-                                if (h) HealthM.Instance.Server_OnHealthChanged(peer, h);
+                                if (h) HealthM.Instance.Server_OnHealthChanged(peerEndPoint, h);
                             }
                             else
                             {
-                                //远端克隆还没创建缓存起来，等钩到 Health 后应用
-                                HealthTool._srvPendingHp[peer] = (max, cur);
+                                HealthTool._srvPendingHp[peerEndPoint] = (max, cur);
                             }
                         }
                         break;
@@ -860,9 +879,7 @@ namespace EscapeFromDuckovCoopMod
                                     // 如果回显值会让血量“变多”（典型回弹），判定为陈旧 echo 丢弃
                                     if (cur > localCur + 0.0001f)
                                     {
-
-                                       UnityEngine.Debug.Log($"[HP][SelfEcho] drop stale echo in window: local={localCur:F3} srv={cur:F3}");
-
+                                       UnityEngine.Debug.Log("[HP][SelfEcho] drop stale echo in window: local=" + localCur.ToString("F3") + " srv=" + cur.ToString("F3"));
                                         shouldApply = false;
                                     }
                                 }
@@ -946,6 +963,7 @@ namespace EscapeFromDuckovCoopMod
                     {
                         if (!IsServer)
                         {
+                            Debug.Log("[客户端收包] SCENE_VOTE_START - 收到投票开始信息");
                             SceneNet.Instance.Client_OnSceneVoteStart(reader);
                             // 观战中收到“开始投票”，记一个“投票结束就结算”的意图
                             if (Spectator.Instance._spectatorActive) Spectator.Instance._spectatorEndOnVotePending = true;
@@ -981,7 +999,7 @@ namespace EscapeFromDuckovCoopMod
                         if (IsServer)
                         {
                             bool ready = reader.GetBool();
-                            SceneNet.Instance.Server_OnSceneReadySet(peer, ready);
+                            SceneNet.Instance.Server_OnSceneReadySet(peer.EndPoint.ToString(), ready);
                         }
                         else
                         {
@@ -994,11 +1012,11 @@ namespace EscapeFromDuckovCoopMod
                             if (SceneNet.Instance.sceneReady.ContainsKey(pid))
                             {
                                 SceneNet.Instance.sceneReady[pid] = rdy;
-                                Debug.Log($"[SCENE] READY_SET -> {pid} = {rdy}");
+                                Debug.Log("[SCENE] READY_SET -> " + pid + " = " + rdy);
                             }
                             else
                             {
-                                Debug.LogWarning($"[SCENE] READY_SET for unknown pid '{pid}'. participants=[{string.Join(",", SceneNet.Instance.sceneParticipantIds)}]");
+                                Debug.LogWarning("[SCENE] READY_SET for unknown pid '" + pid + "'. participants=[" + string.Join(",", SceneNet.Instance.sceneParticipantIds) + "]");
                             }
                         }
                         break;
@@ -1052,7 +1070,7 @@ namespace EscapeFromDuckovCoopMod
 
                         if (IsServer)
                         {
-                            SceneNet.Instance.Server_HandleSceneReady(peer, id, sid, pos, rot, face);
+                            SceneNet.Instance.Server_HandleSceneReady(peer.EndPoint.ToString(), id, sid, pos, rot, face);
                         }
                         // 客户端若收到这条（主机广播），实际创建工作由 REMOTE_CREATE 完成，这里不处理
                         break;
@@ -1158,7 +1176,7 @@ namespace EscapeFromDuckovCoopMod
                     {
                         if (IsServer) break;
                         string reason = reader.GetString();
-                        Debug.LogWarning($"[LOOT] 请求被拒绝：{reason}");
+                        Debug.LogWarning("[LOOT] 请求被拒绝：" + reason);
 
                         // no_inv 不要立刻重试，避免请求风暴
                         if (reason == "no_inv")
@@ -1222,7 +1240,7 @@ namespace EscapeFromDuckovCoopMod
                         if (IsServer) break;
 
                         if (LogAiLoadoutDebug)
-                            Debug.Log($"[AI-RECV] ver={ver} aiId={aiId} model='{modelName}' icon={iconType} showName={showName} faceLen={(faceJson != null ? faceJson.Length : 0)}");
+                            Debug.Log("[AI-RECV] ver=" + ver + " aiId=" + aiId + " model='" + modelName + "' icon=" + iconType + " showName=" + showName + " faceLen=" + (faceJson != null ? faceJson.Length : 0));
 
                         if (AITool.aiById.TryGetValue(aiId, out var cmc) && cmc)
                             COOPManager.AIHandle.Client_ApplyAiLoadout(aiId, equips, weapons, faceJson, modelName, iconType, showName, displayName).Forget();
@@ -1302,6 +1320,12 @@ namespace EscapeFromDuckovCoopMod
                 case Op.AI_HEALTH_SYNC:
                     {
                         int id = reader.GetInt();
+                        
+                        // 诊断：客户端收到AI血量同步
+                        if (!IsServer && Time.frameCount % 300 == 0) // 每5秒记录一次
+                        {
+                            Debug.Log("[客户端收包] AI_HEALTH_SYNC id=" + id);
+                        }
 
                         float max = 0f, cur = 0f;
                         if (reader.AvailableBytes >= 8)
@@ -1353,7 +1377,7 @@ namespace EscapeFromDuckovCoopMod
                         }
                         else
                         {
-                            Debug.LogWarning($"[AI_icon_Name 10s] cmc is null!");
+                            Debug.LogWarning("[AI_icon_Name 10s] cmc is null!");
                         }
                         // 若当前还没绑定上 cmc，就先忽略；每 10s 会兜底播一遍
                         break;
@@ -1371,21 +1395,23 @@ namespace EscapeFromDuckovCoopMod
 
                         var deadPfb = LootManager.Instance.ResolveDeadLootPrefabOnServer();
                         var box = InteractableLootbox.CreateFromItem(tmpRoot, pos + Vector3.up * 0.10f, rot, true, deadPfb, false);
-                        if (box) DeadLootBox.Instance.Server_OnDeadLootboxSpawned(box, null);   // 用新版重载：会发 lootUid + aiId + 随后 LOOT_STATE
+                        if (box) DeadLootBox.Instance.Server_OnDeadLootboxSpawned(box, null);
 
-                        if (remoteCharacters.TryGetValue(peer, out var proxy) && proxy)
+                        if (remoteCharacters.TryGetValue(peerEndPoint, out var proxy) && proxy)
                         {
                             UnityEngine.Object.Destroy(proxy);
-                            remoteCharacters.Remove(peer);
+                            remoteCharacters.Remove(peerEndPoint);
                         }
 
-                        // B) 广播给所有客户端：这个玩家的远程代理需要销毁
-                        if (playerStatuses.TryGetValue(peer, out var st) && !string.IsNullOrEmpty(st.EndPoint))
+                        if (playerStatuses.TryGetValue(peerEndPoint, out var st) && !string.IsNullOrEmpty(st.EndPoint))
                         {
-                            var w2 = writer; w2.Reset();
-                            w2.Put((byte)Op.REMOTE_DESPAWN);
-                            w2.Put(st.EndPoint);                 // 客户端用 EndPoint 当 key
-                            netManager.SendToAll(w2, DeliveryMethod.ReliableOrdered);
+                            if (netManager != null)
+                            {
+                                var w2 = writer; w2.Reset();
+                                w2.Put((byte)Op.REMOTE_DESPAWN);
+                                w2.Put(st.EndPoint);
+                                netManager.SendToAll(w2, DeliveryMethod.ReliableOrdered);
+                            }
                         }
 
 
@@ -1476,8 +1502,8 @@ namespace EscapeFromDuckovCoopMod
                             }
                             else
                             {
-                                Debug.LogWarning($"[GATE] release sid mismatch: srv={sid}, cli={SceneNet.Instance._cliGateSid} — accepting");
-                                SceneNet.Instance._cliGateSid = sid;                // 对齐后仍放行
+                                Debug.LogWarning("[GATE] release sid mismatch: srv=" + sid + ", cli=" + SceneNet.Instance._cliGateSid + " — accepting");
+                                SceneNet.Instance._cliGateSid = sid;
                                 SceneNet.Instance._cliSceneGateReleased = true;
                                 HealthM.Instance.Client_ReportSelfHealth_IfReadyOnce();
                             }
@@ -1496,7 +1522,10 @@ namespace EscapeFromDuckovCoopMod
 
             }
 
-            reader.Recycle();
+            if (peer != null && peer.EndPoint != null && !peer.EndPoint.Address.Equals(System.Net.IPAddress.Parse("127.0.0.1")))
+            {
+                reader.Recycle();
+            }
         }
 
         void OnDestroy()

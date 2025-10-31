@@ -49,7 +49,7 @@ namespace EscapeFromDuckovCoopMod
                 if (isAI)
                 {
                     if (ModBehaviourF.LogAiHpDebug)
-                        Debug.Log($"[CLIENT] Block local AI ShootOneBullet holder='{holder.name}'");
+                        Debug.Log("[CLIENT] Block local AI ShootOneBullet holder='" + holder.name + "'");
                     return false; // 不让客户端本地造弹
                 }
             }
@@ -117,13 +117,26 @@ namespace EscapeFromDuckovCoopMod
             if (!fromC) return;
 
             string shooterId = null;
-            if (fromC.IsMainCharacter) shooterId = mod.localPlayerStatus?.EndPoint;
+            if (fromC.IsMainCharacter)
+            {
+                shooterId = mod.localPlayerStatus?.EndPoint;
+                if (string.IsNullOrEmpty(shooterId))
+                {
+                    var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                    if (hybrid != null && hybrid.CurrentMode == EscapeFromDuckovCoopMod.Net.Steam.NetworkMode.SteamP2P)
+                    {
+                        shooterId = Steamworks.SteamUser.GetSteamID().ToString();
+                    }
+                }
+            }
             else
             {
                 var tag = fromC.GetComponent<NetAiTag>();
                 if (tag == null || tag.aiId == 0) return;
-                shooterId = $"AI:{tag.aiId}";
+                shooterId = "AI:" + tag.aiId;
             }
+            
+            if (string.IsNullOrEmpty(shooterId)) return;
 
             int weaponType = 0;
             try { var gun = fromC.GetGun(); if (gun != null && gun.Item != null) weaponType = gun.Item.TypeID; } catch { }
@@ -132,15 +145,26 @@ namespace EscapeFromDuckovCoopMod
             w.Put((byte)Op.FIRE_EVENT);
             w.Put(shooterId);
             w.Put(weaponType);
-            w.PutV3cm(__instance.transform.position); // 近似 muzzle
+            w.PutV3cm(__instance.transform.position);
             w.PutDir(_context.direction);
             w.Put(_context.speed);
             w.Put(_context.distance);
 
-            // 把服务端算好的弹丸参数一并带上（含 explosionRange / explosionDamage 等）
             w.PutProjectilePayload(_context);
 
-            mod.netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            if (mod.netManager != null)
+            {
+                mod.netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.CurrentMode == EscapeFromDuckovCoopMod.Net.Steam.NetworkMode.SteamP2P)
+                {
+                    byte[] data = w.CopyData();
+                    hybrid.BroadcastData(data, data.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
     }
 

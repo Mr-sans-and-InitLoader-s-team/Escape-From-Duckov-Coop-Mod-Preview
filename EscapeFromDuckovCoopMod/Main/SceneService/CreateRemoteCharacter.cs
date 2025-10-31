@@ -39,12 +39,12 @@ namespace EscapeFromDuckovCoopMod
         private static NetPeer connectedPeer => Service?.connectedPeer;
         private static PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private static bool networkStarted => Service != null && Service.networkStarted;
-        private static Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private static Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private static Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private static Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private static Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
-        public static async UniTask<GameObject> CreateRemoteCharacterAsync(NetPeer peer, Vector3 position, Quaternion rotation, string customFaceJson)
+        public static async UniTask<GameObject> CreateRemoteCharacterAsync(string endPoint, Vector3 position, Quaternion rotation, string customFaceJson)
         {
-            if (remoteCharacters.ContainsKey(peer) && remoteCharacters[peer] != null) return null;
+            if (remoteCharacters.ContainsKey(endPoint) && remoteCharacters[endPoint] != null) return null;
 
             var levelManager = LevelManager.Instance;
             if (levelManager == null || levelManager.MainCharacter == null) return null;
@@ -103,13 +103,13 @@ namespace EscapeFromDuckovCoopMod
             if (h) h.autoInit = false;            // ★ 阻止 Start()->Init() 把血直接回满
             instance.AddComponent<AutoRequestHealthBar>(); // 你已有就不要重复
                                                            // 主机创建完后立刻挂监听并推一次
-            HealthTool.Server_HookOneHealth(peer, instance);
+            HealthTool.Server_HookOneHealth(endPoint, instance);
             instance.AddComponent<HostForceHealthBar>();
 
             NetInterpUtil.Attach(instance)?.Push(position, rotation);
             AnimInterpUtil.Attach(instance); // 先挂上，样本由后续网络包填
             cmc.gameObject.SetActive(false);
-            remoteCharacters[peer] = instance;
+            remoteCharacters[endPoint] = instance;
             cmc.gameObject.SetActive(true);
             return instance;
         }

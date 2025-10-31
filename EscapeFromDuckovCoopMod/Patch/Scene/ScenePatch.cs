@@ -90,7 +90,7 @@ namespace EscapeFromDuckovCoopMod
                 //try
                 //{
                 //    // Host 的 EndPoint 在初始化时就是 "Host:{port}"（见d1 Mod.cs.InitializeLocalPlayer）
-                //    string hostKey = $"Host:{mod.port}";
+                //    string hostKey = "Host:" + mod.port;
 
                 //    if (mod.clientRemoteCharacters != null &&
                 //        mod.clientRemoteCharacters.TryGetValue(hostKey, out var hostProxy) &&
@@ -112,11 +112,11 @@ namespace EscapeFromDuckovCoopMod
 
                 //if (allowClientVote)
                 //{
-                //    Debug.Log($"[SCENE] 客户端放行切图（允许投票）：target={targetId}, hostMissing={hostMissing}, hostNotInGame={hostNotInGame}, hostSceneDiff={hostSceneDiff}");
+                //    Debug.Log("[SCENE] 客户端放行切图（允许投票）：target=" + targetId + ", hostMissing=" + hostMissing + ", hostNotInGame=" + hostNotInGame + ", hostSceneDiff=" + hostSceneDiff);
                 //    mod.Client_RequestBeginSceneVote(targetId, curtainGuid, notifyEvac, save, useLoc, locationName);
                 //    return false;
                 //}
-                Debug.Log($"[SCENE] 客户端放行切图（允许投票）：target={targetId}");
+                Debug.Log("[SCENE] 客户端放行切图（允许投票）：target=" + targetId);
                 return false;
             }
         }

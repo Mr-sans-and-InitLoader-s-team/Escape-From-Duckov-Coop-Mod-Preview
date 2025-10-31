@@ -137,18 +137,45 @@ namespace EscapeFromDuckovCoopMod
             w.Put(COOPManager.destructible._deadDestructibleIds.Count);
             foreach (var id in COOPManager.destructible._deadDestructibleIds) w.Put(id);
 
-            if (target != null) target.Send(w, DeliveryMethod.ReliableOrdered);
-            else netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            if (target != null)
+            {
+                target.Send(w, DeliveryMethod.ReliableOrdered);
+            }
+            else if (netManager != null)
+            {
+                netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.BroadcastData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
 
         // ========== 环境同步：客户端请求 ==========
         public void Client_RequestEnvSync()
         {
-            if (IsServer || connectedPeer == null) return;
+            if (IsServer) return;
+            
             var w = new NetDataWriter();
             w.Put((byte)Op.ENV_SYNC_REQUEST);
-            connectedPeer.Send(w, DeliveryMethod.Sequenced);
+            
+            if (connectedPeer != null)
+            {
+                connectedPeer.Send(w, DeliveryMethod.Sequenced);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.SendData(w.Data, w.Length, DeliveryMethod.Sequenced);
+                }
+            }
         }
 
         // ========== 环境同步：客户端应用 ==========

@@ -36,8 +36,8 @@ namespace EscapeFromDuckovCoopMod
         private NetPeer connectedPeer => Service?.connectedPeer;
         private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private bool networkStarted => Service != null && Service.networkStarted;
-        private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         private const float WeaponApplyDebounce = 0.20f; // 200ms 去抖窗口
 
@@ -49,9 +49,9 @@ namespace EscapeFromDuckovCoopMod
       
 
 
-        public async UniTask ApplyEquipmentUpdate(NetPeer peer, int slotHash, string itemId)
+        public async UniTask ApplyEquipmentUpdate(string endPoint, int slotHash, string itemId)
         {
-            if (!remoteCharacters.TryGetValue(peer, out var remoteObj) || remoteObj == null) return;
+            if (!remoteCharacters.TryGetValue(endPoint, out var remoteObj) || remoteObj == null) return;
 
             var characterModel = remoteObj.GetComponent<CharacterMainControl>().characterModel;
             if (characterModel == null) return;
@@ -76,11 +76,11 @@ namespace EscapeFromDuckovCoopMod
             {
                 if (!string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var ids))
                 {
-                    Debug.Log($"尝试更新装备: {peer.EndPoint}, Slot={slotHash}, ItemId={itemId}");
+                    Debug.Log("尝试更新装备: " + endPoint + ", Slot=" + slotHash + ", ItemId=" + itemId);
                     var item = await COOPManager.GetItemAsync(ids);
                     if (item == null)
                     {
-                        Debug.LogWarning($"无法获取物品: ItemId={itemId}，槽位 {slotHash} 未更新");
+                        Debug.LogWarning("无法获取物品: ItemId=" + itemId + "，槽位 " + slotHash + " 未更新");
                     }
                     if (slotHash == 100)
                     {
@@ -123,20 +123,20 @@ namespace EscapeFromDuckovCoopMod
             }
             catch (Exception ex)
             {
-                Debug.LogError($"更新装备失败(主机): {peer.EndPoint}, SlotHash={slotHash}, ItemId={itemId}, 错误: {ex.Message}");
+                Debug.LogError("更新装备失败(主机): " + endPoint + ", SlotHash=" + slotHash + ", ItemId=" + itemId + ", 错误: " + ex.Message);
             }
         }
 
-        public async UniTask ApplyWeaponUpdate(NetPeer peer, int slotHash, string itemId)
+        public async UniTask ApplyWeaponUpdate(string endPoint, int slotHash, string itemId)
         {
-            if (!remoteCharacters.TryGetValue(peer, out var remoteObj) || remoteObj == null) return;
+            if (!remoteCharacters.TryGetValue(endPoint, out var remoteObj) || remoteObj == null) return;
 
             var cm = remoteObj.GetComponent<CharacterMainControl>();
             var model = cm ? cm.characterModel : null;
             if (model == null) return;
 
-            // —— 幂等/去抖：同一 peer、同一槽、同一 item 在 200ms 内重复到达则忽略 ——
-            string key = $"{peer?.Id ?? -1}:{slotHash}";
+            // —— 幂等/去抖：同一 endPoint、同一槽、同一 item 在 200ms 内重复到达则忽略 ——
+            string key = (endPoint ?? "null") + ":" + slotHash;
             string want = itemId ?? string.Empty;
             if (_lastWeaponAppliedByPeer.TryGetValue(key, out var last) && last == want)
             {
@@ -188,7 +188,7 @@ namespace EscapeFromDuckovCoopMod
                                      (model.MeleeWeaponSocket ? model.MeleeWeaponSocket.Find("Muzzle") : null);
                             }
 
-                            if (playerStatuses.TryGetValue(peer, out var ps) && ps != null && !string.IsNullOrEmpty(ps.EndPoint) && gun)
+                            if (playerStatuses.TryGetValue(endPoint, out var ps) && ps != null && !string.IsNullOrEmpty(ps.EndPoint) && gun)
                             {
                                 LoaclPlayerManager.Instance._gunCacheByShooter[ps.EndPoint] = (gun, mz);
                             }
@@ -212,13 +212,13 @@ namespace EscapeFromDuckovCoopMod
             }
             catch (Exception ex)
             {
-                Debug.LogError($"更新武器失败(主机): {peer?.EndPoint}, Slot={socket}, ItemId={itemId}, 错误: {ex.Message}");
+                Debug.LogError("更新武器失败(主机): " + endPoint + ", Slot=" + socket + ", ItemId=" + itemId + ", 错误: " + ex.Message);
             }
         }
 
-        public void PlayShootAnimOnServerPeer(NetPeer peer)
+        public void PlayShootAnimOnServerPeer(string endPoint)
         {
-            if (!remoteCharacters.TryGetValue(peer, out var who) || !who) return;
+            if (!remoteCharacters.TryGetValue(endPoint, out var who) || !who) return;
             var animCtrl = who.GetComponent<CharacterMainControl>().characterModel.GetComponentInParent<CharacterAnimationControl_MagicBlend>();
             if (animCtrl && animCtrl.animator)
             {

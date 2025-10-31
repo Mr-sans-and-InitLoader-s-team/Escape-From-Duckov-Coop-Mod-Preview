@@ -31,6 +31,7 @@ namespace EscapeFromDuckovCoopMod
     public class SceneNet:MonoBehaviour
     {
         private NetService Service => NetService.Instance;
+        private EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService HybridService => EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
         public static SceneNet Instance;
 
         private bool IsServer => Service != null && Service.IsServer;
@@ -40,8 +41,8 @@ namespace EscapeFromDuckovCoopMod
         private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
         private bool networkStarted => Service != null && Service.networkStarted;
         private int port => Service?.port ?? 0;
-        private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-        private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+        private Dictionary<string, GameObject> remoteCharacters => Service?.remoteCharacters;
+        private Dictionary<string, PlayerStatus> playerStatuses => Service?.playerStatuses;
         private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
         public string _sceneReadySidSent;
         public bool sceneVoteActive = false;
@@ -73,6 +74,31 @@ namespace EscapeFromDuckovCoopMod
         // 记录已经“举手”的客户端（用 EndPoint 字符串，与现有 PlayerStatus 保持一致）
         public readonly HashSet<string> _srvGateReadyPids = new HashSet<string>();
 
+        private void SendToEndPoint(string targetEndPoint, byte[] data, int length, DeliveryMethod method)
+        {
+            if (string.IsNullOrEmpty(targetEndPoint)) return;
+            
+            if (netManager != null)
+            {
+                foreach (var peer in netManager.ConnectedPeerList)
+                {
+                    if (peer.EndPoint.ToString() == targetEndPoint)
+                    {
+                        peer.Send(data, method);
+                        return;
+                    }
+                }
+            }
+            else if (HybridService != null && HybridService.CurrentMode == EscapeFromDuckovCoopMod.Net.Steam.NetworkMode.SteamP2P)
+            {
+                if (ulong.TryParse(targetEndPoint, out ulong steamId))
+                {
+                    var csid = new Steamworks.CSteamID(steamId);
+                    EscapeFromDuckovCoopMod.Net.Steam.SteamNetworkingSocketsManager.Instance?.SendPacket(csid, data, length);
+                }
+            }
+        }
+
         public void Init()
         {
             Instance = this;
@@ -81,6 +107,12 @@ namespace EscapeFromDuckovCoopMod
         public void TrySendSceneReadyOnce()
         {
             if (!networkStarted) return;
+
+            if (writer == null)
+            {
+                Debug.LogWarning("[SceneNet] writer is null, cannot send SCENE_READY");
+                return;
+            }
 
             // 只有真正进入地图（拿到 SceneId）才上报
             if (!LoaclPlayerManager.Instance.ComputeIsInGame(out var sid) || string.IsNullOrEmpty(sid)) return;
@@ -92,8 +124,8 @@ namespace EscapeFromDuckovCoopMod
             var faceJson = CustomFace.LoadLocalCustomFaceJson() ?? string.Empty;
 
             writer.Reset();
-            writer.Put((byte)Op.SCENE_READY);    // 你的枚举里已有 23 = SCENE_READY
-            writer.Put(localPlayerStatus?.EndPoint ?? (IsServer ? $"Host:{port}" : "Client:Unknown"));
+            writer.Put((byte)Op.SCENE_READY);
+            writer.Put(localPlayerStatus?.EndPoint ?? (IsServer ? "Host:" + port : "Client:Unknown"));
             writer.Put(sid);
             writer.PutVector3(pos);
             writer.PutQuaternion(rot);
@@ -159,12 +191,12 @@ namespace EscapeFromDuckovCoopMod
         }
 
         // ===== 主机：有人（或主机自己）切换准备 =====
-        public void Server_OnSceneReadySet(NetPeer fromPeer, bool ready)
+        public void Server_OnSceneReadySet(string endPoint, bool ready)
         {
             if (!IsServer) return;
 
-            // 统一 pid（fromPeer==null 代表主机自己）
-            string pid = (fromPeer != null) ? NetService.Instance.GetPlayerId(fromPeer) : NetService.Instance.GetPlayerId(null);
+            // 统一 pid（endPoint==null 代表主机自己）
+            string pid = (endPoint != null) ? NetService.Instance.GetPlayerId(endPoint) : NetService.Instance.GetPlayerId(null);
 
             if (!sceneVoteActive) return;
             if (!sceneReady.ContainsKey(pid)) return; // 不在这轮投票里，丢弃
@@ -191,10 +223,10 @@ namespace EscapeFromDuckovCoopMod
         {
             // ——读包：严格按顺序——
             if (!EnsureAvailable(r, 2)) { Debug.LogWarning("[SCENE] vote: header too short"); return; }
-            byte ver = r.GetByte(); // switch 里已经吃掉了 op，这里是 ver
+            byte ver = r.GetByte();
             if (ver != 1 && ver != 2)
             {
-                Debug.LogWarning($"[SCENE] vote: unsupported ver={ver}");
+                Debug.LogWarning("[SCENE] vote: unsupported ver=" + ver);
                 return;
             }
 
@@ -229,7 +261,7 @@ namespace EscapeFromDuckovCoopMod
             sceneParticipantIds.Clear();
             for (int i = 0; i < cnt; i++)
             {
-                if (!TryGetString(r, out var pid)) { Debug.LogWarning($"[SCENE] vote: bad pid[{i}]"); return; }
+                if (!TryGetString(r, out var pid)) { Debug.LogWarning("[SCENE] vote: bad pid[" + i + "]"); return; }
                 sceneParticipantIds.Add(pid ?? "");
             }
 
@@ -243,7 +275,7 @@ namespace EscapeFromDuckovCoopMod
             {
                 if (!string.Equals(hostSceneId, mySceneId, StringComparison.Ordinal))
                 {
-                    Debug.Log($"[SCENE] vote: ignore (diff scene) host='{hostSceneId}' me='{mySceneId}'");
+                    Debug.Log("[SCENE] vote: ignore (diff scene) host='" + hostSceneId + "' me='" + mySceneId + "'");
                     return;
                 }
             }
@@ -252,11 +284,17 @@ namespace EscapeFromDuckovCoopMod
             if (sceneParticipantIds.Count > 0 && localPlayerStatus != null)
             {
                 var me = localPlayerStatus.EndPoint ?? string.Empty;
+                Debug.Log("[SCENE] vote: 检查参与者白名单，我的EndPoint='" + me + "', 参与者列表数量=" + sceneParticipantIds.Count);
+                for (int i = 0; i < sceneParticipantIds.Count; i++)
+                {
+                    Debug.Log("[SCENE]   参与者[" + i + "]: '" + sceneParticipantIds[i] + "'");
+                }
                 if (!sceneParticipantIds.Contains(me))
                 {
-                    Debug.Log($"[SCENE] vote: ignore (not in participants) me='{me}'");
+                    Debug.Log("[SCENE] vote: ignore (not in participants) me='" + me + "'");
                     return;
                 }
+                Debug.Log("[SCENE] vote: 白名单检查通过！");
             }
 
             // ——赋值到状态 & 初始化就绪表——
@@ -271,7 +309,7 @@ namespace EscapeFromDuckovCoopMod
             sceneReady.Clear();
             foreach (var pid in sceneParticipantIds) sceneReady[pid] = false;
 
-            Debug.Log($"[SCENE] 收到投票 v{ver}: target='{sceneTargetId}', hostScene='{hostSceneId}', myScene='{mySceneId}', players={cnt}");
+            Debug.Log("[SCENE] 收到投票 v" + ver + ": target='" + sceneTargetId + "', hostScene='" + hostSceneId + "', myScene='" + mySceneId + "', players=" + cnt);
 
             // TODO：在这里弹出你的投票 UI（如果之前就是这里弹的，维持不变）
             // ShowSceneVoteUI(sceneTargetId, sceneLocationName, sceneParticipantIds) 等
@@ -292,7 +330,7 @@ namespace EscapeFromDuckovCoopMod
         {
             if (!EnsureAvailable(r, 2)) { Debug.LogWarning("[SCENE] begin: header too short"); return; }
             byte ver = r.GetByte();
-            if (ver != 1) { Debug.LogWarning($"[SCENE] begin: unsupported ver={ver}"); return; }
+            if (ver != 1) { Debug.LogWarning("[SCENE] begin: unsupported ver=" + ver); return; }
 
             if (!TryGetString(r, out var id)) { Debug.LogWarning("[SCENE] begin: bad sceneId"); return; }
 
@@ -329,14 +367,26 @@ namespace EscapeFromDuckovCoopMod
 
         public void Client_SendReadySet(bool ready)
         {
-            if (IsServer || connectedPeer == null) return;
+            if (IsServer) return;
 
             var w = new NetDataWriter();
             w.Put((byte)Op.SCENE_READY_SET);
             w.Put(ready);
-            connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
 
-            // ★ 本地乐观更新：立即把自己的 ready 写进就绪表，以免 UI 卡在“未准备”
+            if (connectedPeer != null)
+            {
+                connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            }
+            else if (HybridService != null && HybridService.IsConnected)
+            {
+                HybridService.SendData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                return;
+            }
+
+            // ★ 本地乐观更新：立即把自己的 ready 写进就绪表，以免 UI 卡在"未准备"
             if (sceneVoteActive && localPlayerStatus != null)
             {
                 var me = localPlayerStatus.EndPoint ?? string.Empty;
@@ -365,7 +415,7 @@ namespace EscapeFromDuckovCoopMod
                         {
                             ii.LoadScene();
                             launched = true;
-                            Debug.Log($"[SCENE] Fallback via SceneLoaderProxy -> {targetSceneId}");
+                            Debug.Log("[SCENE] Fallback via SceneLoaderProxy -> " + targetSceneId);
                             break;
                         }
                     }
@@ -377,7 +427,7 @@ namespace EscapeFromDuckovCoopMod
 
                 if (!launched)
                 {
-                    Debug.LogWarning($"[SCENE] Local load fallback failed: no proxy for '{targetSceneId}'");
+                    Debug.LogWarning("[SCENE] Local load fallback failed: no proxy for '" + targetSceneId + "'");
                 }
             }
             catch (Exception e)
@@ -395,37 +445,37 @@ namespace EscapeFromDuckovCoopMod
             }
         }
 
-        public void Server_HandleSceneReady(NetPeer fromPeer, string playerId, string sceneId, Vector3 pos, Quaternion rot, string faceJson)
+        public void Server_HandleSceneReady(string endPoint, string playerId, string sceneId, Vector3 pos, Quaternion rot, string faceJson)
         {
-            if (fromPeer != null) SceneM._srvPeerScene[fromPeer] = sceneId;
+            if (endPoint != null) SceneM._srvPeerScene[endPoint] = sceneId;
 
-            // 1) 回给 fromPeer：同图的所有已知玩家
+            // 1) 回给 endPoint：同图的所有已知玩家
             foreach (var kv in SceneM._srvPeerScene)
             {
-                var other = kv.Key; if (other == fromPeer) continue;
+                var otherEndPoint = kv.Key; if (otherEndPoint == endPoint) continue;
                 if (kv.Value == sceneId)
                 {
                     // 取 other 的快照（尽量从 playerStatuses 或远端对象抓取）
                     Vector3 opos = Vector3.zero; Quaternion orot = Quaternion.identity; string oface = "";
-                    if (playerStatuses.TryGetValue(other, out var s) && s != null)
+                    if (playerStatuses.TryGetValue(otherEndPoint, out var s) && s != null)
                     {
                         opos = s.Position; orot = s.Rotation; oface = s.CustomFaceJson ?? "";
                     }
                     var w = new NetDataWriter();
                     w.Put((byte)Op.REMOTE_CREATE);
-                    w.Put(playerStatuses[other].EndPoint); // other 的 id
+                    w.Put(playerStatuses[otherEndPoint].EndPoint); // other 的 id
                     w.Put(sceneId);
                     w.PutVector3(opos);
                     w.PutQuaternion(orot);
                     w.Put(oface);
-                    fromPeer?.Send(w, DeliveryMethod.ReliableOrdered);
+                    SendToEndPoint(endPoint, w.Data, w.Length, DeliveryMethod.ReliableOrdered);
                 }
             }
 
-            // 2) 广播给同图的其他人：创建 fromPeer
+            // 2) 广播给同图的其他人：创建当前玩家
             foreach (var kv in SceneM._srvPeerScene)
             {
-                var other = kv.Key; if (other == fromPeer) continue;
+                var otherEndPoint = kv.Key; if (otherEndPoint == endPoint) continue;
                 if (kv.Value == sceneId)
                 {
                     var w = new NetDataWriter();
@@ -434,34 +484,34 @@ namespace EscapeFromDuckovCoopMod
                     w.Put(sceneId);
                     w.PutVector3(pos);
                     w.PutQuaternion(rot);
-                    string useFace = !string.IsNullOrEmpty(faceJson) ? faceJson : ((playerStatuses.TryGetValue(fromPeer, out var ss) && !string.IsNullOrEmpty(ss.CustomFaceJson)) ? ss.CustomFaceJson : "");
+                    string useFace = !string.IsNullOrEmpty(faceJson) ? faceJson : ((playerStatuses.TryGetValue(endPoint, out var ss) && !string.IsNullOrEmpty(ss.CustomFaceJson)) ? ss.CustomFaceJson : "");
                     w.Put(useFace);
-                    other.Send(w, DeliveryMethod.ReliableOrdered);
+                    SendToEndPoint(otherEndPoint, w.Data, w.Length, DeliveryMethod.ReliableOrdered);
                 }
             }
 
             // 3) 对不同图的人，互相 DESPAWN
             foreach (var kv in SceneM._srvPeerScene)
             {
-                var other = kv.Key; if (other == fromPeer) continue;
+                var otherEndPoint = kv.Key; if (otherEndPoint == endPoint) continue;
                 if (kv.Value != sceneId)
                 {
                     var w1 = new NetDataWriter();
                     w1.Put((byte)Op.REMOTE_DESPAWN);
                     w1.Put(playerId);
-                    other.Send(w1, DeliveryMethod.ReliableOrdered);
+                    SendToEndPoint(otherEndPoint, w1.Data, w1.Length, DeliveryMethod.ReliableOrdered);
 
                     var w2 = new NetDataWriter();
                     w2.Put((byte)Op.REMOTE_DESPAWN);
-                    w2.Put(playerStatuses[other].EndPoint);
-                    fromPeer?.Send(w2, DeliveryMethod.ReliableOrdered);
+                    w2.Put(playerStatuses[otherEndPoint].EndPoint);
+                    SendToEndPoint(endPoint, w2.Data, w2.Length, DeliveryMethod.ReliableOrdered);
                 }
             }
 
-            // 4) （可选）主机本地也显示客户端：在主机场景创建“该客户端”的远端克隆
-            if (remoteCharacters.TryGetValue(fromPeer, out var exists) == false || exists == null)
+            // 4) （可选）主机本地也显示客户端：在主机场景创建"该客户端"的远端克隆
+            if (remoteCharacters.TryGetValue(endPoint, out var exists) == false || exists == null)
             {
-               CreateRemoteCharacter.CreateRemoteCharacterAsync(fromPeer, pos, rot, faceJson).Forget();
+               CreateRemoteCharacter.CreateRemoteCharacterAsync(endPoint, pos, rot, faceJson).Forget();
             }
 
 
@@ -481,6 +531,12 @@ namespace EscapeFromDuckovCoopMod
             // 参与者（同图优先；拿不到 SceneId 的竞态由客户端再过滤）
             sceneParticipantIds.Clear();
             sceneParticipantIds.AddRange(CoopTool.BuildParticipantIds_Server());
+            
+            Debug.Log("[SCENE] 构建投票参与者列表，共 " + sceneParticipantIds.Count + " 个玩家");
+            for (int i = 0; i < sceneParticipantIds.Count; i++)
+            {
+                Debug.Log("[SCENE]   参与者[" + i + "]: " + sceneParticipantIds[i]);
+            }
 
             sceneVoteActive = true;
             localReady = false;
@@ -508,9 +564,16 @@ namespace EscapeFromDuckovCoopMod
             w.Put(sceneParticipantIds.Count);
             foreach (var pid in sceneParticipantIds) w.Put(pid);
 
-
-            netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
-            Debug.Log($"[SCENE] 投票开始 v2: target='{sceneTargetId}', hostScene='{hostSceneId}', loc='{sceneLocationName}', count={sceneParticipantIds.Count}");
+            if (netManager != null)
+            {
+                netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            }
+            else if (HybridService != null && HybridService.CurrentMode == EscapeFromDuckovCoopMod.Net.Steam.NetworkMode.SteamP2P)
+            {
+                byte[] data = w.CopyData();
+                HybridService.BroadcastData(data, data.Length, DeliveryMethod.ReliableOrdered);
+            }
+            Debug.Log("[SCENE] 投票开始 v2: target='" + sceneTargetId + "', hostScene='" + hostSceneId + "', loc='" + sceneLocationName + "', count=" + sceneParticipantIds.Count);
 
             // 如需“只发同图”，可以替换为下面这段（二选一）：
             /*
@@ -555,7 +618,14 @@ namespace EscapeFromDuckovCoopMod
             if (!string.IsNullOrEmpty(curtainGuid)) w.Put(curtainGuid);
             w.Put(locationName ?? string.Empty);
 
-            connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            if (connectedPeer != null)
+            {
+                connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            }
+            else if (HybridService != null && HybridService.IsConnected)
+            {
+                HybridService.SendData(w.Data, w.Length, DeliveryMethod.ReliableOrdered);
+            }
         }
 
         public UniTask AppendSceneGate(UniTask original)
@@ -660,24 +730,24 @@ namespace EscapeFromDuckovCoopMod
             {
                 foreach (var kv in playerStatuses)
                 {
-                    var peer = kv.Key;
+                    var endPoint = kv.Key;
                     var st = kv.Value;
-                    if (peer == null || st == null) continue;
+                    if (string.IsNullOrEmpty(endPoint) || st == null) continue;
                     if (_srvGateReadyPids.Contains(st.EndPoint))
-                        Server_SendGateRelease(peer, _srvGateSid);
+                        Server_SendGateRelease(endPoint, _srvGateSid);
                 }
             }
 
             // 主机不阻塞：之后若有 SCENE_GATE_READY 迟到，就在接收处即刻单独放行 目前不想去写也没啥毛病
         }
 
-        private void Server_SendGateRelease(NetPeer peer, string sid)
+        private void Server_SendGateRelease(string endPoint, string sid)
         {
-            if (peer == null) return;
+            if (string.IsNullOrEmpty(endPoint)) return;
             var w = new NetDataWriter();
             w.Put((byte)Op.SCENE_GATE_RELEASE);
             w.Put(sid ?? "");
-            peer.Send(w, DeliveryMethod.ReliableOrdered);
+            SendToEndPoint(endPoint, w.Data, w.Length, DeliveryMethod.ReliableOrdered);
         }
 
 

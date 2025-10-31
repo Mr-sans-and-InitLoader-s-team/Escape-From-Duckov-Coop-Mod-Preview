@@ -102,21 +102,21 @@ namespace EscapeFromDuckovCoopMod
                 var target = __instance.Master;                // 被加 Buff 的角色
                 if (target == null) return;
 
-                // 只给“这名远端玩家本人”发：在服务器的 remoteCharacters: NetPeer -> GameObject 中查找
-                NetPeer peer = null;
+                // 只给"这名远端玩家本人"发：在服务器的 remoteCharacters: string -> GameObject 中查找
+                string endPoint = null;
                 foreach (var kv in mod.remoteCharacters)
                 {
                     if (kv.Value == null) continue;
-                    if (kv.Value == target.gameObject) { peer = kv.Key; break; }
+                    if (kv.Value == target.gameObject) { endPoint = kv.Key; break; }
                 }
-                if (peer == null) return; // 非玩家，或者就是主机本地角色
+                if (string.IsNullOrEmpty(endPoint)) return; // 非玩家，或者就是主机本地角色
 
-                // 发一条“自加 Buff”消息（只给这名玩家）
+                // 发一条"自加 Buff"消息（只给这名玩家）
                 var w = new NetDataWriter();
                 w.Put((byte)Op.PLAYER_BUFF_SELF_APPLY); // 新 opcode（见 Mod.cs）
                 w.Put(overrideWeaponID);   // weaponTypeId：客户端可用它解析出正确的 buff prefab
                 w.Put(buffPrefab.ID);      // 兜底：buffId（若武器没法解析，就用 id 回退）
-                peer.Send(w, DeliveryMethod.ReliableOrdered);
+                CoopTool.SendToEndPoint(endPoint, w.Data, w.Length, DeliveryMethod.ReliableOrdered);
             }
         }
 
@@ -133,20 +133,20 @@ namespace EscapeFromDuckovCoopMod
                 var target = __instance.Master; // 被加 Buff 的角色
                 if (target == null) return;
 
-                // ① 原有：只通知“被命中的那位本人客户端”做自加（保证本地玩法效果）
-                NetPeer ownerPeer = null;
+                // ① 原有：只通知"被命中的那位本人客户端"做自加（保证本地玩法效果）
+                string ownerEndPoint = null;
                 foreach (var kv in mod.remoteCharacters)
                 {
                     if (kv.Value == null) continue;
-                    if (kv.Value == target.gameObject) { ownerPeer = kv.Key; break; }
+                    if (kv.Value == target.gameObject) { ownerEndPoint = kv.Key; break; }
                 }
-                if (ownerPeer != null)
+                if (!string.IsNullOrEmpty(ownerEndPoint))
                 {
                     var w = new NetDataWriter();
                     w.Put((byte)Op.PLAYER_BUFF_SELF_APPLY);
                     w.Put(overrideWeaponID);
                     w.Put(buffPrefab.ID);
-                    ownerPeer.Send(w, DeliveryMethod.ReliableOrdered);
+                    CoopTool.SendToEndPoint(ownerEndPoint, w.Data, w.Length, DeliveryMethod.ReliableOrdered);
                 }
 
                 // ② 如果“被命中者是主机本体”，就广播给所有客户端，让他们在“主机的代理对象”上也加 Buff（用于可见 FX）
@@ -155,7 +155,7 @@ namespace EscapeFromDuckovCoopMod
                     var w2 = new NetDataWriter();
                     w2.Put((byte)Op.HOST_BUFF_PROXY_APPLY);
                     // 用你们现有的玩家标识：Host 的 endPoint 已在 InitializeLocalPlayer 里设为 "Host:端口"
-                    w2.Put(mod.localPlayerStatus?.EndPoint ?? $"Host:{mod.port}");
+                    w2.Put(mod.localPlayerStatus?.EndPoint ?? ("Host:" + mod.port));
                     w2.Put(overrideWeaponID);
                     w2.Put(buffPrefab.ID);
                     mod.netManager.SendToAll(w2, DeliveryMethod.ReliableOrdered);

@@ -51,8 +51,8 @@ namespace EscapeFromDuckovCoopMod
         private static NetDataWriter Writer => Service?.writer;
         private static NetPeer ConnectedPeer => Service?.connectedPeer;
 
-        private static Dictionary<NetPeer, GameObject> RemoteCharacters => Service?.remoteCharacters;
-        private static Dictionary<NetPeer, PlayerStatus> PlayerStatuses => Service?.playerStatuses;
+        private static Dictionary<string, GameObject> RemoteCharacters => Service?.remoteCharacters;
+        private static Dictionary<string, PlayerStatus> PlayerStatuses => Service?.playerStatuses;
         private static Dictionary<string, GameObject> ClientRemoteCharacters => Service?.clientRemoteCharacters;
         private static int Port => Service != null ? Service.port : 0;
 
@@ -66,6 +66,35 @@ namespace EscapeFromDuckovCoopMod
 
         // 客户端：远端克隆未生成前收到的远端HP缓存
         public static readonly Dictionary<string, (float max, float cur)> _cliPendingRemoteHp = new Dictionary<string, (float max, float cur)>();
+
+        public static void SendToEndPoint(string targetEndPoint, byte[] data, int length, DeliveryMethod method)
+        {
+            if (string.IsNullOrEmpty(targetEndPoint) || data == null) return;
+
+            if (NetManager != null)
+            {
+                foreach (var peer in NetManager.ConnectedPeerList)
+                {
+                    if (peer.EndPoint.ToString() == targetEndPoint)
+                    {
+                        peer.Send(data, method);
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.CurrentMode == EscapeFromDuckovCoopMod.Net.Steam.NetworkMode.SteamP2P)
+                {
+                    if (ulong.TryParse(targetEndPoint, out ulong steamId))
+                    {
+                        var csid = new Steamworks.CSteamID(steamId);
+                        EscapeFromDuckovCoopMod.Net.Steam.SteamNetworkingSocketsManager.Instance?.SendPacket(csid, data, length);
+                    }
+                }
+            }
+        }
 
         public static void Init()
         {
@@ -218,7 +247,8 @@ namespace EscapeFromDuckovCoopMod
         public static CharacterMainControl TryGetRemoteCharacterForPeer(NetPeer peer)
         {
             var remotes = RemoteCharacters;
-            if (remotes != null && remotes.TryGetValue(peer, out var remoteObj) && remoteObj)
+            string endPoint = peer?.EndPoint?.ToString();
+            if (remotes != null && !string.IsNullOrEmpty(endPoint) && remotes.TryGetValue(endPoint, out var remoteObj) && remoteObj)
             {
                 var cm = remoteObj.GetComponent<CharacterMainControl>().characterModel;
                 if (cm != null) return cm.characterMainControl;

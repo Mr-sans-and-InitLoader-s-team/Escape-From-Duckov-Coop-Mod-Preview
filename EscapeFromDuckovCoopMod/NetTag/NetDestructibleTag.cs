@@ -53,7 +53,7 @@ namespace EscapeFromDuckovCoopMod
             int py = Mathf.RoundToInt(p.y * 100f);
             int pz = Mathf.RoundToInt(p.z * 100f);
 
-            string key = $"{sceneIndex}:{sb}:{px},{py},{pz}";
+            string key = sceneIndex + ":" + sb + ":" + px + "," + py + "," + pz;
 
             // FNV1a-32 可能有用 by:InitLoader 
             unchecked

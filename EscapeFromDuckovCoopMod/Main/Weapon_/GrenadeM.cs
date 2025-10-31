@@ -100,7 +100,19 @@ namespace EscapeFromDuckovCoopMod
             writer.Put(delayTime);
             writer.Put(isLandmine);
             writer.Put(landmineRange);
-            connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+            
+            if (connectedPeer != null)
+            {
+                connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+            }
+            else
+            {
+                var hybrid = EscapeFromDuckovCoopMod.Net.Steam.HybridNetworkService.Instance;
+                if (hybrid != null && hybrid.IsConnected)
+                {
+                    hybrid.SendData(writer.Data, writer.Length, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
 
         // 客户端：生成视觉手雷
@@ -160,7 +172,7 @@ namespace EscapeFromDuckovCoopMod
             var prefab = await EscapeFromDuckovCoopMod.COOPManager.GetGrenadePrefabByItemIdAsync(typeId);
             if (!prefab)
             {
-                UnityEngine.Debug.LogError($"[CLIENT] grenade prefab exact resolve failed: typeId={typeId}");
+                UnityEngine.Debug.LogError("[CLIENT] grenade prefab exact resolve failed: typeId=" + typeId);
                 return;
             }
 
@@ -187,7 +199,7 @@ namespace EscapeFromDuckovCoopMod
             var prefab = await EscapeFromDuckovCoopMod.COOPManager.GetGrenadePrefabByItemIdAsync(p.typeId);
             if (!prefab)
             {
-                UnityEngine.Debug.LogError($"[CLIENT] grenade prefab exact resolve failed: typeId={p.typeId}");
+                UnityEngine.Debug.LogError("[CLIENT] grenade prefab exact resolve failed: typeId=" + p.typeId);
                 return;
             }
 
@@ -226,7 +238,7 @@ namespace EscapeFromDuckovCoopMod
                 // 过期就丢弃
                 if (Time.unscaledTime > p.expireAt)
                 {
-                    UnityEngine.Debug.LogError($"[CLIENT] grenade prefab resolve timeout: typeId={p.typeId}");
+                    UnityEngine.Debug.LogError("[CLIENT] grenade prefab resolve timeout: typeId=" + p.typeId);
                     pending.RemoveAt(i);
                     continue;
                 }

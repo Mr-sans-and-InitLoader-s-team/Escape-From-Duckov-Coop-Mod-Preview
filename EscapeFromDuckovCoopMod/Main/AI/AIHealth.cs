@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -83,7 +83,7 @@ public class AIHealth
 
         try
         {
-            var prev = 0f;
+            var prev = 0f; 
             _cliLastAiHp.TryGetValue(aiId, out prev);
             _cliLastAiHp[aiId] = cur;
 

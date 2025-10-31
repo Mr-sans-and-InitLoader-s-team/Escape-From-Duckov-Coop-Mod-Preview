@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -13,6 +13,9 @@
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
+
+using Duckov.Economy;
+using EscapeFromDuckovCoopMod.Main.Map;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -31,7 +34,7 @@ public class ModUI : MonoBehaviour
     private string _manualPort = "9050";
     private int _port = 9050;
     private string _status = "";
-    private Rect mainWindowRect = new(10, 10, 400, 700);
+    private Rect mainWindowRect = new(10, 10, 400, 1000);
     private Vector2 playerStatusScrollPos = Vector2.zero;
     private Rect playerStatusWindowRect = new(420, 10, 300, 400);
 
@@ -82,6 +85,10 @@ public class ModUI : MonoBehaviour
     private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
     private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
     private Dictionary<string, PlayerStatus> clientPlayerStatuses => Service?.clientPlayerStatuses;
+
+    private List<MapInfo> mapList;
+
+    private string mapIndex = "1";
 
     void Update()
     {
@@ -252,33 +259,32 @@ public class ModUI : MonoBehaviour
                 }
             }
         }
-        //if (GUILayout.Button("[Debug] 所有maplist"))
-        //{
-        //    const string keyword = "MapSelectionEntry";
 
-        //    var trs = Object.FindObjectsByType<Transform>(
-        //        FindObjectsInactive.Include, FindObjectsSortMode.None);
+        if (GUILayout.Button("所有maplist")) {
+            MapManager mgr = MapManager.Instance;
+            mapList = mgr.GetMapList();
+        }
 
-        //    var gos = trs
-        //        .Select(t => t.gameObject)
-        //        .Where(go => go.name.IndexOf(keyword, System.StringComparison.OrdinalIgnoreCase) >= 0)
-        //        .ToList();
+        if (mapList != null)
+        {
+            foreach (var map in mapList)
+            {
+                GUILayout.Label(map.Name);
+            }
+        }
 
-        //    foreach (var i in gos)
-        //    {
-        //        try
-        //        {
-        //            var map = i.GetComponentInChildren<MapSelectionEntry>();
-        //            if (map != null)
-        //            {
-        //                Debug.Log($"BeaconIndex {map.BeaconIndex}" + $" SceneID {map.SceneID}" + $" name {map.name}");
-        //            }
-        //        }
-        //        catch { continue; }
-        //    }
 
-        //}
+        GUILayout.Label("地图序号:", GUILayout.Width(40));
+        mapIndex = GUILayout.TextField(mapIndex, GUILayout.Width(150));
 
+        if (GUILayout.Button("设置地图"))
+        {
+            if (int.TryParse(mapIndex, out var i))
+            {
+                MapManager mgr = MapManager.Instance;
+                mgr.SetDefaultMap(mapList[i].Reference);
+            }
+        }
 
         GUILayout.EndVertical();
         GUI.DragWindow();

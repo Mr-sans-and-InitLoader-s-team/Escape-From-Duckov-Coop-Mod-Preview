@@ -1,4 +1,4 @@
-namespace EscapeFromDuckovCoopMod;
+﻿namespace EscapeFromDuckovCoopMod;
 
 /// <summary>
 /// 阻止客户端玩家死亡时掉落所有物品
@@ -154,11 +154,11 @@ internal static class PreventTombSpawnPatch
 /// <summary>
 /// 阻止客户端的死亡事件补发，这是联机模组触发死亡的另一个路径
 /// </summary>
-[HarmonyPatch(typeof(LoaclPlayerManager), "Client_EnsureSelfDeathEvent")]
+[HarmonyPatch(typeof(LocalPlayerManager), "Client_EnsureSelfDeathEvent")]
 internal static class PreventClientEnsureSelfDeathEventPatch
 {
     [HarmonyPrefix]
-    private static bool PreventEnsureSelfDeathEvent(LoaclPlayerManager __instance, Health h, CharacterMainControl cmc)
+    private static bool PreventEnsureSelfDeathEvent(LocalPlayerManager __instance, Health h, CharacterMainControl cmc)
     {
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) 

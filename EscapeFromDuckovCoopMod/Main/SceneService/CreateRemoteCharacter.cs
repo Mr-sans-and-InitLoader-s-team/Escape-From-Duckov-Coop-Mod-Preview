@@ -114,7 +114,7 @@ public static class CreateRemoteCharacter
         if (NetService.Instance.IsSelfId(playerId)) return; // ★ 不给自己创建“远程自己”
         if (clientRemoteCharacters.ContainsKey(playerId) && clientRemoteCharacters[playerId] != null) return;
 
-        Debug.Log(playerId + " CreateRemoteCharacterForClient");
+
 
         var levelManager = LevelManager.Instance;
         if (levelManager == null || levelManager.MainCharacter == null) return;

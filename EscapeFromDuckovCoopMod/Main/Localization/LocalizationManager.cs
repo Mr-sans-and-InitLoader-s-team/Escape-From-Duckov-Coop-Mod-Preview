@@ -70,6 +70,8 @@ namespace EscapeFromDuckovCoopMod
             var systemLang = LocalizationManager.CurrentLanguage;
             lastSystemLanguage = systemLang;
 
+            Debug.Log($"[CoopLocalization] Detected system language: {systemLang}");
+
             switch (systemLang)
             {
                 case SystemLanguage.ChineseSimplified:
@@ -89,6 +91,7 @@ namespace EscapeFromDuckovCoopMod
                     break;
             }
 
+            Debug.Log($"[CoopLocalization] Selected language code: {currentLanguageCode}");
             LoadTranslations(currentLanguageCode);
         }
 
@@ -104,6 +107,26 @@ namespace EscapeFromDuckovCoopMod
                 // Mod 폴더 경로 찾기
                 string modPath = Path.GetDirectoryName(typeof(CoopLocalization).Assembly.Location);
                 string localizationPath = Path.Combine(modPath, "Localization", $"{languageCode}.json");
+
+                Debug.Log($"[CoopLocalization] Attempting to load translations from: {localizationPath}");
+                Debug.Log($"[CoopLocalization] Mod path: {modPath}");
+                Debug.Log($"[CoopLocalization] Language code: {languageCode}");
+
+                // 列出Localization目录的内容（如果存在）
+                string localizationDir = Path.Combine(modPath, "Localization");
+                if (Directory.Exists(localizationDir))
+                {
+                    var files = Directory.GetFiles(localizationDir, "*.json");
+                    Debug.Log($"[CoopLocalization] Found {files.Length} JSON files in Localization directory:");
+                    foreach (var file in files)
+                    {
+                        Debug.Log($"[CoopLocalization] - {Path.GetFileName(file)}");
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"[CoopLocalization] Localization directory does not exist: {localizationDir}");
+                }
 
                 // JSON 파일이 없으면 폴백으로 영어 사용
                 if (!File.Exists(localizationPath))
@@ -152,10 +175,13 @@ namespace EscapeFromDuckovCoopMod
 
                 // ] 찾기 (마지막)
                 int arrayEnd = json.LastIndexOf(']');
-                if (arrayEnd == -1) return;
+                if (arrayEnd == -1 || arrayEnd <= arrayStart) return;
 
                 // 각 엔트리 파싱
-                string arrayContent = json.Substring(arrayStart + 1, arrayEnd - arrayStart - 1);
+                int contentLength = arrayEnd - arrayStart - 1;
+                if (contentLength <= 0) return;
+                
+                string arrayContent = json.Substring(arrayStart + 1, contentLength);
 
                 // { } 블록 단위로 분리
                 int braceCount = 0;
@@ -207,10 +233,14 @@ namespace EscapeFromDuckovCoopMod
                     if (keyValueStart != -1)
                     {
                         int keyQuoteStart = entry.IndexOf('\"', keyValueStart);
-                        int keyQuoteEnd = entry.IndexOf('\"', keyQuoteStart + 1);
-                        if (keyQuoteStart != -1 && keyQuoteEnd != -1)
+                        int keyQuoteEnd = keyQuoteStart != -1 ? entry.IndexOf('\"', keyQuoteStart + 1) : -1;
+                        if (keyQuoteStart != -1 && keyQuoteEnd != -1 && keyQuoteEnd > keyQuoteStart)
                         {
-                            key = entry.Substring(keyQuoteStart + 1, keyQuoteEnd - keyQuoteStart - 1);
+                            int keyLength = keyQuoteEnd - keyQuoteStart - 1;
+                            if (keyLength > 0)
+                            {
+                                key = entry.Substring(keyQuoteStart + 1, keyLength);
+                            }
                         }
                     }
                 }
@@ -223,10 +253,14 @@ namespace EscapeFromDuckovCoopMod
                     if (valueValueStart != -1)
                     {
                         int valueQuoteStart = entry.IndexOf('\"', valueValueStart);
-                        int valueQuoteEnd = entry.IndexOf('\"', valueQuoteStart + 1);
-                        if (valueQuoteStart != -1 && valueQuoteEnd != -1)
+                        int valueQuoteEnd = valueQuoteStart != -1 ? entry.IndexOf('\"', valueQuoteStart + 1) : -1;
+                        if (valueQuoteStart != -1 && valueQuoteEnd != -1 && valueQuoteEnd > valueQuoteStart)
                         {
-                            value = entry.Substring(valueQuoteStart + 1, valueQuoteEnd - valueQuoteStart - 1);
+                            int valueLength = valueQuoteEnd - valueQuoteStart - 1;
+                            if (valueLength >= 0) // 允许空字符串
+                            {
+                                value = entry.Substring(valueQuoteStart + 1, valueLength);
+                            }
                         }
                     }
                 }

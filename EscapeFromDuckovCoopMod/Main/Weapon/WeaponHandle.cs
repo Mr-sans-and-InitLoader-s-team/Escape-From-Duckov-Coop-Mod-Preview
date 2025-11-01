@@ -201,6 +201,7 @@ public class WeaponHandle
         w.PutDir(finalDir);
         w.Put(speed);
         w.Put(distance);
+        w.Put(true); // remote客户端生成假子弹
 
         var payloadCtx = new ProjectileContext();
 
@@ -301,6 +302,22 @@ public class WeaponHandle
         var dir = r.GetDir();
         var speed = r.GetFloat();
         var distance = r.GetFloat();
+
+        var isFake = true;
+        if (r.AvailableBytes > 0)
+        {
+            try
+            {
+                isFake = r.GetBool();
+            }
+            catch
+            {
+                isFake = true;
+            }
+        }
+
+        if (NetService.Instance.IsSelfId(shooterId))
+            return;
 
         // 尝试找到“开火者”的枪口（仅用于起点兜底/特效）
         CharacterMainControl shooterCMC = null;
@@ -447,6 +464,16 @@ public class WeaponHandle
             {
             }
 
+        if (isFake)
+        {
+            ctx.damage = 0f;
+            ctx.explosionDamage = 0f;
+            ctx.explosionRange = 0f;
+            ctx.buffChance = 0f;
+            ctx.bleedChance = 0f;
+            ctx.penetrate = 0;
+        }
+
         // 生成弹丸（客户端只做可视；爆炸逻辑由 Projectile 基于 ctx.explosionRange>0 触发）
         Projectile pfb = null;
         try
@@ -465,6 +492,9 @@ public class WeaponHandle
         proj.transform.rotation = Quaternion.LookRotation(dir, Vector3.up);
         proj.Init(ctx);
 
+        if (isFake)
+            FakeProjectileRegistry.Register(proj);
+
         FxManager.PlayMuzzleFxAndShell(shooterId, weaponType, spawnPos, dir);
         CoopTool.TryPlayShootAnim(shooterId);
     }
@@ -477,21 +507,17 @@ public class WeaponHandle
         var baseDir = r.GetDir();
         var firstCheckStart = r.GetV3cm();
 
-        // === 新增：读取客户端这帧的散布 & ADS 提示 ===
-        var clientScatter = 0f;
-        var ads01 = 0f;
+        // 兼容旧包：读取并丢弃客户端散布/ADS 信息
         try
         {
-            clientScatter = r.GetFloat();
-            ads01 = r.GetFloat();
+            _ = r.GetFloat();
+            _ = r.GetFloat();
         }
         catch
         {
-            clientScatter = 0f;
-            ads01 = 0f; // 兼容老包
+            // ignore
         }
 
-        // 读取客户端随包提示载荷（可能不存在，Try 不会抛异常）
         _payloadHint = default;
         _hasPayloadHint = NetPackProjectile.TryGetProjectilePayload(r, ref _payloadHint);
 
@@ -501,62 +527,142 @@ public class WeaponHandle
             return;
         }
 
-        var cm = who.GetComponent<CharacterMainControl>().characterModel;
+        var controller = who.GetComponent<CharacterMainControl>();
+        var model = controller ? controller.characterModel : null;
 
-        // —— 贪婪地查找远端玩家的枪 —— 
         ItemAgent_Gun gun = null;
-        if (cm)
+        if (controller)
             try
             {
-                gun = who.GetComponent<CharacterMainControl>()?.GetGun();
-                if (!gun && cm.RightHandSocket) gun = cm.RightHandSocket.GetComponentInChildren<ItemAgent_Gun>(true);
-                if (!gun && cm.LefthandSocket) gun = cm.LefthandSocket.GetComponentInChildren<ItemAgent_Gun>(true);
-                if (!gun && cm.MeleeWeaponSocket) gun = cm.MeleeWeaponSocket.GetComponentInChildren<ItemAgent_Gun>(true);
+                gun = controller.GetGun();
             }
             catch
             {
             }
 
-        // 找不到 muzzle 就从骨骼里兜底
+        if (!gun && model)
+            try
+            {
+                if (!gun && model.RightHandSocket)
+                    gun = model.RightHandSocket.GetComponentInChildren<ItemAgent_Gun>(true);
+                if (!gun && model.LefthandSocket)
+                    gun = model.LefthandSocket.GetComponentInChildren<ItemAgent_Gun>(true);
+                if (!gun && model.MeleeWeaponSocket)
+                    gun = model.MeleeWeaponSocket.GetComponentInChildren<ItemAgent_Gun>(true);
+            }
+            catch
+            {
+            }
+
         if (muzzle == default || muzzle.sqrMagnitude < 1e-8f)
         {
             Transform mz = null;
-            if (cm)
+            if (model)
             {
-                if (!mz && cm.RightHandSocket) mz = cm.RightHandSocket.Find("Muzzle");
-                if (!mz && cm.LefthandSocket) mz = cm.LefthandSocket.Find("Muzzle");
-                if (!mz && cm.MeleeWeaponSocket) mz = cm.MeleeWeaponSocket.Find("Muzzle");
+                if (!mz && model.RightHandSocket) mz = model.RightHandSocket.Find("Muzzle");
+                if (!mz && model.LefthandSocket) mz = model.LefthandSocket.Find("Muzzle");
+                if (!mz && model.MeleeWeaponSocket) mz = model.MeleeWeaponSocket.Find("Muzzle");
             }
 
             if (!mz) mz = who.transform.Find("Muzzle");
             if (mz) muzzle = mz.position;
         }
 
-        // —— 有 gun 走权威生成；无 gun 走可视兜底 —— 
-        Vector3 finalDir;
-        float speed, distance;
+        var finalDir = baseDir.sqrMagnitude > 1e-8f ? baseDir.normalized : Vector3.forward;
 
-        if (gun) // 正常路径：主机生成真正的弹丸
+        float speed;
+        float distance;
+
+        if (gun)
         {
-            if (!Server_SpawnProjectile(gun, muzzle, baseDir, firstCheckStart, out finalDir, clientScatter, ads01))
+            try
             {
-                _hasPayloadHint = false;
-                return;
+                speed = gun.BulletSpeed * (gun.Holder ? gun.Holder.GunBulletSpeedMultiplier : 1f);
+            }
+            catch
+            {
+                speed = 60f;
             }
 
-            speed = gun.BulletSpeed * (gun.Holder ? gun.Holder.GunBulletSpeedMultiplier : 1f);
-            distance = gun.BulletDistance + 0.4f;
+            try
+            {
+                distance = gun.BulletDistance + 0.4f;
+            }
+            catch
+            {
+                distance = 50f;
+            }
+
+            _speedCacheByWeaponType[weaponType] = speed;
+            _distCacheByWeaponType[weaponType] = distance;
         }
         else
         {
-            // 没 gun 的可视兜底
-            finalDir = baseDir.sqrMagnitude > 1e-8f ? baseDir.normalized : Vector3.forward;
             speed = _speedCacheByWeaponType.TryGetValue(weaponType, out var sp) ? sp : 60f;
             distance = _distCacheByWeaponType.TryGetValue(weaponType, out var dist) ? dist : 50f;
-            // 可选：也可以在服务器生成一个“无 holder”的 Projectile（略）
         }
 
-        // —— 广播 FIRE_EVENT（带主机权威 ctx）——
+        var ctx = _hasPayloadHint ? _payloadHint : new ProjectileContext();
+        ctx.direction = finalDir;
+        ctx.speed = speed;
+        ctx.distance = distance;
+        ctx.halfDamageDistance = distance * 0.5f;
+        ctx.firstFrameCheck = true;
+        ctx.firstFrameCheckStartPoint = firstCheckStart;
+        ctx.damage = 0f;
+        ctx.buffChance = 0f;
+        ctx.bleedChance = 0f;
+        ctx.explosionDamage = 0f;
+        ctx.explosionRange = 0f;
+        ctx.penetrate = 0;
+
+        if (gun && gun.Holder)
+        {
+            ctx.team = gun.Holder.Team;
+            ctx.fromCharacter = gun.Holder;
+            try
+            {
+                if (gun.Holder.HasNearByHalfObsticle()) ctx.ignoreHalfObsticle = true;
+            }
+            catch
+            {
+            }
+        }
+        else
+        {
+            var hostChar = LevelManager.Instance?.MainCharacter;
+            if (hostChar)
+                ctx.team = hostChar.Team;
+            else
+                ctx.team = Teams.player;
+            ctx.fromCharacter = null;
+            ctx.ignoreHalfObsticle = false;
+        }
+
+        Projectile pfb = null;
+        try
+        {
+            if (gun && gun.GunItemSetting && gun.GunItemSetting.bulletPfb)
+                pfb = gun.GunItemSetting.bulletPfb;
+        }
+        catch
+        {
+        }
+
+        if (!pfb) pfb = GameplayDataSettings.Prefabs.DefaultBullet;
+
+        if (pfb)
+        {
+            var proj = LevelManager.Instance.BulletPool.GetABullet(pfb);
+            proj.transform.position = muzzle;
+            proj.transform.rotation = Quaternion.LookRotation(finalDir, Vector3.up);
+            proj.Init(ctx);
+            FakeProjectileRegistry.Register(proj);
+        }
+
+        FxManager.PlayMuzzleFxAndShell(shooterId, weaponType, muzzle, finalDir);
+        COOPManager.HostPlayer_Apply.PlayShootAnimOnServerPeer(peer);
+
         writer.Reset();
         writer.Put((byte)Op.FIRE_EVENT);
         writer.Put(shooterId);
@@ -565,92 +671,15 @@ public class WeaponHandle
         writer.PutDir(finalDir);
         writer.Put(speed);
         writer.Put(distance);
+        writer.Put(true); // remote 客户端收到后生成假弹
 
-        var payloadCtx = new ProjectileContext();
-        if (gun != null)
-        {
-            var hasBulletItem = false;
-            try
-            {
-                hasBulletItem = gun.BulletItem != null;
-            }
-            catch
-            {
-            }
+        if (_hasPayloadHint)
+            writer.PutProjectilePayload(_payloadHint);
+        else
+            writer.Put(false);
 
-            // …（保留你原有的 payload 构造，略）…
-            try
-            {
-                var charMul = gun.CharacterDamageMultiplier;
-                var bulletMul = hasBulletItem ? Mathf.Max(0.0001f, gun.BulletDamageMultiplier) : 1f;
-                var shots = Mathf.Max(1, gun.ShotCount);
-                payloadCtx.damage = gun.Damage * bulletMul * charMul / shots;
-                if (gun.Damage > 1f && payloadCtx.damage < 1f) payloadCtx.damage = 1f;
-            }
-            catch
-            {
-                if (payloadCtx.damage <= 0f) payloadCtx.damage = 1f;
-            }
-
-            try
-            {
-                var bulletCritRateGain = hasBulletItem ? gun.bulletCritRateGain : 0f;
-                var bulletCritDmgGain = hasBulletItem ? gun.BulletCritDamageFactorGain : 0f;
-                payloadCtx.critDamageFactor = (gun.CritDamageFactor + bulletCritDmgGain) * (1f + gun.CharacterGunCritDamageGain);
-                payloadCtx.critRate = gun.CritRate * (1f + gun.CharacterGunCritRateGain + bulletCritRateGain);
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                var apGain = hasBulletItem ? gun.BulletArmorPiercingGain : 0f;
-                var abGain = hasBulletItem ? gun.BulletArmorBreakGain : 0f;
-                payloadCtx.armorPiercing = gun.ArmorPiercing + apGain;
-                payloadCtx.armorBreak = gun.ArmorBreak + abGain;
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                var setting = gun.GunItemSetting;
-                if (setting != null)
-                    switch (setting.element)
-                    {
-                        case ElementTypes.physics: payloadCtx.element_Physics = 1f; break;
-                        case ElementTypes.fire: payloadCtx.element_Fire = 1f; break;
-                        case ElementTypes.poison: payloadCtx.element_Poison = 1f; break;
-                        case ElementTypes.electricity: payloadCtx.element_Electricity = 1f; break;
-                        case ElementTypes.space: payloadCtx.element_Space = 1f; break;
-                    }
-
-                payloadCtx.explosionRange = gun.BulletExplosionRange;
-                payloadCtx.explosionDamage = gun.BulletExplosionDamage * gun.ExplosionDamageMultiplier;
-
-                if (hasBulletItem)
-                {
-                    payloadCtx.buffChance = gun.BulletBuffChanceMultiplier * gun.BuffChance;
-                    payloadCtx.bleedChance = gun.BulletBleedChance;
-                }
-
-                payloadCtx.penetrate = gun.Penetrate;
-                payloadCtx.fromWeaponItemID = gun.Item != null ? gun.Item.TypeID : 0;
-            }
-            catch
-            {
-            }
-        }
-
-        writer.PutProjectilePayload(payloadCtx);
         netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
 
-        FxManager.PlayMuzzleFxAndShell(shooterId, weaponType, muzzle, finalDir);
-        COOPManager.HostPlayer_Apply.PlayShootAnimOnServerPeer(peer);
-
-        // 清理本次 hint 状态
         _hasPayloadHint = false;
     }
 

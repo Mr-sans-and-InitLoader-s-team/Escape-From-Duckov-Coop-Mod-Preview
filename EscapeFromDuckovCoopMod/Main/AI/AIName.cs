@@ -262,8 +262,7 @@ public static class AIName
                                            || (CharacterIconTypes)iconType == CharacterIconTypes.elete;
                     tag.nameOverride = displayNameFromHost ?? string.Empty;
 
-                    Debug.Log(
-                        $"[AI_icon_Name 10s] {cmc.GetComponent<NetAiTag>().aiId} {cmc.characterPreset.Name} {cmc.characterPreset.GetCharacterIcon().name}");
+
                     break; // 成功一次即可
                 }
             }
@@ -358,7 +357,7 @@ public static class AIName
             // 仅当“有图标”或“需要显示名字”时才重播，避免无意义带宽
             if (e != CharacterIconTypes.none || showName)
             {
-                Debug.Log($"[AI-REBROADCAST-10s] aiId={aiId} icon={e} showName={showName}");
+
                 COOPManager.AIHandle.Server_BroadcastAiLoadout(aiId, cmc); // 你现有的方法，里头会把名字一起下发
             }
         }
@@ -473,7 +472,7 @@ public static class AIName
         {
         }
 
-        Debug.Log($"[Server AIIcon_Name 10s] AI:{aiId} {cmc.characterPreset.Name} Icon{FR_IconType(cmc.characterPreset)}");
+
         var w = new NetDataWriter();
         w.Put((byte)Op.AI_NAME_ICON);
         w.Put(aiId);

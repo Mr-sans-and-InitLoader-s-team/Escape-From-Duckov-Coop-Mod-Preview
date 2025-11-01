@@ -14,6 +14,9 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System;
+using UnityEngine;
+
 namespace EscapeFromDuckovCoopMod;
 
 [HarmonyPatch(typeof(Health), "Hurt", typeof(DamageInfo))]
@@ -62,16 +65,16 @@ internal static class Patch_AIHealth_Hurt_HostAuthority
                           victim.GetComponent<NetAiTag>() != null);
         if (!victimIsAI) return true;
 
-        // —— 不处理 AI→AI —— 
         var attacker = damageInfo.fromCharacter;
+        if (attacker == CharacterMainControl.Main)
+            return true; // 本机玩家命中 AI：允许本地结算
+
+        // —— 不处理 AI→AI ——
         var attackerIsAI = attacker &&
                            (attacker.GetComponent<AICharacterController>() != null ||
                             attacker.GetComponent<NetAiTag>() != null);
         if (attackerIsAI)
             return false; // 直接阻断，AI↔AI 不做任何本地效果
-
-
-        //  LocalHitKillFx.ClientPlayForAI(victim, damageInfo, predictedDead: false);
 
         return false;
     }
@@ -107,6 +110,10 @@ internal static class Patch_AIHealth_Hurt_HostAuthority
 [HarmonyPatch(typeof(Health), "Hurt")]
 internal static class Patch_Health
 {
+    [ThreadStatic] private static bool _cliReport;
+    [ThreadStatic] private static int _cliReportAiId;
+    [ThreadStatic] private static float _cliReportPrevHp;
+
     private static bool Prefix(Health __instance, ref DamageInfo __0)
     {
         var mod = ModBehaviourF.Instance;
@@ -130,27 +137,64 @@ internal static class Patch_Health
         var from = __0.fromCharacter;
         var fromLocalMain = from == CharacterMainControl.Main;
 
+        _cliReport = false;
+
         // 仅客户端 + 仅本机玩家打到 AI 时，走“拦截→本地播特效→网络上报”
         if (!mod.IsServer && isAiVictim && fromLocalMain)
         {
-            // 预测是否致死（用于提前播死亡特效/击杀标记，手感更好）
-            var predictedDead = false;
-            try
+            var tag = victimCmc ? victimCmc.GetComponent<NetAiTag>() : null;
+            if (tag != null && tag.aiId != 0)
             {
-                var cur = __instance.CurrentHealth;
-                predictedDead = cur > 0f && __0.damageValue >= cur - 0.001f;
+                _cliReport = true;
+                _cliReportAiId = tag.aiId;
+                try
+                {
+                    _cliReportPrevHp = __instance.CurrentHealth;
+                }
+                catch
+                {
+                    _cliReportPrevHp = -1f;
+                }
             }
-            catch
-            {
-            }
-            // LocalHitKillFx.RememberLastBaseDamage(__0.damageValue);
-            // 鸭科夫联机Mod.LocalHitKillFx.ClientPlayForAI(victimCmc, __0, predictedDead);
 
-            return false;
+            return true;
         }
 
         // 其它情况放行（包括 AI→AI、AI→障碍物、远端玩家→AI 等）
         return true;
+    }
+
+    private static void Postfix(Health __instance)
+    {
+        if (!_cliReport) return;
+        _cliReport = false;
+
+        var mod = ModBehaviourF.Instance;
+        if (mod == null || mod.IsServer) return;
+
+        var aiId = _cliReportAiId;
+        if (aiId == 0) return;
+
+        float max = 0f, cur = 0f;
+        try
+        {
+            max = __instance.MaxHealth;
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            cur = __instance.CurrentHealth;
+        }
+        catch
+        {
+        }
+
+        if (_cliReportPrevHp > 0f && Mathf.Abs(_cliReportPrevHp - cur) < 0.001f) return;
+
+        COOPManager.AIHealth.Client_ReportAiHealth(aiId, max, cur);
     }
 }
 

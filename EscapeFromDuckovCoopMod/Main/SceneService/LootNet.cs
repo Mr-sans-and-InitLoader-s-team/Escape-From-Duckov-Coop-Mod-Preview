@@ -170,6 +170,7 @@ public class LootNet
             inv.SetCapacity(capacity);
             inv.Loading = false;
 
+            // 清除现有物品
             for (var i = inv.Content.Count - 1; i >= 0; --i)
             {
                 Item removed;
@@ -177,6 +178,7 @@ public class LootNet
                 if (removed) Object.Destroy(removed.gameObject);
             }
 
+            // 添加新物品
             for (var k = 0; k < count; ++k)
             {
                 var pos = r.GetInt();
@@ -185,12 +187,18 @@ public class LootNet
                 if (item == null) continue;
                 inv.AddAt(item, pos);
             }
+
+            // 确保稳定ID映射正确更新
+            if (lootUid >= 0)
+            {
+                LootManager.Instance._cliLootByUid[lootUid] = inv;
+                Debug.Log($"[LOOT] 客户端更新战利品箱映射: lootUid={lootUid}, 物品数量={count}");
+            }
         }
         finally
         {
             _applyingLootState = false;
         }
-
 
         try
         {
@@ -373,6 +381,21 @@ public class LootNet
         peer.Send(ack, DeliveryMethod.ReliableOrdered);
 
         Server_SendLootboxState(null, inv);
+        
+        // 更新墓碑持久化数据（如果这是墓碑容器）
+        if (lootUid >= 0)
+        {
+            try
+            {
+                var userId = TombstonePersistence.Instance?.GetUserIdFromPeer(peer) ?? "unknown";
+                LootManager.Instance.UpdateTombstoneItems(userId, lootUid, inv);
+                Debug.Log($"[TOMBSTONE] Updated tombstone after item put: userId={userId}, lootUid={lootUid}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[TOMBSTONE] Failed to update tombstone after put: {e}");
+            }
+        }
     }
 
 
@@ -443,6 +466,22 @@ public class LootNet
         }
 
         Server_SendLootboxState(null, inv);
+        
+        // 更新墓碑持久化数据（如果这是玩家墓碑容器）
+        if (lootUid >= 0)
+        {
+            try
+            {
+                // 直接通过lootUid更新坟墓，不管是谁操作的
+                // 注意：UpdateTombstoneByLootUid 内部会检查是否为玩家坟墓
+                TombstonePersistence.Instance?.UpdateTombstoneByLootUid(lootUid, inv);
+                Debug.Log($"[TOMBSTONE] Attempted to update tombstone after item taken: lootUid={lootUid}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[TOMBSTONE] Failed to update tombstone after take: {e}");
+            }
+        }
     }
 
     public void Server_SendLootDeny(NetPeer peer, string reason)
@@ -1215,4 +1254,6 @@ public class LootNet
         public Inventory srcLoot;
         public int srcPos;
     }
+
+
 }

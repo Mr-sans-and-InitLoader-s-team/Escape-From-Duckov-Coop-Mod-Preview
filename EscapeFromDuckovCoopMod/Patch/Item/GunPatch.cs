@@ -65,7 +65,7 @@ internal static class Patch_Melee_FlagLocalDeal
     }
 }
 
-// 客户端：拦截本地主角的开火，改为发 FIRE_REQUEST，不在本地生成弹丸
+// 客户端：在本地生成真实弹丸的同时，追加 FIRE_REQUEST 提示给主机
 [HarmonyPatch(typeof(ItemAgent_Gun), "ShootOneBullet")]
 public static class Patch_ShootOneBullet_Client
 {
@@ -84,7 +84,7 @@ public static class Patch_ShootOneBullet_Client
         if (isLocalMain)
         {
             COOPManager.WeaponRequest.Net_OnClientShoot(__instance, _muzzlePoint, _shootDirection, firstFrameCheckStartPoint);
-            return false; // 客户端不生成，交主机
+            return true; // 允许本地生成真实子弹
         }
 
         if (isAI) return false; // 客户端看到的AI，等主机的 FIRE_EVENT
@@ -137,6 +137,7 @@ internal static class Patch_ProjectileInit_Broadcast
         w.PutDir(_context.direction);
         w.Put(_context.speed);
         w.Put(_context.distance);
+        w.Put(true); // 客户端收到后仅生成假子弹
 
         // 把服务端算好的弹丸参数一并带上（含 explosionRange / explosionDamage 等）
         w.PutProjectilePayload(_context);

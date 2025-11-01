@@ -74,68 +74,142 @@ public class COOPManager
 
     public static void ChangeArmorModel(CharacterModel characterModel, Item item)
     {
-        if (item != null)
+        try
         {
-            var slot = characterModel.characterMainControl.CharacterItem.Slots["Armor"];
-            Traverse.Create(slot).Field<Item>("content").Value = item;
-        }
+            if (characterModel == null || characterModel.characterMainControl == null || 
+                characterModel.characterMainControl.CharacterItem == null)
+            {
+                return;
+            }
 
-        if (item == null)
-        {
-            var socket = characterModel.ArmorSocket;
-            for (var i = socket.childCount - 1; i >= 0; i--) Object.Destroy(socket.GetChild(i).gameObject);
-            return;
-        }
+            var slots = characterModel.characterMainControl.CharacterItem.Slots;
+            if (slots == null) return;
 
-        var faceMaskSocket = characterModel.ArmorSocket;
-        var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
-        if (itemAgent == null)
-        {
-            Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
-            return;
-        }
+            var slot = slots.GetSlot("Armor");
+            if (slot == null) return;
 
-        if (itemAgent != null)
-        {
+            if (item != null)
+            {
+                try
+                {
+                    Traverse.Create(slot).Field<Item>("content").Value = item;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[COOP] ChangeArmorModel: Failed to set slot content: {e.Message}");
+                }
+            }
+
+            if (item == null)
+            {
+                var socket = characterModel.ArmorSocket;
+                if (socket != null)
+                {
+                    for (var i = socket.childCount - 1; i >= 0; i--) 
+                    {
+                        var child = socket.GetChild(i);
+                        if (child != null) Object.Destroy(child.gameObject);
+                    }
+                }
+                return;
+            }
+
+            var faceMaskSocket = characterModel.ArmorSocket;
+            if (faceMaskSocket == null || item.AgentUtilities == null) return;
+
+            var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
+            if (itemAgent == null)
+            {
+                Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
+                return;
+            }
+
             itemAgent.transform.SetParent(faceMaskSocket, false);
             itemAgent.transform.localRotation = Quaternion.identity;
             itemAgent.transform.localPosition = Vector3.zero;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[COOP] ChangeArmorModel exception: {e}");
         }
     }
 
 
     public static void ChangeHelmatModel(CharacterModel characterModel, Item item)
     {
-        if (item != null)
+        try
         {
-            var slot = characterModel.characterMainControl.CharacterItem.Slots["Helmat"];
-            Traverse.Create(slot).Field<Item>("content").Value = item;
-        }
+            if (characterModel == null || characterModel.characterMainControl == null || 
+                characterModel.characterMainControl.CharacterItem == null)
+            {
+                return;
+            }
 
-        if (item == null)
-        {
-            var socket = characterModel.HelmatSocket;
-            for (var i = socket.childCount - 1; i >= 0; i--) Object.Destroy(socket.GetChild(i).gameObject);
-            characterModel.CustomFace.hairSocket.gameObject.SetActive(true);
-            characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(true);
-            return;
-        }
+            var slots = characterModel.characterMainControl.CharacterItem.Slots;
+            if (slots == null) return;
 
-        characterModel.CustomFace.hairSocket.gameObject.SetActive(false);
-        characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(false);
-        var faceMaskSocket = characterModel.HelmatSocket;
-        var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
-        if (itemAgent == null)
-        {
-            Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
-            return;
-        }
+            var slot = slots.GetSlot("Helmat");
+            if (slot == null) return;
 
-        if (itemAgent != null)
-        {
+            if (item != null)
+            {
+                try
+                {
+                    Traverse.Create(slot).Field<Item>("content").Value = item;
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[COOP] ChangeHelmatModel: Failed to set slot content: {e.Message}");
+                }
+            }
+
+            if (item == null)
+            {
+                var socket = characterModel.HelmatSocket;
+                if (socket != null)
+                {
+                    for (var i = socket.childCount - 1; i >= 0; i--) 
+                    {
+                        var child = socket.GetChild(i);
+                        if (child != null) Object.Destroy(child.gameObject);
+                    }
+                }
+
+                if (characterModel.CustomFace != null)
+                {
+                    if (characterModel.CustomFace.hairSocket != null)
+                        characterModel.CustomFace.hairSocket.gameObject.SetActive(true);
+                    if (characterModel.CustomFace.mouthPart != null && characterModel.CustomFace.mouthPart.socket != null)
+                        characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(true);
+                }
+                return;
+            }
+
+            if (characterModel.CustomFace != null)
+            {
+                if (characterModel.CustomFace.hairSocket != null)
+                    characterModel.CustomFace.hairSocket.gameObject.SetActive(false);
+                if (characterModel.CustomFace.mouthPart != null && characterModel.CustomFace.mouthPart.socket != null)
+                    characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(false);
+            }
+
+            var faceMaskSocket = characterModel.HelmatSocket;
+            if (faceMaskSocket == null || item.AgentUtilities == null) return;
+
+            var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
+            if (itemAgent == null)
+            {
+                Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
+                return;
+            }
+
             itemAgent.transform.SetParent(faceMaskSocket, false);
             itemAgent.transform.localRotation = Quaternion.identity;
             itemAgent.transform.localPosition = Vector3.zero;
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[COOP] ChangeHelmatModel exception: {e}");
         }
     }
 

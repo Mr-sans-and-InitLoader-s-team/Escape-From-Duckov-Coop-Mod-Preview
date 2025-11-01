@@ -41,24 +41,24 @@ public static class SceneM
         // 自己的 SceneId（拿不到就 Compute 一次）懂了吗sans看到这
         var mySceneId = localPlayerStatus != null ? localPlayerStatus.SceneId : null;
         if (string.IsNullOrEmpty(mySceneId))
-            LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
+            LoaclPlayerManager.Instance.ComputeIsInGame(out mySceneId);
 
         // 拿不到 SceneId 的极端情况：沿用旧逻辑（不按同图过滤），避免误杀
         if (string.IsNullOrEmpty(mySceneId))
         {
             var alive = 0;
-            if (LocalPlayerManager.Instance.IsAlive(CharacterMainControl.Main)) alive++;
+            if (LoaclPlayerManager.Instance.IsAlive(CharacterMainControl.Main)) alive++;
             if (IsServer)
                 foreach (var kv in remoteCharacters)
                 {
                     var cmc = kv.Value ? kv.Value.GetComponent<CharacterMainControl>() : null;
-                    if (LocalPlayerManager.Instance.IsAlive(cmc)) alive++;
+                    if (LoaclPlayerManager.Instance.IsAlive(cmc)) alive++;
                 }
             else
                 foreach (var kv in clientRemoteCharacters)
                 {
                     var cmc = kv.Value ? kv.Value.GetComponent<CharacterMainControl>() : null;
-                    if (LocalPlayerManager.Instance.IsAlive(cmc)) alive++;
+                    if (LoaclPlayerManager.Instance.IsAlive(cmc)) alive++;
                 }
 
             return alive == 0;
@@ -67,13 +67,13 @@ public static class SceneM
         var aliveSameScene = 0;
 
         // 本机（通常观战时本机已死，这里自然为 0）
-        if (LocalPlayerManager.Instance.IsAlive(CharacterMainControl.Main)) aliveSameScene++;
+        if (LoaclPlayerManager.Instance.IsAlive(CharacterMainControl.Main)) aliveSameScene++;
 
         if (IsServer)
             foreach (var kv in remoteCharacters)
             {
                 var cmc = kv.Value ? kv.Value.GetComponent<CharacterMainControl>() : null;
-                if (!LocalPlayerManager.Instance.IsAlive(cmc)) continue;
+                if (!LoaclPlayerManager.Instance.IsAlive(cmc)) continue;
 
                 string peerScene = null;
                 if (!_srvPeerScene.TryGetValue(kv.Key, out peerScene) && playerStatuses.TryGetValue(kv.Key, out var st))
@@ -85,11 +85,9 @@ public static class SceneM
             foreach (var kv in clientRemoteCharacters)
             {
                 var cmc = kv.Value ? kv.Value.GetComponent<CharacterMainControl>() : null;
-                if (!LocalPlayerManager.Instance.IsAlive(cmc)) continue;
+                if (!LoaclPlayerManager.Instance.IsAlive(cmc)) continue;
 
-                var peerScene = NetService.Instance.clientPlayerStatuses.TryGetValue(kv.Key, out var st)
-                    ? st?.SceneId
-                    : null;
+                var peerScene = NetService.Instance.clientPlayerStatuses.TryGetValue(kv.Key, out var st) ? st?.SceneId : null;
                 if (Spectator.AreSameMap(mySceneId, peerScene)) aliveSameScene++;
             }
 
@@ -114,8 +112,7 @@ public static class SceneM
             null
         );
         if (mi == null)
-            throw new MissingMethodException(
-                "MapSelectionView.NotifyEntryClicked(MapSelectionEntry, PointerEventData) not found.");
+            throw new MissingMethodException("MapSelectionView.NotifyEntryClicked(MapSelectionEntry, PointerEventData) not found.");
 
         mi.Invoke(view, new object[] { entry, evt });
     }
@@ -125,7 +122,7 @@ public static class SceneM
     {
         var hostSceneId = localPlayerStatus != null ? localPlayerStatus.SceneId : null;
         if (string.IsNullOrEmpty(hostSceneId))
-            LocalPlayerManager.Instance.ComputeIsInGame(out hostSceneId);
+            LoaclPlayerManager.Instance.ComputeIsInGame(out hostSceneId);
         if (string.IsNullOrEmpty(hostSceneId)) yield break;
 
         foreach (var p in netManager.ConnectedPeerList)

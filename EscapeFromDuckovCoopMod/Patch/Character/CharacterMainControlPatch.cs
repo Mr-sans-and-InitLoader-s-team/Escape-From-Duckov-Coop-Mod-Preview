@@ -113,6 +113,8 @@ internal static class Patch_Client_OnDead_ReportCorpseTree
     private static void Postfix(CharacterMainControl __instance)
     {
         var mod = ModBehaviourF.Instance;
+
+        
         if (mod == null || !mod.networkStarted) return;
 
         // 仅“客户端 + 本机玩家”分支上报
@@ -120,18 +122,27 @@ internal static class Patch_Client_OnDead_ReportCorpseTree
         if (__instance != CharacterMainControl.Main) return;
 
         // ⭐ 已经上报过（= 主机已经/可以生成过尸体战利品），直接跳过，不再创建/同步
-        if (LocalPlayerManager.Instance._cliCorpseTreeReported) return;
+        if (LoaclPlayerManager.Instance._cliCorpseTreeReported) return;
+
+        Debug.Log("[DEATH-DEBUG] Client death detected, reporting corpse tree to server");
 
         try
         {
             // 给客户端的 CreateFromItem 拦截补丁一个“正在死亡路径”的标记，避免本地也生成（双生）
             DeadLootSpawnContext.InOnDead = __instance;
 
+
             // 首次上报整棵“尸体装备树”给主机（你已有的方法）
             SendLocalPlayerStatus.Instance.Net_ReportPlayerDeadTree(__instance);
 
+
             // ✅ 标记“本轮生命已经上报过尸体树”
-            LocalPlayerManager.Instance._cliCorpseTreeReported = true;
+            LoaclPlayerManager.Instance._cliCorpseTreeReported = true;
+
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[DEATH-DEBUG] Error in corpse tree reporting: {e}");
         }
         finally
         {

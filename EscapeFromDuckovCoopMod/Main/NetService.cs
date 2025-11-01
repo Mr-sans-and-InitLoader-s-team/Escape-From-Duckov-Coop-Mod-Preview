@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,10 +14,18 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System.IO;
+using Steamworks;
 using System.Net;
 using System.Net.Sockets;
 
 namespace EscapeFromDuckovCoopMod;
+
+public enum NetworkTransportMode
+{
+    Direct,
+    SteamP2P
+}
 
 public class NetService : MonoBehaviour, INetEventListener
 {
@@ -26,7 +34,7 @@ public class NetService : MonoBehaviour, INetEventListener
     public List<string> hostList = new();
     public bool isConnecting;
     public string status = "";
-    public string manualIP = "127.0.0.1";
+    public string manualIP = "r.pansx.net";
     public string manualPort = "9050"; // GTX 5090 我也想要
     public bool networkStarted;
     public float broadcastTimer;
@@ -35,19 +43,6 @@ public class NetService : MonoBehaviour, INetEventListener
     public float syncInterval = 0.015f; // =========== Mod开发者注意现在是TI版本也就是满血版无同步延迟，0.03 ~33ms ===================
 
     public readonly HashSet<int> _dedupeShotFrame = new(); // 本帧已发过的标记
-
-    // ===== 场景切换重连功能 =====
-    // 缓存成功连接的IP和端口，用于场景切换后自动重连
-    public string cachedConnectedIP = "";
-    public int cachedConnectedPort = 0;
-    public bool hasSuccessfulConnection = false;
-    
-    // 重连防抖机制 - 防止重连触发过于频繁
-    private float lastReconnectTime = 0f;
-    private const float RECONNECT_COOLDOWN = 10f; // 10秒冷却时间
-    
-    // 连接类型标记 - 区分手动连接和自动重连
-    private bool isManualConnection = false; // true: 手动连接(UI点击), false: 自动重连
 
     // 客户端：按 endPoint(玩家ID) 管理
     public readonly Dictionary<string, PlayerStatus> clientPlayerStatuses = new();
@@ -65,10 +60,57 @@ public class NetService : MonoBehaviour, INetEventListener
     public NetManager netManager;
     public NetDataWriter writer;
     public bool IsServer { get; private set; }
+    public NetworkTransportMode TransportMode { get; private set; } = NetworkTransportMode.Direct;
+    public SteamLobbyOptions LobbyOptions { get; private set; } = SteamLobbyOptions.CreateDefault();
+
+    // 连接缓存相关字段
+    private bool isManualConnection = false;
+    private string cachedConnectedIP = "";
+    private int cachedConnectedPort = 0;
+    private bool hasSuccessfulConnection = false;
+    private float lastReconnectTime = 0f;
+    private const float RECONNECT_COOLDOWN = 5f;
 
     public void OnEnable()
     {
         Instance = this;
+        if (SteamP2PLoader.Instance != null)
+        {
+            SteamP2PLoader.Instance.UseSteamP2P = TransportMode == NetworkTransportMode.SteamP2P;
+        }
+    }
+
+    public void SetTransportMode(NetworkTransportMode mode)
+    {
+        if (TransportMode == mode)
+            return;
+
+        TransportMode = mode;
+
+        if (SteamP2PLoader.Instance != null)
+        {
+            SteamP2PLoader.Instance.UseSteamP2P = mode == NetworkTransportMode.SteamP2P;
+        }
+
+        if (mode != NetworkTransportMode.SteamP2P && SteamLobbyManager.Instance != null)
+        {
+            SteamLobbyManager.Instance.LeaveLobby();
+        }
+
+        if (networkStarted)
+        {
+            StopNetwork();
+        }
+    }
+
+    public void ConfigureLobbyOptions(SteamLobbyOptions? options)
+    {
+        LobbyOptions = options ?? SteamLobbyOptions.CreateDefault();
+
+        if (SteamLobbyManager.Instance != null)
+        {
+            SteamLobbyManager.Instance.UpdateLobbySettings(LobbyOptions);
+        }
     }
 
     public void OnPeerConnected(NetPeer peer)
@@ -95,7 +137,20 @@ public class NetService : MonoBehaviour, INetEventListener
                 Debug.Log($"[COOP] 自动重连成功，不更新缓存: {peer.EndPoint.Address}:{peer.EndPoint.Port}");
             }
             
+            // 客户端连接成功时清除战利品缓存，确保完全同步
+            ClearClientLootCache();
             Send_ClientStatus.Instance.SendClientStatusUpdate();
+            
+            // 延迟一点时间后强制重新同步所有战利品箱
+            UniTask.Void(async () =>
+            {
+                await UniTask.Delay(2000); // 等待连接完全稳定
+                if (LootManager.Instance != null && connectedPeer != null)
+                {
+                    Debug.Log("[COOP] 连接成功，开始强制重新同步所有战利品箱");
+                    LootManager.Instance.Client_ForceResyncAllLootboxes();
+                }
+            });
         }
 
         if (!playerStatuses.ContainsKey(peer))
@@ -178,34 +233,19 @@ public class NetService : MonoBehaviour, INetEventListener
 
                     peer.Send(w, DeliveryMethod.ReliableOrdered);
                 }
+            
+            // 同步当前场景的所有墓碑给新连接的客户端
+            SyncTombstonesToNewClient(peer);
         }
     }
 
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
-        var peerEndPoint = peer?.EndPoint?.ToString() ?? "Unknown";
-        Debug.Log(CoopLocalization.Get("net.disconnected", peerEndPoint, disconnectInfo.Reason.ToString()));
+        Debug.Log(CoopLocalization.Get("net.disconnected", peer.EndPoint.ToString(), disconnectInfo.Reason.ToString()));
         if (!IsServer)
         {
             status = CoopLocalization.Get("net.connectionLost");
             isConnecting = false;
-            
-            // 只有在手动断开连接时才清除缓存，自动重连失败时保留缓存
-            if (isManualConnection && (disconnectInfo.Reason == DisconnectReason.DisconnectPeerCalled || 
-                disconnectInfo.Reason == DisconnectReason.RemoteConnectionClose))
-            {
-                hasSuccessfulConnection = false;
-                cachedConnectedIP = "";
-                cachedConnectedPort = 0;
-                Debug.Log("[COOP] 手动断开连接，清除缓存的连接信息");
-            }
-            else
-            {
-                Debug.Log($"[COOP] 连接断开 ({disconnectInfo.Reason})，保留缓存的连接信息用于重连");
-            }
-            
-            // 重置手动连接标记
-            isManualConnection = false;
         }
 
         if (connectedPeer == peer) connectedPeer = null;
@@ -213,7 +253,7 @@ public class NetService : MonoBehaviour, INetEventListener
         if (playerStatuses.ContainsKey(peer))
         {
             var _st = playerStatuses[peer];
-            if (_st != null && !string.IsNullOrEmpty(_st.EndPoint) && SceneNet.Instance != null)
+            if (_st != null && !string.IsNullOrEmpty(_st.EndPoint))
                 SceneNet.Instance._cliLastSceneIdByPlayer.Remove(_st.EndPoint);
             playerStatuses.Remove(peer);
         }
@@ -223,6 +263,35 @@ public class NetService : MonoBehaviour, INetEventListener
             Destroy(remoteCharacters[peer]);
             remoteCharacters.Remove(peer);
         }
+
+        if (!SteamP2PLoader.Instance.UseSteamP2P || SteamP2PManager.Instance == null)
+            return;
+        try
+        {
+            Debug.Log($"[Patch_OnPeerDisconnected] LiteNetLib断开: {peer.EndPoint}, 原因: {disconnectInfo.Reason}");
+            if (SteamEndPointMapper.Instance != null &&
+                SteamEndPointMapper.Instance.TryGetSteamID(peer.EndPoint, out CSteamID remoteSteamID))
+            {
+                Debug.Log($"[Patch_OnPeerDisconnected] 关闭Steam P2P会话: {remoteSteamID}");
+                if (SteamNetworking.CloseP2PSessionWithUser(remoteSteamID))
+                {
+                    Debug.Log($"[Patch_OnPeerDisconnected] ✓ 成功关闭P2P会话");
+                }
+                SteamEndPointMapper.Instance.UnregisterSteamID(remoteSteamID);
+                Debug.Log($"[Patch_OnPeerDisconnected] ✓ 已清理映射");
+                if (SteamP2PManager.Instance != null)
+                {
+                    SteamP2PManager.Instance.ClearAcceptedSession(remoteSteamID);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[Patch_OnPeerDisconnected] 异常: {ex}");
+        }
+
+
+
     }
 
     public void OnNetworkError(IPEndPoint endPoint, SocketError socketError)
@@ -230,14 +299,12 @@ public class NetService : MonoBehaviour, INetEventListener
         Debug.LogError(CoopLocalization.Get("net.networkError", socketError, endPoint.ToString()));
     }
 
-    public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber,
-        DeliveryMethod deliveryMethod)
+    public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
     {
         ModBehaviourF.Instance.OnNetworkReceive(peer, reader, channelNumber, deliveryMethod);
     }
 
-    public void OnNetworkReceiveUnconnected(IPEndPoint remoteEndPoint, NetPacketReader reader,
-        UnconnectedMessageType messageType)
+    public void OnNetworkReceiveUnconnected(IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType)
     {
         var msg = reader.GetString();
 
@@ -278,9 +345,9 @@ public class NetService : MonoBehaviour, INetEventListener
         }
     }
 
-    public void StartNetwork(bool isServer)
+    public void StartNetwork(bool isServer, bool keepSteamLobby = false)
     {
-        StopNetwork();
+        StopNetwork(!keepSteamLobby);
         COOPManager.AIHandle.freezeAI = !isServer;
         IsServer = isServer;
         writer = new NetDataWriter();
@@ -289,13 +356,18 @@ public class NetService : MonoBehaviour, INetEventListener
             BroadcastReceiveEnabled = true
         };
 
+
         if (IsServer)
         {
             var started = netManager.Start(port);
             if (started)
+            {
                 Debug.Log(CoopLocalization.Get("net.serverStarted", port));
+            }
             else
+            {
                 Debug.LogError(CoopLocalization.Get("net.serverStartFailed"));
+            }
         }
         else
         {
@@ -303,7 +375,10 @@ public class NetService : MonoBehaviour, INetEventListener
             if (started)
             {
                 Debug.Log(CoopLocalization.Get("net.clientStarted"));
-                CoopTool.SendBroadcastDiscovery();
+                if (TransportMode == NetworkTransportMode.Direct)
+                {
+                    CoopTool.SendBroadcastDiscovery();
+                }
             }
             else
             {
@@ -323,15 +398,71 @@ public class NetService : MonoBehaviour, INetEventListener
         clientPlayerStatuses.Clear();
         clientRemoteCharacters.Clear();
 
-        LocalPlayerManager.Instance.InitializeLocalPlayer();
+        LoaclPlayerManager.Instance.InitializeLocalPlayer();
         if (IsServer)
         {
             ItemAgent_Gun.OnMainCharacterShootEvent -= COOPManager.WeaponHandle.Host_OnMainCharacterShoot;
             ItemAgent_Gun.OnMainCharacterShootEvent += COOPManager.WeaponHandle.Host_OnMainCharacterShoot;
         }
+
+
+        // ===== 正确的 Steam P2P 初始化路径：在 P2P 可用时执行 =====
+        bool wantsP2P = TransportMode == NetworkTransportMode.SteamP2P;
+        bool p2pAvailable =
+            wantsP2P &&
+            SteamP2PLoader.Instance != null &&
+            SteamManager.Initialized &&
+            SteamP2PManager.Instance != null &&   // Loader.Init 正常时会挂上
+            SteamP2PLoader.Instance.UseSteamP2P;
+
+        Debug.Log($"[StartNetwork] WantsP2P={wantsP2P}, P2P可用={p2pAvailable}, UseSteamP2P={SteamP2PLoader.Instance?.UseSteamP2P}, " +
+                  $"SteamInit={SteamManager.Initialized}, IsServer={IsServer}, NetRunning={netManager?.IsRunning}");
+
+        if (p2pAvailable)
+        {
+            Debug.Log("[StartNetwork] 联机Mod已启动，初始化Steam P2P组件"); // ← 现在会正常打印
+
+            if (netManager != null)
+            {
+                // 使用 Steam P2P 时让 LiteNetLib 不去占 UDP socket
+                netManager.UseNativeSockets = false;
+                Debug.Log("[StartNetwork] ✓ UseNativeSockets=false（P2P 模式）");
+            }
+
+            // 保险：确保必要组件存在（Loader.Init 一般已创建）
+            if (SteamEndPointMapper.Instance == null)
+                DontDestroyOnLoad(new GameObject("SteamEndPointMapper").AddComponent<SteamEndPointMapper>());
+            if (SteamLobbyManager.Instance == null)
+                DontDestroyOnLoad(new GameObject("SteamLobbyManager").AddComponent<SteamLobbyManager>());
+
+            // 【可选】是否在这里创建 Lobby：建议不要，这会与 OnLobbyCreated 的二次 Start 冲突（见下文）
+            if (!keepSteamLobby && IsServer && SteamLobbyManager.Instance != null && !SteamLobbyManager.Instance.IsInLobby)
+            {
+                SteamLobbyManager.Instance.CreateLobby(LobbyOptions);
+            }
+        }
+        else
+        {
+            // 回退到纯 UDP
+            if (netManager != null)
+            {
+                netManager.UseNativeSockets = true;
+                if (wantsP2P)
+                {
+                    Debug.LogWarning("[StartNetwork] Steam P2P 不可用，回退 UDP（UseNativeSockets=true）");
+                }
+                else
+                {
+                    Debug.Log("[StartNetwork] 使用直连模式（UseNativeSockets=true）");
+                }
+            }
+        }
+
+
+
     }
 
-    public void StopNetwork()
+    public void StopNetwork(bool leaveSteamLobby = true)
     {
         if (netManager != null && netManager.IsRunning)
         {
@@ -339,11 +470,14 @@ public class NetService : MonoBehaviour, INetEventListener
             Debug.Log(CoopLocalization.Get("net.networkStopped"));
         }
 
+        IsServer = false;
         networkStarted = false;
         connectedPeer = null;
 
-        // 停止网络时清除缓存的连接信息
-        ClearConnectionCache();
+        if (leaveSteamLobby && TransportMode == NetworkTransportMode.SteamP2P && SteamLobbyManager.Instance != null && SteamLobbyManager.Instance.IsInLobby)
+        {
+            SteamLobbyManager.Instance.LeaveLobby();
+        }
 
         playerStatuses.Clear();
         clientPlayerStatuses.Clear();
@@ -365,9 +499,6 @@ public class NetService : MonoBehaviour, INetEventListener
 
     public void ConnectToHost(string ip, int port)
     {
-        // 标记为手动连接（从UI调用）
-        isManualConnection = true;
-        
         // 基础校验
         if (string.IsNullOrWhiteSpace(ip))
         {
@@ -406,7 +537,6 @@ public class NetService : MonoBehaviour, INetEventListener
                 Debug.LogError(CoopLocalization.Get("net.clientNetworkStartFailed", e));
                 status = CoopLocalization.Get("net.clientNetworkStartFailedStatus");
                 isConnecting = false;
-                isManualConnection = false; // 重置手动连接标记
                 return;
             }
 
@@ -415,7 +545,6 @@ public class NetService : MonoBehaviour, INetEventListener
         {
             status = CoopLocalization.Get("net.clientNotStarted");
             isConnecting = false;
-            isManualConnection = false; // 重置手动连接标记
             return;
         }
 
@@ -447,7 +576,6 @@ public class NetService : MonoBehaviour, INetEventListener
             status = CoopLocalization.Get("net.connectionFailed");
             isConnecting = false;
             connectedPeer = null;
-            isManualConnection = false; // 重置手动连接标记
         }
     }
 
@@ -467,8 +595,7 @@ public class NetService : MonoBehaviour, INetEventListener
             return $"Host:{port}";
         }
 
-        if (playerStatuses != null && playerStatuses.TryGetValue(peer, out var st) &&
-            !string.IsNullOrEmpty(st.EndPoint))
+        if (playerStatuses != null && playerStatuses.TryGetValue(peer, out var st) && !string.IsNullOrEmpty(st.EndPoint))
             return st.EndPoint;
         return peer.EndPoint.ToString();
     }
@@ -482,6 +609,52 @@ public class NetService : MonoBehaviour, INetEventListener
         cachedConnectedIP = "";
         cachedConnectedPort = 0;
         Debug.Log("[COOP] 手动清除缓存的连接信息");
+    }
+
+    /// <summary>
+    /// 清除客户端战利品箱缓存，强制重新同步所有战利品箱
+    /// </summary>
+    private void ClearClientLootCache()
+    {
+        if (IsServer)
+        {
+            Debug.Log("[COOP] 服务器模式，跳过清除战利品缓存");
+            return;
+        }
+
+        try
+        {
+            if (LootManager.Instance != null)
+            {
+                var clearedCount = LootManager.Instance._cliLootByUid.Count;
+                LootManager.Instance._cliLootByUid.Clear();
+                LootManager.Instance._pendingLootStatesByUid.Clear();
+                Debug.Log($"[COOP] 已清除客户端战利品缓存，共清除 {clearedCount} 个战利品箱");
+            }
+
+            if (COOPManager.LootNet != null)
+            {
+                var pendingCount = COOPManager.LootNet._cliPendingPut.Count;
+                COOPManager.LootNet._cliPendingPut.Clear();
+                COOPManager.LootNet._cliSwapByVictim.Clear();
+                Debug.Log($"[COOP] 已清除客户端待处理的战利品操作，共清除 {pendingCount} 个待处理操作");
+            }
+
+            if (LootManager.Instance != null)
+            {
+                var takeCount = LootManager.Instance._cliPendingTake.Count;
+                var reorderCount = LootManager.Instance._cliPendingReorder.Count;
+                LootManager.Instance._cliPendingTake.Clear();
+                LootManager.Instance._cliPendingReorder.Clear();
+                Debug.Log($"[COOP] 已清除客户端待处理的拾取和重排操作，拾取: {takeCount}, 重排: {reorderCount}");
+            }
+
+            Debug.Log("[COOP] 客户端战利品缓存清除完成，所有战利品箱将重新从服务端同步");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[COOP] 清除客户端战利品缓存时发生异常: {ex}");
+        }
     }
 
     /// <summary>
@@ -656,6 +829,9 @@ public class NetService : MonoBehaviour, INetEventListener
             {
                 Debug.Log($"[COOP] 场景切换后重连成功: {cachedConnectedIP}:{cachedConnectedPort}");
                 
+                // 重连成功后，清除客户端战利品箱缓存，强制重新同步
+                ClearClientLootCache();
+                
                 // 重连成功后，发送当前状态进行完全同步
                 await UniTask.Delay(1000); // 等待连接稳定
                 
@@ -673,6 +849,14 @@ public class NetService : MonoBehaviour, INetEventListener
                         Debug.Log("[COOP] 重连成功，发送场景就绪信息");
                         SceneNet.Instance.TrySendSceneReadyOnce();
                     }
+                    
+                    // 强制重新同步所有战利品箱
+                    await UniTask.Delay(500); // 再等待一点时间确保场景就绪
+                    if (LootManager.Instance != null)
+                    {
+                        Debug.Log("[COOP] 重连成功，开始强制重新同步所有战利品箱");
+                        LootManager.Instance.Client_ForceResyncAllLootboxes();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -689,5 +873,231 @@ public class NetService : MonoBehaviour, INetEventListener
         {
             Debug.LogError($"[COOP] 场景切换后重连异常: {ex}");
         }
+    }
+
+    /// <summary>
+    /// 同步当前场景的所有墓碑给新连接的客户端
+    /// </summary>
+    private void SyncTombstonesToNewClient(NetPeer peer)
+    {
+        if (!IsServer || peer == null || LootManager.Instance == null)
+        {
+            return;
+        }
+
+        try
+        {
+            Debug.Log($"[TOMBSTONE] 开始同步墓碑给新客户端: {peer.EndPoint}");
+            
+            var currentScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex;
+            var syncCount = 0;
+            
+            // 遍历所有服务端的墓碑，发送给新客户端
+            foreach (var kv in LootManager.Instance._srvLootByUid)
+            {
+                var lootUid = kv.Key;
+                var inventory = kv.Value;
+                
+                if (inventory == null)
+                {
+                    continue;
+                }
+                
+                // 尝试获取墓碑的位置信息
+                Vector3 position = Vector3.zero;
+                Quaternion rotation = Quaternion.identity;
+                
+                if (LootManager.Instance.TryGetLootboxWorldPos(inventory, out position))
+                {
+                    // 从墓碑持久化系统获取更准确的位置和旋转信息
+                    if (TombstonePersistence.Instance != null)
+                    {
+                        // 尝试从所有用户的墓碑数据中找到匹配的墓碑
+                        var tombstoneFound = false;
+                        var tombstoneDir = Path.Combine(Application.streamingAssetsPath, "TombstoneData");
+                        
+                        if (Directory.Exists(tombstoneDir))
+                        {
+                            var tombstoneFiles = Directory.GetFiles(tombstoneDir, "*_tombstones.json");
+                            foreach (var filePath in tombstoneFiles)
+                            {
+                                try
+                                {
+                                    var fileName = Path.GetFileName(filePath);
+                                    var userId = TombstonePersistence.Instance.DecodeUserIdFromFileName(fileName);
+                                    var tombstone = TombstonePersistence.Instance.GetTombstone(userId, lootUid);
+                                    
+                                    if (tombstone != null)
+                                    {
+                                        position = tombstone.position;
+                                        rotation = tombstone.rotation;
+                                        tombstoneFound = true;
+                                        break;
+                                    }
+                                }
+                                catch (Exception e)
+                                {
+                                    Debug.LogWarning($"[TOMBSTONE] 获取墓碑数据失败: {e.Message}");
+                                }
+                            }
+                        }
+                        
+                        if (!tombstoneFound)
+                        {
+                            Debug.LogWarning($"[TOMBSTONE] 未找到lootUid={lootUid}的墓碑数据，使用默认旋转");
+                        }
+                    }
+                    
+                    // 发送DEAD_LOOT_SPAWN消息给新客户端
+                    var writer = new NetDataWriter();
+                    writer.Put((byte)Op.DEAD_LOOT_SPAWN);
+                    writer.Put(currentScene);
+                    writer.Put(0); // aiId，对于恢复的墓碑设为0
+                    writer.Put(lootUid);
+                    writer.PutV3cm(position);
+                    writer.PutQuaternion(rotation);
+                    
+                    peer.Send(writer, DeliveryMethod.ReliableOrdered);
+                    syncCount++;
+                    
+                    Debug.Log($"[TOMBSTONE] 已同步墓碑给客户端: lootUid={lootUid}, pos={position}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[TOMBSTONE] 无法获取lootUid={lootUid}的位置信息，跳过同步");
+                }
+            }
+            
+            Debug.Log($"[TOMBSTONE] 完成墓碑同步，共同步 {syncCount} 个墓碑给客户端: {peer.EndPoint}");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[TOMBSTONE] 同步墓碑给新客户端失败: {e}");
+        }
+    }
+
+    /// <summary>
+    /// 客户端死亡时发送剩余物品信息给服务端（用于从墓碑中减去）
+    /// </summary>
+    public void SendPlayerDeathEquipment(string userId, int lootUid)
+    {
+        if (IsServer || connectedPeer == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var remainingItemTypeIds = GetPlayerEquipmentTypeIds();
+            
+            Debug.Log($"[TOMBSTONE] Sending player remaining items: userId={userId}, lootUid={lootUid}, remaining items count={remainingItemTypeIds.Count}");
+            
+            writer.Reset();
+            writer.Put((byte)Op.PLAYER_DEATH_EQUIPMENT);
+            writer.Put(userId);
+            writer.Put(lootUid);
+            writer.Put(remainingItemTypeIds.Count);
+            
+            foreach (var typeId in remainingItemTypeIds)
+            {
+                writer.Put(typeId);
+                Debug.Log($"[TOMBSTONE] Reporting remaining item: TypeID={typeId}");
+            }
+            
+            connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+            Debug.Log($"[TOMBSTONE] Sent player remaining items report to server");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[TOMBSTONE] Failed to send player remaining items: {e}");
+        }
+    }
+
+    /// <summary>
+    /// 获取玩家身上所有剩余物品的TypeID列表（用于从墓碑中减去）
+    /// </summary>
+    private List<int> GetPlayerEquipmentTypeIds()
+    {
+        var remainingItemTypeIds = new List<int>();
+        
+        try
+        {
+            var mainControl = CharacterMainControl.Main;
+            if (mainControl == null)
+            {
+                Debug.LogWarning("[TOMBSTONE] Main character control not found");
+                return remainingItemTypeIds;
+            }
+
+            Debug.Log("[TOMBSTONE] Collecting all remaining items on player...");
+
+            // 获取远程武器
+            var rangedWeapon = mainControl.GetGun();
+            if (rangedWeapon != null && rangedWeapon.Item != null)
+            {
+                remainingItemTypeIds.Add(rangedWeapon.Item.TypeID);
+                Debug.Log($"[TOMBSTONE] Found ranged weapon: TypeID={rangedWeapon.Item.TypeID}");
+            }
+
+            // 获取近战武器
+            var meleeWeapon = mainControl.GetMeleeWeapon();
+            if (meleeWeapon != null && meleeWeapon.Item != null)
+            {
+                remainingItemTypeIds.Add(meleeWeapon.Item.TypeID);
+                Debug.Log($"[TOMBSTONE] Found melee weapon: TypeID={meleeWeapon.Item.TypeID}");
+            }
+
+            // 获取角色身上的所有装备槽位（包括图腾等）
+            var characterItem = mainControl.CharacterItem;
+            if (characterItem != null && characterItem.Slots != null)
+            {
+                Debug.Log($"[TOMBSTONE] Checking character equipment slots");
+                
+                foreach (var slot in characterItem.Slots)
+                {
+                    if (slot != null && slot.Content != null)
+                    {
+                        remainingItemTypeIds.Add(slot.Content.TypeID);
+                        Debug.Log($"[TOMBSTONE] Found equipped item in slot '{slot.Key}': TypeID={slot.Content.TypeID}, Name={slot.Content.name}");
+                    }
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[TOMBSTONE] Character equipment slots not found");
+            }
+
+            // 获取背包中的所有物品
+            var playerInventory = PlayerStorage.Inventory;
+            if (playerInventory != null)
+            {
+                Debug.Log($"[TOMBSTONE] Checking player inventory with {playerInventory.Content.Count} slots");
+                
+                for (int i = 0; i < playerInventory.Content.Count; i++)
+                {
+                    var item = playerInventory.GetItemAt(i);
+                    if (item != null)
+                    {
+                        remainingItemTypeIds.Add(item.TypeID);
+                        Debug.Log($"[TOMBSTONE] Found inventory item {i}: TypeID={item.TypeID}, Name={item.name}");
+                    }
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[TOMBSTONE] Player inventory not found");
+            }
+
+            // 获取宠物背包中的物品 - 但不包含在剩余物品中，因为宠物背包物品不会掉落
+            // 注意：宠物背包物品不添加到remainingItemTypeIds，因为它们不会掉落也不应该从墓碑中减去
+
+            Debug.Log($"[TOMBSTONE] Total remaining items found: {remainingItemTypeIds.Count}");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[TOMBSTONE] Error getting player remaining items: {e}");
+        }
+
+        return remainingItemTypeIds;
     }
 }

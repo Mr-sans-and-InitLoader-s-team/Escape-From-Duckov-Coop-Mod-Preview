@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -41,10 +41,11 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         var go = new GameObject("COOP_MOD_");
         DontDestroyOnLoad(go);
 
+        go.AddComponent<SteamP2PLoader>();
         go.AddComponent<AIRequest>();
         go.AddComponent<Send_ClientStatus>();
         go.AddComponent<HealthM>();
-        go.AddComponent<LocalPlayerManager>();
+        go.AddComponent<LoaclPlayerManager>();
         go.AddComponent<SendLocalPlayerStatus>();
         go.AddComponent<Spectator>();
         go.AddComponent<DeadLootBox>();
@@ -58,9 +59,10 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
 
     private void DeferredInit()
     {
+        SafeInit<SteamP2PLoader>(s => s.Init());
         SafeInit<SceneNet>(sn => sn.Init());
         SafeInit<LootManager>(lm => lm.Init());
-        SafeInit<LocalPlayerManager>(lpm => lpm.Init());
+        SafeInit<LoaclPlayerManager>(lpm => lpm.Init());
         SafeInit<HealthM>(hm => hm.Init());
         SafeInit<SendLocalPlayerStatus>(s => s.Init());
         SafeInit<Spectator>(s => s.Init());
@@ -68,6 +70,7 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         SafeInit<AIRequest>(a => a.Init());
         SafeInit<Send_ClientStatus>(s => s.Init());
         SafeInit<DeadLootBox>(s => s.Init());
+       
     }
 
     private void SafeInit<T>(Action<T> init) where T : Component
@@ -82,4 +85,10 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         {
         }
     }
+
+
+
+
+
+
 }

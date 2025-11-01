@@ -78,7 +78,7 @@ public class SceneNet : MonoBehaviour
         if (!networkStarted) return;
 
         // 只有真正进入地图（拿到 SceneId）才上报
-        if (!LocalPlayerManager.Instance.ComputeIsInGame(out var sid) || string.IsNullOrEmpty(sid)) return;
+        if (!LoaclPlayerManager.Instance.ComputeIsInGame(out var sid) || string.IsNullOrEmpty(sid)) return;
         if (_sceneReadySidSent == sid) return; // 去抖：本场景只发一次
 
         var lm = LevelManager.Instance;
@@ -138,8 +138,7 @@ public class SceneNet : MonoBehaviour
         }
         else
         {
-            TryPerformSceneLoad_Local(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile,
-                sceneUseLocation, sceneLocationName);
+            TryPerformSceneLoad_Local(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile, sceneUseLocation, sceneLocationName);
         }
 
         // 收尾与清理
@@ -266,7 +265,7 @@ public class SceneNet : MonoBehaviour
 
         // ===== 过滤：不同图 & 不在白名单，直接忽略 =====
         string mySceneId = null;
-        LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
+        LoaclPlayerManager.Instance.ComputeIsInGame(out mySceneId);
         mySceneId = mySceneId ?? string.Empty;
 
         // A) 同图过滤（仅 v2 有 hostSceneId；v1 无法判断同图，用 B 兜底）
@@ -300,8 +299,7 @@ public class SceneNet : MonoBehaviour
         sceneReady.Clear();
         foreach (var pid in sceneParticipantIds) sceneReady[pid] = false;
 
-        Debug.Log(
-            $"[SCENE] 收到投票 v{ver}: target='{sceneTargetId}', hostScene='{hostSceneId}', myScene='{mySceneId}', players={cnt}");
+        Debug.Log($"[SCENE] 收到投票 v{ver}: target='{sceneTargetId}', hostScene='{hostSceneId}', myScene='{mySceneId}', players={cnt}");
 
         // TODO：在这里弹出你的投票 UI（如果之前就是这里弹的，维持不变）
         // ShowSceneVoteUI(sceneTargetId, sceneLocationName, sceneParticipantIds) 等
@@ -371,8 +369,7 @@ public class SceneNet : MonoBehaviour
         }
         else
         {
-            TryPerformSceneLoad_Local(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile,
-                sceneUseLocation, sceneLocationName);
+            TryPerformSceneLoad_Local(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile, sceneUseLocation, sceneLocationName);
         }
 
         sceneVoteActive = false;
@@ -444,8 +441,7 @@ public class SceneNet : MonoBehaviour
         }
     }
 
-    public void Server_HandleSceneReady(NetPeer fromPeer, string playerId, string sceneId, Vector3 pos, Quaternion rot,
-        string faceJson)
+    public void Server_HandleSceneReady(NetPeer fromPeer, string playerId, string sceneId, Vector3 pos, Quaternion rot, string faceJson)
     {
         if (fromPeer != null) SceneM._srvPeerScene[fromPeer] = sceneId;
 
@@ -491,13 +487,8 @@ public class SceneNet : MonoBehaviour
                 w.Put(sceneId);
                 w.PutVector3(pos);
                 w.PutQuaternion(rot);
-                var useFace = !string.IsNullOrEmpty(faceJson)
-                    ? faceJson
-                    :
-                    playerStatuses.TryGetValue(fromPeer, out var ss) && !string.IsNullOrEmpty(ss.CustomFaceJson)
-                        ?
-                        ss.CustomFaceJson
-                        : "";
+                var useFace = !string.IsNullOrEmpty(faceJson) ? faceJson :
+                    playerStatuses.TryGetValue(fromPeer, out var ss) && !string.IsNullOrEmpty(ss.CustomFaceJson) ? ss.CustomFaceJson : "";
                 w.Put(useFace);
                 other.Send(w, DeliveryMethod.ReliableOrdered);
             }
@@ -549,7 +540,7 @@ public class SceneNet : MonoBehaviour
 
         // 计算主机当前 SceneId
         string hostSceneId = null;
-        LocalPlayerManager.Instance.ComputeIsInGame(out hostSceneId);
+        LoaclPlayerManager.Instance.ComputeIsInGame(out hostSceneId);
         hostSceneId = hostSceneId ?? string.Empty;
 
         var w = new NetDataWriter();
@@ -570,8 +561,7 @@ public class SceneNet : MonoBehaviour
 
 
         netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
-        Debug.Log(
-            $"[SCENE] 投票开始 v2: target='{sceneTargetId}', hostScene='{hostSceneId}', loc='{sceneLocationName}', count={sceneParticipantIds.Count}");
+        Debug.Log($"[SCENE] 投票开始 v2: target='{sceneTargetId}', hostScene='{hostSceneId}', loc='{sceneLocationName}', count={sceneParticipantIds.Count}");
 
         // 如需“只发同图”，可以替换为下面这段（二选一）：
         /*
@@ -687,7 +677,7 @@ public class SceneNet : MonoBehaviour
             }
         }
 
-        _cliGateDeadline = Time.realtimeSinceStartup + 100f; // 可调超时（防死锁）吃保底
+        _cliGateDeadline = Time.realtimeSinceStartup + 10f; // 可调超时（防死锁）吃保底
 
         while (!_cliSceneGateReleased && Time.realtimeSinceStartup < _cliGateDeadline)
         {
@@ -710,15 +700,6 @@ public class SceneNet : MonoBehaviour
         }
         catch
         {
-        }
-
-        // ===== 场景切换重连功能 =====
-        // 在Client_SceneGateAsync完成后触发重连，此时服务端已经准备好接受新连接
-        // 这是重连的最佳时机，避免在服务端未准备好时连接失败
-        if (!IsServer && Service != null)
-        {
-            Debug.Log("[COOP] Client_SceneGateAsync 完成，开始重连以确保同步");
-            Service.ReconnectAfterSceneLoad().Forget();
         }
     }
 

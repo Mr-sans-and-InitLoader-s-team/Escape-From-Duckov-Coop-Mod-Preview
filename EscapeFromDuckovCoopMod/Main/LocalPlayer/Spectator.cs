@@ -73,7 +73,7 @@ public class Spectator : MonoBehaviour
 
         var mySceneId = localPlayerStatus != null ? localPlayerStatus.SceneId : null;
         if (string.IsNullOrEmpty(mySceneId))
-            LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
+            LoaclPlayerManager.Instance.ComputeIsInGame(out mySceneId);
         var myK = CanonicalizeSceneId(mySceneId);
 
         int cand = 0, kept = 0;
@@ -83,12 +83,11 @@ public class Spectator : MonoBehaviour
             {
                 var go = kv.Value;
                 var cmc = go ? go.GetComponent<CharacterMainControl>() : null;
-                if (!LocalPlayerManager.Instance.IsAlive(cmc) || cmc == exclude) continue;
+                if (!LoaclPlayerManager.Instance.IsAlive(cmc) || cmc == exclude) continue;
                 cand++;
 
                 string peerScene = null;
-                if (!SceneM._srvPeerScene.TryGetValue(kv.Key, out peerScene) &&
-                    playerStatuses.TryGetValue(kv.Key, out var st))
+                if (!SceneM._srvPeerScene.TryGetValue(kv.Key, out peerScene) && playerStatuses.TryGetValue(kv.Key, out var st))
                     peerScene = st?.SceneId;
 
                 if (AreSameMap(mySceneId, peerScene))
@@ -102,7 +101,7 @@ public class Spectator : MonoBehaviour
             {
                 var go = kv.Value;
                 var cmc = go ? go.GetComponent<CharacterMainControl>() : null;
-                if (!LocalPlayerManager.Instance.IsAlive(cmc) || cmc == exclude) continue;
+                if (!LoaclPlayerManager.Instance.IsAlive(cmc) || cmc == exclude) continue;
                 cand++;
 
                 //  先从 clientPlayerStatuses 拿 SceneId

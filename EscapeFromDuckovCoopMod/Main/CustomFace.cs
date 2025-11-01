@@ -35,8 +35,7 @@ public static class CustomFace
             {
                 if (_cliPendingFace.TryGetValue(playerId, out var pf) && !string.IsNullOrEmpty(pf))
                     face = pf;
-                else if (NetService.Instance.clientPlayerStatuses.TryGetValue(playerId, out var st) &&
-                         !string.IsNullOrEmpty(st.CustomFaceJson))
+                else if (NetService.Instance.clientPlayerStatuses.TryGetValue(playerId, out var st) && !string.IsNullOrEmpty(st.CustomFaceJson))
                     face = st.CustomFaceJson;
             }
 
@@ -149,16 +148,14 @@ public static class CustomFace
 
             // 3) 记住最近一次非空
             if (!string.IsNullOrEmpty(json) && json != "{}")
-                LocalPlayerManager.Instance._lastGoodFaceJson = json;
+                LoaclPlayerManager.Instance._lastGoodFaceJson = json;
 
             // 4) 返回永不为空（尽量用缓存兜底）
-            return !string.IsNullOrEmpty(json) && json != "{}"
-                ? json
-                : LocalPlayerManager.Instance._lastGoodFaceJson ?? "";
+            return !string.IsNullOrEmpty(json) && json != "{}" ? json : LoaclPlayerManager.Instance._lastGoodFaceJson ?? "";
         }
         catch
         {
-            return LocalPlayerManager.Instance._lastGoodFaceJson ?? "";
+            return LoaclPlayerManager.Instance._lastGoodFaceJson ?? "";
         }
     }
 

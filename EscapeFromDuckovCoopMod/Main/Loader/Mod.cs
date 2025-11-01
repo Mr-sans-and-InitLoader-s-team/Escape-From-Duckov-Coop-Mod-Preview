@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -15,6 +15,7 @@
 // GNU Affero General Public License for more details.
 
 using Duckov.UI;
+using EscapeFromDuckovCoopMod.Main.Map;
 using ItemStatsSystem;
 using ItemStatsSystem.Items;
 using UnityEngine.SceneManagement;
@@ -1596,6 +1597,11 @@ public class ModBehaviourF : MonoBehaviour
 
     private void OnSceneLoaded_IndexDestructibles(Scene s, LoadSceneMode m)
     {
+
+        // 场景加载以后就reset回去
+        MapManager mgr = MapManager.Instance;
+        mgr.ResetBaseMap();
+
         if (!networkStarted) return;
         COOPManager.destructible.BuildDestructibleIndex();
 

@@ -19,6 +19,8 @@ using ItemStatsSystem;
 using ItemStatsSystem.Items;
 using UnityEngine.SceneManagement;
 using static EscapeFromDuckovCoopMod.LootNet;
+using LiteNetLib;
+using EscapeFromDuckovCoopMod.Chat.Managers;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -728,6 +730,19 @@ public class ModBehaviourF : MonoBehaviour
                 if (!IsServer)
                     //Debug.Log("[RECV FIRE_EVENT] opcode path");
                     COOPManager.WeaponHandle.HandleFireEvent(reader);
+                break;
+
+            // ===== 聊天系统处理 =====
+            case Op.CHAT_MESSAGE_SEND:
+                if (IsServer) HandleChatMessageSend(peer, reader);
+                break;
+                
+            case Op.CHAT_MESSAGE_BROADCAST:
+                if (!IsServer) HandleChatMessageBroadcast(reader);
+                break;
+                
+            case Op.CHAT_HISTORY_SYNC:
+                if (!IsServer) HandleChatHistorySync(reader);
                 break;
 
             default:
@@ -1628,6 +1643,206 @@ public class ModBehaviourF : MonoBehaviour
         if (!networkStarted) return;
         COOPManager.destructible.BuildDestructibleIndex();
     }
+
+    #region 聊天系统处理方法
+
+    /// <summary>
+    /// 处理客户端发送的聊天消息（主机端）
+    /// </summary>
+    /// <param name="peer">发送消息的客户端</param>
+    /// <param name="reader">消息数据</param>
+    private void HandleChatMessageSend(NetPeer peer, NetPacketReader reader)
+    {
+        try
+        {
+            // 读取聊天消息JSON数据
+            var messageJson = reader.GetString();
+            
+            Debug.Log($"[CHAT] 主机收到客户端聊天消息: {peer.EndPoint} -> {messageJson}");
+            
+            // 主机端也显示这条消息
+            DisplayChatMessageOnHost(messageJson);
+            
+            // 广播给所有客户端（包括发送者）
+            BroadcastChatMessage(messageJson);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[CHAT] 处理聊天消息发送时发生异常: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// 在主机端显示聊天消息
+    /// </summary>
+    /// <param name="messageJson">消息JSON</param>
+    private void DisplayChatMessageOnHost(string messageJson)
+    {
+        try
+        {
+            // 通知ChatManager处理消息
+            if (ChatManager.Instance != null)
+            {
+                ChatManager.Instance.HandleNetworkMessage(messageJson);
+                Debug.Log($"[CHAT] 主机显示消息通过ChatManager");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[CHAT] 在主机端显示消息时发生异常: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 处理主机广播的聊天消息（客户端）
+    /// </summary>
+    /// <param name="reader">消息数据</param>
+    private void HandleChatMessageBroadcast(NetPacketReader reader)
+    {
+        try
+        {
+            // 读取聊天消息JSON数据
+            var messageJson = reader.GetString();
+            
+            Debug.Log($"[CHAT] 客机收到主机广播的聊天消息: {messageJson}");
+            
+            // 通知聊天管理器处理消息
+            if (ChatManager.Instance != null)
+            {
+                ChatManager.Instance.HandleNetworkMessage(messageJson);
+                Debug.Log($"[CHAT] 客机显示消息通过ChatManager");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[CHAT] 处理聊天消息广播时发生异常: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 处理聊天历史同步（客户端）
+    /// </summary>
+    /// <param name="reader">消息数据</param>
+    private void HandleChatHistorySync(NetPacketReader reader)
+    {
+        try
+        {
+            // 读取聊天历史JSON数据
+            var historyJson = reader.GetString();
+            
+            Debug.Log($"[CHAT] 收到聊天历史同步: {historyJson.Length} 字符");
+            
+            // 通知聊天管理器处理历史同步
+            if (ChatManager.Instance != null)
+            {
+                ChatManager.Instance.HandleHistorySync(historyJson);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[CHAT] 处理聊天历史同步时发生异常: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 广播聊天消息给所有客户端
+    /// 使用统一传输层，自动选择 Steam P2P 或直连 UDP
+    /// </summary>
+    /// <param name="messageJson">聊天消息JSON</param>
+    private void BroadcastChatMessage(string messageJson)
+    {
+        try
+        {
+            if (!NetService.Instance.IsServer)
+            {
+                Debug.LogWarning("[CHAT] 无法广播聊天消息：不是主机");
+                return;
+            }
+
+            Debug.Log($"[CHAT] 通过桥接器广播消息");
+            
+            // 使用桥接器发送消息
+            bool success = EscapeFromDuckovCoopMod.Chat.Network.ChatTransportBridge.SendChatMessage(messageJson);
+
+            if (success)
+            {
+                Debug.Log($"[CHAT] 消息已广播，状态: {EscapeFromDuckovCoopMod.Chat.Network.ChatTransportBridge.GetTransportStatus()}");
+            }
+            else
+            {
+                Debug.LogWarning($"[CHAT] 广播失败");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[CHAT] 广播聊天消息时发生异常: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 发送聊天历史给指定客户端
+    /// </summary>
+    /// <param name="peer">目标客户端</param>
+    /// <param name="historyJson">聊天历史JSON</param>
+    public void SendChatHistoryToClient(NetPeer peer, string historyJson)
+    {
+        try
+        {
+            if (peer == null || peer.ConnectionState != ConnectionState.Connected)
+            {
+                Debug.LogWarning("[CHAT] 无法发送聊天历史：客户端未连接");
+                return;
+            }
+
+            var writer = new NetDataWriter();
+            writer.Put((byte)Op.CHAT_HISTORY_SYNC);
+            writer.Put(historyJson);
+
+            peer.Send(writer, DeliveryMethod.ReliableOrdered);
+
+            Debug.Log($"[CHAT] 已发送聊天历史给客户端: {peer.EndPoint}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[CHAT] 发送聊天历史时发生异常: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 处理UDP聊天消息
+    /// 通过桥接器处理，支持 Steam P2P 和直连 UDP
+    /// </summary>
+    /// <param name="chatJson">聊天消息JSON</param>
+    /// <param name="senderEndpoint">发送者端点</param>
+    public void HandleUDPChatMessage(string chatJson, string senderEndpoint)
+    {
+        try
+        {
+            Debug.Log($"[CHAT] HandleUDPChatMessage: {senderEndpoint}");
+            
+            // 通知桥接器处理直连 UDP 消息
+            EscapeFromDuckovCoopMod.Chat.Network.ChatTransportBridge.HandleDirectUDPMessage(chatJson, senderEndpoint);
+            
+            // 如果是主机，广播给所有连接的客户端
+            if (NetService.Instance?.IsServer == true)
+            {
+                Debug.Log($"[CHAT] 主机收到消息，广播");
+                BroadcastChatMessage(chatJson);
+            }
+            
+            // 通知ChatManager处理
+            if (ChatManager.Instance != null)
+            {
+                ChatManager.Instance.HandleNetworkMessage(chatJson);
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[CHAT] 处理UDP聊天消息时发生异常: {ex.Message}");
+        }
+    }
+
+    #endregion
 
     public struct Pending
     {

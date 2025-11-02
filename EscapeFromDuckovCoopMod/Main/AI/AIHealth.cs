@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -16,6 +16,7 @@
 
 using System.Reflection;
 using Duckov.UI;
+using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -38,6 +39,8 @@ public class AIHealth
         typeof(Health).GetField("hasCharacter", BindingFlags.NonPublic | BindingFlags.Instance);
 
     private readonly Dictionary<int, float> _cliLastAiHp = new();
+    private readonly Dictionary<int, float> _cliLastReportedHp = new();
+    private readonly Dictionary<int, float> _cliNextReportAt = new();
     private NetService Service => NetService.Instance;
 
     private bool IsServer => Service != null && Service.IsServer;
@@ -62,6 +65,148 @@ public class AIHealth
         w.Put(maxHealth);
         w.Put(currentHealth);
         netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+    }
+
+
+    public void Client_ReportAiHealth(int aiId, float max, float cur)
+    {
+        if (!networkStarted || IsServer || connectedPeer == null || aiId == 0) return;
+
+        var now = Time.time;
+        if (_cliNextReportAt.TryGetValue(aiId, out var next) && now < next)
+        {
+            if (_cliLastReportedHp.TryGetValue(aiId, out var last) && Mathf.Abs(last - cur) < 0.01f)
+                return;
+        }
+
+        var w = new NetDataWriter();
+        w.Put((byte)Op.AI_HEALTH_REPORT);
+        w.Put(aiId);
+        w.Put(max);
+        w.Put(cur);
+        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+
+        _cliNextReportAt[aiId] = now + 0.05f;
+        _cliLastReportedHp[aiId] = cur;
+
+        if (ModBehaviourF.LogAiHpDebug)
+            Debug.Log($"[AI-HP][CLIENT] report aiId={aiId} max={max} cur={cur}");
+    }
+
+    public void HandleAiHealthReport(NetPeer sender, NetPacketReader r)
+    {
+        if (!networkStarted || !IsServer) return;
+
+        if (r.AvailableBytes < 12) return;
+
+        var aiId = r.GetInt();
+        var max = r.GetFloat();
+        var cur = r.GetFloat();
+
+        if (!AITool.aiById.TryGetValue(aiId, out var cmc) || !cmc)
+        {
+            if (ModBehaviourF.LogAiHpDebug)
+                Debug.LogWarning($"[AI-HP][SERVER] report missing AI aiId={aiId} from={sender?.EndPoint}");
+            return;
+        }
+
+        var h = cmc.Health;
+        if (!h)
+        {
+            if (ModBehaviourF.LogAiHpDebug)
+                Debug.LogWarning($"[AI-HP][SERVER] report aiId={aiId} has no Health");
+            return;
+        }
+
+        var applyMax = max > 0f ? max : h.MaxHealth;
+        var maxForClamp = applyMax > 0f ? applyMax : h.MaxHealth;
+        var clampedCur = maxForClamp > 0f ? Mathf.Clamp(cur, 0f, maxForClamp) : Mathf.Max(0f, cur);
+
+        var wasDead = false;
+        try
+        {
+            wasDead = h.IsDead;
+        }
+        catch
+        {
+        }
+
+        HealthM.Instance.ForceSetHealth(h, applyMax, clampedCur, false);
+
+        if (ModBehaviourF.LogAiHpDebug)
+            Debug.Log($"[AI-HP][SERVER] apply report aiId={aiId} max={applyMax} cur={clampedCur} from={sender?.EndPoint}");
+
+        Server_BroadcastAiHealth(aiId, applyMax, clampedCur);
+
+        if (clampedCur <= 0f && !wasDead)
+        {
+            var di = new DamageInfo();
+
+            try
+            {
+                di.damageValue = Mathf.Max(1f, applyMax > 0f ? applyMax : 1f);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                di.finalDamage = di.damageValue;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                di.damagePoint = cmc.transform.position;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                di.damageNormal = Vector3.up;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                di.toDamageReceiver = cmc.mainDamageReceiver;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (playerStatuses != null && sender != null && playerStatuses.TryGetValue(sender, out var st) && st != null)
+                    di.fromCharacter = CharacterMainControl.Main;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                cmc.Health.OnDeadEvent?.Invoke(di);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                AITool.TryFireOnDead(cmc.Health, di);
+            }
+            catch
+            {
+            }
+        }
     }
 
 

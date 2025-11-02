@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -41,24 +41,24 @@ public static class SceneM
         // 自己的 SceneId（拿不到就 Compute 一次）懂了吗sans看到这
         var mySceneId = localPlayerStatus != null ? localPlayerStatus.SceneId : null;
         if (string.IsNullOrEmpty(mySceneId))
-            LoaclPlayerManager.Instance.ComputeIsInGame(out mySceneId);
+            LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
 
         // 拿不到 SceneId 的极端情况：沿用旧逻辑（不按同图过滤），避免误杀
         if (string.IsNullOrEmpty(mySceneId))
         {
             var alive = 0;
-            if (LoaclPlayerManager.Instance.IsAlive(CharacterMainControl.Main)) alive++;
+            if (LocalPlayerManager.Instance.IsAlive(CharacterMainControl.Main)) alive++;
             if (IsServer)
                 foreach (var kv in remoteCharacters)
                 {
                     var cmc = kv.Value ? kv.Value.GetComponent<CharacterMainControl>() : null;
-                    if (LoaclPlayerManager.Instance.IsAlive(cmc)) alive++;
+                    if (LocalPlayerManager.Instance.IsAlive(cmc)) alive++;
                 }
             else
                 foreach (var kv in clientRemoteCharacters)
                 {
                     var cmc = kv.Value ? kv.Value.GetComponent<CharacterMainControl>() : null;
-                    if (LoaclPlayerManager.Instance.IsAlive(cmc)) alive++;
+                    if (LocalPlayerManager.Instance.IsAlive(cmc)) alive++;
                 }
 
             return alive == 0;
@@ -67,13 +67,13 @@ public static class SceneM
         var aliveSameScene = 0;
 
         // 本机（通常观战时本机已死，这里自然为 0）
-        if (LoaclPlayerManager.Instance.IsAlive(CharacterMainControl.Main)) aliveSameScene++;
+        if (LocalPlayerManager.Instance.IsAlive(CharacterMainControl.Main)) aliveSameScene++;
 
         if (IsServer)
             foreach (var kv in remoteCharacters)
             {
                 var cmc = kv.Value ? kv.Value.GetComponent<CharacterMainControl>() : null;
-                if (!LoaclPlayerManager.Instance.IsAlive(cmc)) continue;
+                if (!LocalPlayerManager.Instance.IsAlive(cmc)) continue;
 
                 string peerScene = null;
                 if (!_srvPeerScene.TryGetValue(kv.Key, out peerScene) && playerStatuses.TryGetValue(kv.Key, out var st))
@@ -85,7 +85,7 @@ public static class SceneM
             foreach (var kv in clientRemoteCharacters)
             {
                 var cmc = kv.Value ? kv.Value.GetComponent<CharacterMainControl>() : null;
-                if (!LoaclPlayerManager.Instance.IsAlive(cmc)) continue;
+                if (!LocalPlayerManager.Instance.IsAlive(cmc)) continue;
 
                 var peerScene = NetService.Instance.clientPlayerStatuses.TryGetValue(kv.Key, out var st) ? st?.SceneId : null;
                 if (Spectator.AreSameMap(mySceneId, peerScene)) aliveSameScene++;
@@ -122,7 +122,7 @@ public static class SceneM
     {
         var hostSceneId = localPlayerStatus != null ? localPlayerStatus.SceneId : null;
         if (string.IsNullOrEmpty(hostSceneId))
-            LoaclPlayerManager.Instance.ComputeIsInGame(out hostSceneId);
+            LocalPlayerManager.Instance.ComputeIsInGame(out hostSceneId);
         if (string.IsNullOrEmpty(hostSceneId)) yield break;
 
         foreach (var p in netManager.ConnectedPeerList)

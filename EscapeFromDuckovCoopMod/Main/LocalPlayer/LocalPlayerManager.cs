@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -21,9 +21,9 @@ using UnityEngine.SceneManagement;
 
 namespace EscapeFromDuckovCoopMod;
 
-public class LoaclPlayerManager : MonoBehaviour
+public class LocalPlayerManager : MonoBehaviour
 {
-    public static LoaclPlayerManager Instance;
+    public static LocalPlayerManager Instance;
 
     // —— 外观缓存（避免发空&避免被空覆盖）——
     public string _lastGoodFaceJson;
@@ -86,7 +86,9 @@ public class LoaclPlayerManager : MonoBehaviour
         // 1) LevelManager/主角存在才算“进了关卡”
         var lm = LevelManager.Instance;
         if (lm == null || lm.MainCharacter == null)
+        {
             return false;
+        }
 
         // 2) 优先尝试从 MultiSceneCore 的“当前子场景”取 id
         //    注意：不要用 MultiSceneCore.SceneInfo，它是根据 core 自己所在的主场景算的！
@@ -103,9 +105,13 @@ public class LoaclPlayerManager : MonoBehaviour
                     // 通过 buildIndex -> SceneInfoCollection 查询 ID（能查到的话）
                     var idFromBuild = SceneInfoCollection.GetSceneID(active.buildIndex);
                     if (!string.IsNullOrEmpty(idFromBuild))
+                    {
                         sceneId = idFromBuild;
+                    }
                     else
+                    {
                         sceneId = active.name; // 查不到就用场景名兜底
+                    }
                 }
             }
         }
@@ -118,7 +124,9 @@ public class LoaclPlayerManager : MonoBehaviour
         if (string.IsNullOrEmpty(sceneId))
             // Base 作为“家/大厅”，仍视为在游戏里，并归一成固定ID，便于双方比对
             // （常规工程里 Base 的常量是 "Base"）
+        {
             sceneId = SceneInfoCollection.BaseSceneID; // "Base"
+        }
 
         // 4) 只要有一个非空 sceneId，就认为“在游戏中”
         return !string.IsNullOrEmpty(sceneId);
@@ -128,7 +136,10 @@ public class LoaclPlayerManager : MonoBehaviour
     {
         var equipmentList = new List<EquipmentSyncData>();
         var equipmentController = CharacterMainControl.Main?.EquipmentController;
-        if (equipmentController == null) return equipmentList;
+        if (equipmentController == null)
+        {
+            return equipmentList;
+        }
 
         var slotNames = new[] { "armorSlot", "helmatSlot", "faceMaskSlot", "backpackSlot", "headsetSlot" };
         var slotHashes = new[]
@@ -138,10 +149,14 @@ public class LoaclPlayerManager : MonoBehaviour
         };
 
         for (var i = 0; i < slotNames.Length; i++)
+        {
             try
             {
                 var slotField = Traverse.Create(equipmentController).Field<Slot>(slotNames[i]);
-                if (slotField.Value == null) continue;
+                if (slotField.Value == null)
+                {
+                    continue;
+                }
 
                 var slot = slotField.Value;
                 var itemId = slot?.Content != null ? slot.Content.TypeID.ToString() : "";
@@ -151,6 +166,7 @@ public class LoaclPlayerManager : MonoBehaviour
             {
                 Debug.LogError($"获取槽位 {slotNames[i]} 时发生错误: {ex.Message}");
             }
+        }
 
         return equipmentList;
     }
@@ -159,7 +175,10 @@ public class LoaclPlayerManager : MonoBehaviour
     {
         var weaponList = new List<WeaponSyncData>();
         var mainControl = CharacterMainControl.Main;
-        if (mainControl == null) return weaponList;
+        if (mainControl == null)
+        {
+            return weaponList;
+        }
 
         try
         {
@@ -187,7 +206,10 @@ public class LoaclPlayerManager : MonoBehaviour
 
     public void Main_OnHoldAgentChanged(DuckovItemAgent obj)
     {
-        if (obj == null) return;
+        if (obj == null)
+        {
+            return;
+        }
 
         var itemId = obj.Item?.TypeID.ToString() ?? "";
         var slotHash = obj.handheldSocket;
@@ -221,18 +243,48 @@ public class LoaclPlayerManager : MonoBehaviour
 
     public void ModBehaviour_onSlotContentChanged(Slot obj)
     {
-        if (!networkStarted || Service.localPlayerStatus == null || !Service.localPlayerStatus.IsInGame) return;
-        if (obj == null) return;
+        if (!networkStarted || Service.localPlayerStatus == null || !Service.localPlayerStatus.IsInGame)
+        {
+            return;
+        }
+
+        if (obj == null)
+        {
+            return;
+        }
 
         var itemId1 = "";
-        if (obj.Content != null) itemId1 = obj.Content.TypeID.ToString();
+        if (obj.Content != null)
+        {
+            itemId1 = obj.Content.TypeID.ToString();
+        }
+
         //联机项目早期做出来的
         var slotHash1 = obj.GetHashCode();
-        if (obj.Key == "Helmat") slotHash1 = 200;
-        if (obj.Key == "Armor") slotHash1 = 100;
-        if (obj.Key == "FaceMask") slotHash1 = 300;
-        if (obj.Key == "Backpack") slotHash1 = 400;
-        if (obj.Key == "Head") slotHash1 = 500;
+        if (obj.Key == "Helmat")
+        {
+            slotHash1 = 200;
+        }
+
+        if (obj.Key == "Armor")
+        {
+            slotHash1 = 100;
+        }
+
+        if (obj.Key == "FaceMask")
+        {
+            slotHash1 = 300;
+        }
+
+        if (obj.Key == "Backpack")
+        {
+            slotHash1 = 400;
+        }
+
+        if (obj.Key == "Head")
+        {
+            slotHash1 = 500;
+        }
 
         var equipmentData1 = new EquipmentSyncData { SlotHash = slotHash1, ItemId = itemId1 };
         SendLocalPlayerStatus.Instance.SendEquipmentUpdate(equipmentData1);
@@ -241,7 +293,10 @@ public class LoaclPlayerManager : MonoBehaviour
     public void UpdatePlayerStatuses()
     {
         if (netManager == null || !netManager.IsRunning || Service.localPlayerStatus == null)
+        {
             return;
+        }
+
         var bool1 = ComputeIsInGame(out var ids);
         var currentIsInGame = bool1;
         var levelManager = LevelManager.Instance;
@@ -260,11 +315,19 @@ public class LoaclPlayerManager : MonoBehaviour
 
             if (currentIsInGame && levelManager != null)
                 // 不再二次创建本地主角；只做 Scene 就绪上报，由主机撮合同图远端创建
+            {
                 SceneNet.Instance.TrySendSceneReadyOnce();
+            }
 
 
-            if (!IsServer) Send_ClientStatus.Instance.SendClientStatusUpdate();
-            else SendLocalPlayerStatus.Instance.SendPlayerStatusUpdate();
+            if (!IsServer)
+            {
+                Send_ClientStatus.Instance.SendClientStatusUpdate();
+            }
+            else
+            {
+                SendLocalPlayerStatus.Instance.SendPlayerStatusUpdate();
+            }
         }
         else if (currentIsInGame && levelManager != null && levelManager.MainCharacter != null)
         {
@@ -272,12 +335,19 @@ public class LoaclPlayerManager : MonoBehaviour
             Service.localPlayerStatus.Rotation = levelManager.MainCharacter.modelRoot.transform.rotation;
         }
 
-        if (currentIsInGame) Service.localPlayerStatus.CustomFaceJson = CustomFace.LoadLocalCustomFaceJson();
+        if (currentIsInGame)
+        {
+            Service.localPlayerStatus.CustomFaceJson = CustomFace.LoadLocalCustomFaceJson();
+        }
     }
 
     public bool IsAlive(CharacterMainControl cmc)
     {
-        if (!cmc) return false;
+        if (!cmc)
+        {
+            return false;
+        }
+
         try
         {
             return cmc.Health != null && cmc.Health.CurrentHealth > 0.001f;
@@ -291,7 +361,10 @@ public class LoaclPlayerManager : MonoBehaviour
 
     public void Client_EnsureSelfDeathEvent(Health h, CharacterMainControl cmc)
     {
-        if (!h || !cmc) return;
+        if (!h || !cmc)
+        {
+            return;
+        }
 
         var cur = 1f;
         try
@@ -312,7 +385,10 @@ public class LoaclPlayerManager : MonoBehaviour
         }
 
         // 防重入：本地本轮只补发一次 OnDead
-        if (_cliSelfDeathFired) return;
+        if (_cliSelfDeathFired)
+        {
+            return;
+        }
 
         try
         {
@@ -343,19 +419,31 @@ public class LoaclPlayerManager : MonoBehaviour
     public void UpdateRemoteCharacters()
     {
         if (IsServer)
+        {
             foreach (var kvp in remoteCharacters)
             {
                 var go = kvp.Value;
-                if (!go) continue;
+                if (!go)
+                {
+                    continue;
+                }
+
                 NetInterpUtil.Attach(go); // 确保有组件；具体位置更新由 NetInterpolator 驱动
             }
+        }
         else
+        {
             foreach (var kvp in clientRemoteCharacters)
             {
                 var go = kvp.Value;
-                if (!go) continue;
+                if (!go)
+                {
+                    continue;
+                }
+
                 NetInterpUtil.Attach(go);
             }
+        }
     }
 }
 

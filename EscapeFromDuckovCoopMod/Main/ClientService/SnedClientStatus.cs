@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -38,8 +38,8 @@ public class Send_ClientStatus : MonoBehaviour
         if (IsServer || connectedPeer == null) return;
 
         localPlayerStatus.CustomFaceJson = CustomFace.LoadLocalCustomFaceJson();
-        var equipmentList = LoaclPlayerManager.Instance.GetLocalEquipment();
-        var weaponList = LoaclPlayerManager.Instance.GetLocalWeapons();
+        var equipmentList = LocalPlayerManager.Instance.GetLocalEquipment();
+        var weaponList = LocalPlayerManager.Instance.GetLocalWeapons();
 
         writer.Reset();
         writer.Put((byte)Op.CLIENT_STATUS_UPDATE); // opcode

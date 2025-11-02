@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -78,7 +78,7 @@ public class SceneNet : MonoBehaviour
         if (!networkStarted) return;
 
         // 只有真正进入地图（拿到 SceneId）才上报
-        if (!LoaclPlayerManager.Instance.ComputeIsInGame(out var sid) || string.IsNullOrEmpty(sid)) return;
+        if (!LocalPlayerManager.Instance.ComputeIsInGame(out var sid) || string.IsNullOrEmpty(sid)) return;
         if (_sceneReadySidSent == sid) return; // 去抖：本场景只发一次
 
         var lm = LevelManager.Instance;
@@ -265,7 +265,7 @@ public class SceneNet : MonoBehaviour
 
         // ===== 过滤：不同图 & 不在白名单，直接忽略 =====
         string mySceneId = null;
-        LoaclPlayerManager.Instance.ComputeIsInGame(out mySceneId);
+        LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
         mySceneId = mySceneId ?? string.Empty;
 
         // A) 同图过滤（仅 v2 有 hostSceneId；v1 无法判断同图，用 B 兜底）
@@ -540,7 +540,7 @@ public class SceneNet : MonoBehaviour
 
         // 计算主机当前 SceneId
         string hostSceneId = null;
-        LoaclPlayerManager.Instance.ComputeIsInGame(out hostSceneId);
+        LocalPlayerManager.Instance.ComputeIsInGame(out hostSceneId);
         hostSceneId = hostSceneId ?? string.Empty;
 
         var w = new NetDataWriter();

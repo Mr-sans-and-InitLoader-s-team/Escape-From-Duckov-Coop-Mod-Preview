@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -21,9 +21,9 @@ using UnityEngine.SceneManagement;
 
 namespace EscapeFromDuckovCoopMod;
 
-public class LoaclPlayerManager : MonoBehaviour
+public class LocalPlayerManager : MonoBehaviour
 {
-    public static LoaclPlayerManager Instance;
+    public static LocalPlayerManager Instance;
 
     // —— 外观缓存（避免发空&避免被空覆盖）——
     public string _lastGoodFaceJson;

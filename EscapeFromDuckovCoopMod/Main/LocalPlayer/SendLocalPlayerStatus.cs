@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -59,11 +59,11 @@ public class SendLocalPlayerStatus : MonoBehaviour
 
             writer.Put(st.CustomFaceJson ?? "");
 
-            var equipmentList = st == localPlayerStatus ? LoaclPlayerManager.Instance.GetLocalEquipment() : st.EquipmentList ?? new List<EquipmentSyncData>();
+            var equipmentList = st == localPlayerStatus ? LocalPlayerManager.Instance.GetLocalEquipment() : st.EquipmentList ?? new List<EquipmentSyncData>();
             writer.Put(equipmentList.Count);
             foreach (var e in equipmentList) e.Serialize(writer);
 
-            var weaponList = st == localPlayerStatus ? LoaclPlayerManager.Instance.GetLocalWeapons() : st.WeaponList ?? new List<WeaponSyncData>();
+            var weaponList = st == localPlayerStatus ? LocalPlayerManager.Instance.GetLocalWeapons() : st.WeaponList ?? new List<WeaponSyncData>();
             writer.Put(weaponList.Count);
             foreach (var w in weaponList) w.Serialize(writer);
         }

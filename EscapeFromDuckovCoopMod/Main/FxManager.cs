@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -163,7 +163,7 @@ public static class FxManager
             ItemAgent_Gun gun = null;
             Transform muzzleTf = null;
             if (!string.IsNullOrEmpty(shooterId))
-                if (LoaclPlayerManager.Instance._gunCacheByShooter.TryGetValue(shooterId, out var cached) && cached.gun)
+                if (LocalPlayerManager.Instance._gunCacheByShooter.TryGetValue(shooterId, out var cached) && cached.gun)
                 {
                     gun = cached.gun;
                     muzzleTf = cached.muzzle;
@@ -186,7 +186,7 @@ public static class FxManager
 
                 if (gun && gun.muzzle && !muzzleTf) muzzleTf = gun.muzzle;
 
-                if (!string.IsNullOrEmpty(shooterId) && gun) LoaclPlayerManager.Instance._gunCacheByShooter[shooterId] = (gun, muzzleTf);
+                if (!string.IsNullOrEmpty(shooterId) && gun) LocalPlayerManager.Instance._gunCacheByShooter[shooterId] = (gun, muzzleTf);
             }
 
             // 4) 没有 muzzle 就用兜底挂点（只负责火光，不做抛壳/回座力）
@@ -273,7 +273,7 @@ public static class FxManager
         GameObject ResolveMuzzlePrefab()
         {
             GameObject fxPfb = null;
-            LoaclPlayerManager.Instance._muzzleFxCacheByWeaponType.TryGetValue(weaponType, out fxPfb);
+            LocalPlayerManager.Instance._muzzleFxCacheByWeaponType.TryGetValue(weaponType, out fxPfb);
             if (!fxPfb && gun && gun.GunItemSetting) fxPfb = gun.GunItemSetting.muzzleFxPfb;
             if (!fxPfb) fxPfb = defaultMuzzleFx;
             return fxPfb;

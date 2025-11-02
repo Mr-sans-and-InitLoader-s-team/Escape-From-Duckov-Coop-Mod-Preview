@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,7 +14,9 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using static NodeCanvas.Tasks.Actions.CurveTransformTween;
+using Steamworks;
+using System.Collections.Generic;
+using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -93,7 +95,6 @@ public class ModUI : MonoBehaviour
     private Dictionary<string, PlayerStatus> clientPlayerStatuses => Service?.clientPlayerStatuses;
     private SteamLobbyManager LobbyManager => SteamLobbyManager.Instance;
     private NetworkTransportMode TransportMode => Service?.TransportMode ?? NetworkTransportMode.Direct;
-
 
     void Update()
     {
@@ -659,5 +660,4 @@ public class ModUI : MonoBehaviour
         GUILayout.EndScrollView();
         GUI.DragWindow();
     }
-
 }

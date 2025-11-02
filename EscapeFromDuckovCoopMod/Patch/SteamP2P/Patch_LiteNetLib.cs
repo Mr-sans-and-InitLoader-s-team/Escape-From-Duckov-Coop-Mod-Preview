@@ -6,10 +6,10 @@ using System.Text;
 
 namespace EscapeFromDuckovCoopMod
 {
-    [HarmonyPatch(typeof(NetManager), "Connect", new Type[] { typeof(string), typeof(int), typeof(NetDataWriter) })]
+    [HarmonyPatch(typeof(NetManager), "Connect", new Type[] { typeof(string), typeof(int), typeof(LiteNetLib.Utils.NetDataWriter) })]
     public class Patch_NetManager_Connect
     {
-        static bool Prefix(string address, int port, NetDataWriter connectionData, ref NetPeer __result)
+        static bool Prefix(string address, int port, LiteNetLib.Utils.NetDataWriter connectionData, ref NetPeer __result)
         {
             if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
                 return true;
@@ -18,13 +18,13 @@ namespace EscapeFromDuckovCoopMod
                 Debug.Log($"[Patch_Connect] 尝试连接到: {address}:{port}");
                 if (SteamLobbyManager.Instance != null && SteamLobbyManager.Instance.IsInLobby)
                 {
-                    var hostSteamID = SteamLobbyManager.Instance.GetLobbyOwner();
+                    CSteamID hostSteamID = SteamLobbyManager.Instance.GetLobbyOwner();
                     if (hostSteamID != CSteamID.Nil)
                     {
                         Debug.Log($"[Patch_Connect] 检测到Lobby连接，主机Steam ID: {hostSteamID}");
                         if (SteamEndPointMapper.Instance != null)
                         {
-                            var virtualEndPoint = SteamEndPointMapper.Instance.RegisterSteamID(hostSteamID, port);
+                            IPEndPoint virtualEndPoint = SteamEndPointMapper.Instance.RegisterSteamID(hostSteamID, port);
                             Debug.Log($"[Patch_Connect] 主机映射为虚拟IP: {virtualEndPoint}");
                         }
                     }

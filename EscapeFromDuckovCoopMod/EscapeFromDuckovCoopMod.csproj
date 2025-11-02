@@ -125,10 +125,6 @@
         <Reference Include="SymmetryBreakStudio.TastyGrassShader.Examples">
             <HintPath>$(DUCKOV_GAME_MANAGED)\SymmetryBreakStudio.TastyGrassShader.Examples.dll</HintPath>
         </Reference>
-        <Reference Include="System" />
-        <Reference Include="System.Collections" />
-        <Reference Include="System.ComponentModel.Composition" />
-        <Reference Include="System.Configuration" />
         <Reference Include="TeamSoda.Duckov.Core">
             <HintPath>$(DUCKOV_GAME_MANAGED)\TeamSoda.Duckov.Core.dll</HintPath>
         </Reference>
@@ -270,10 +266,10 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="Polyfill" Version="8.9.0">
-        <PrivateAssets>all</PrivateAssets>
-        <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      </PackageReference>
+        <PackageReference Include="Polyfill" Version="8.9.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
     </ItemGroup>
 
     <Target Name="CopyToModsFolder" AfterTargets="Build">
@@ -281,7 +277,10 @@
             <_ModFolder>$(DUCKOV_MODS_DIRECTORY)\$(ProjectName)</_ModFolder>
         </PropertyGroup>
 
-        <Copy SourceFiles="$(OutputPath)\$(AssemblyName).dll" DestinationFolder="$(_ModFolder)" SkipUnchangedFiles="true" />
-        <Message Text="Copied DLL -&gt; $(_ModFolder)\$(AssemblyName).dll" Importance="High" />
+        <Copy
+            SourceFiles="$(OutputPath)\$(AssemblyName).dll"
+            DestinationFolder="$(_ModFolder)"
+            SkipUnchangedFiles="true"/>
+        <Message Text="Copied DLL -&gt; $(_ModFolder)\$(AssemblyName).dll" Importance="High"/>
     </Target>
 </Project>

@@ -20,13 +20,13 @@ namespace EscapeFromDuckovCoopMod
             {
                 if (__result > 0)
                     return;
-                if (SteamManager.Initialized && SteamNetworking.IsP2PPacketAvailable(out var packetSize, 0))
+                if (SteamManager.Initialized && Steamworks.SteamNetworking.IsP2PPacketAvailable(out uint packetSize, 0))
                 {
                     __result = (int)packetSize;
                 }
                 else if (SteamP2PManager.Instance != null)
                 {
-                    var queueSize = SteamP2PManager.Instance.GetQueueSize();
+                    int queueSize = SteamP2PManager.Instance.GetQueueSize();
                     if (queueSize > 0)
                     {
                         __result = queueSize * 200;
@@ -56,14 +56,14 @@ namespace EscapeFromDuckovCoopMod
                 _inPatch = true;
                 if (mode != SelectMode.SelectRead)
                     return true;
-                if (SteamManager.Initialized && SteamNetworking.IsP2PPacketAvailable(out var packetSize, 0))
+                if (SteamManager.Initialized && Steamworks.SteamNetworking.IsP2PPacketAvailable(out uint packetSize, 0))
                 {
                     __result = true;
                     return false;
                 }
                 else if (SteamP2PManager.Instance != null)
                 {
-                    var queueSize = SteamP2PManager.Instance.GetQueueSize();
+                    int queueSize = SteamP2PManager.Instance.GetQueueSize();
                     if (queueSize > 0)
                     {
                         __result = true;
@@ -110,13 +110,13 @@ namespace EscapeFromDuckovCoopMod
             {
                 if (SteamP2PManager.Instance != null)
                 {
-                    if (SteamP2PManager.Instance.TryReceiveDirectFromSteam(buffer, offset, size, out var receivedLength, out var steamID, out var endPoint))
+                    if (SteamP2PManager.Instance.TryReceiveDirectFromSteam(buffer, offset, size, out int receivedLength, out CSteamID steamID, out IPEndPoint endPoint))
                     {
                         remoteEP = endPoint;
                         __result = receivedLength;
                         return false;
                     }
-                    if (SteamP2PManager.Instance.TryGetReceivedPacket(out var data, out var length, out var remoteSteamID))
+                    if (SteamP2PManager.Instance.TryGetReceivedPacket(out byte[] data, out int length, out CSteamID remoteSteamID))
                     {
                         if (length > size)
                         {
@@ -161,11 +161,11 @@ namespace EscapeFromDuckovCoopMod
             }
             try
             {
-                if (SteamNetworking.IsP2PPacketAvailable(out _, 0))
+                if (Steamworks.SteamNetworking.IsP2PPacketAvailable(out _, 0))
                 {
                     return false;
                 }
-                Thread.Sleep(1);
+                System.Threading.Thread.Sleep(1);
                 checkRead?.Clear();
                 checkWrite?.Clear();
                 checkError?.Clear();
@@ -200,7 +200,7 @@ namespace EscapeFromDuckovCoopMod
                 return true;
             try
             {
-                var ipEndPoint = remoteEP as IPEndPoint;
+                IPEndPoint ipEndPoint = remoteEP as IPEndPoint;
                 if (ipEndPoint == null)
                 {
                     Debug.LogWarning("[Patch_SendTo] remoteEP不是IPEndPoint类型，使用原始方法");
@@ -209,14 +209,14 @@ namespace EscapeFromDuckovCoopMod
                 if (SteamEndPointMapper.Instance != null &&
                     SteamEndPointMapper.Instance.IsVirtualEndPoint(ipEndPoint))
                 {
-                    if (SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out var targetSteamID))
+                    if (SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out CSteamID targetSteamID))
                     {
-                        var deliveryMethod = PacketSignature.TryGetDeliveryMethod(buffer, offset, size);
+                        DeliveryMethod? deliveryMethod = PacketSignature.TryGetDeliveryMethod(buffer, offset, size);
                         _diagCount++;
                         EP2PSend sendMode;
                         if (deliveryMethod == null && size > offset)
                         {
-                            var packetProperty = (byte)(buffer[offset] & 0x1F);
+                            byte packetProperty = (byte)(buffer[offset] & 0x1F);
                             switch (packetProperty)
                             {
                                 case 0:
@@ -265,8 +265,8 @@ namespace EscapeFromDuckovCoopMod
                         }
                         if (_diagCount % 1000 == 0)
                         {
-                            P2PSessionState_t sessionState;
-                            if (SteamNetworking.GetP2PSessionState(targetSteamID, out sessionState))
+                            Steamworks.P2PSessionState_t sessionState;
+                            if (Steamworks.SteamNetworking.GetP2PSessionState(targetSteamID, out sessionState))
                             {
                                 if (sessionState.m_nBytesQueuedForSend > 50000)
                                 {
@@ -274,7 +274,7 @@ namespace EscapeFromDuckovCoopMod
                                 }
                             }
                         }
-                        var success = SteamP2PManager.Instance.SendPacket(
+                        bool success = SteamP2PManager.Instance.SendPacket(
                             targetSteamID,
                             buffer,
                             offset,

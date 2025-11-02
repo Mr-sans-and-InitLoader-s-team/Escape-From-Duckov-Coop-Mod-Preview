@@ -1396,6 +1396,13 @@ public class ModBehaviourF : MonoBehaviour
                 break;
             }
 
+            case Op.AI_HEALTH_REPORT:
+            {
+                if (IsServer)
+                    COOPManager.AIHealth.HandleAiHealthReport(peer, reader);
+                break;
+            }
+
 
             // --- 客户端：读取 aiId，并把它传下去 ---
             case Op.DEAD_LOOT_SPAWN:

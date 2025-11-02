@@ -59,15 +59,17 @@ public class NetService : MonoBehaviour, INetEventListener
     public NetManager netManager;
     public NetDataWriter writer;
     public bool IsServer { get; private set; }
-
     public NetworkTransportMode TransportMode { get; private set; } = NetworkTransportMode.Direct;
     public SteamLobbyOptions LobbyOptions { get; private set; } = SteamLobbyOptions.CreateDefault();
 
     public void OnEnable()
     {
         Instance = this;
+        if (SteamP2PLoader.Instance != null)
+        {
+            SteamP2PLoader.Instance.UseSteamP2P = TransportMode == NetworkTransportMode.SteamP2P;
+        }
     }
-
 
     public void SetTransportMode(NetworkTransportMode mode)
     {
@@ -536,7 +538,6 @@ public class NetService : MonoBehaviour, INetEventListener
             connectedPeer = null;
         }
     }
-
 
 
     public bool IsSelfId(string id)

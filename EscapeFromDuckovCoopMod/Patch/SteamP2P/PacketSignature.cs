@@ -15,11 +15,11 @@ namespace EscapeFromDuckovCoopMod
         {
             if (data == null || length == 0)
                 return 0;
-            var hash = (ulong)length;
-            var bytesToHash = Math.Min(8, length);
-            for (var i = 0; i < bytesToHash; i++)
+            ulong hash = (ulong)length;
+            int bytesToHash = Math.Min(8, length);
+            for (int i = 0; i < bytesToHash; i++)
             {
-                var index = start + i;
+                int index = start + i;
                 if (index < data.Length)
                 {
                     hash = hash * 31 + data[index];
@@ -31,7 +31,7 @@ namespace EscapeFromDuckovCoopMod
         {
             if (data == null || length == 0)
                 return;
-            var signature = CalculateSignature(data, start, length);
+            ulong signature = CalculateSignature(data, start, length);
             _signatures[signature] = deliveryMethod;
             _cleanupCounter++;
             if (_cleanupCounter >= CLEANUP_THRESHOLD)
@@ -44,8 +44,8 @@ namespace EscapeFromDuckovCoopMod
         {
             if (data == null || length == 0)
                 return null;
-            var signature = CalculateSignature(data, start, length);
-            if (_signatures.TryGetValue(signature, out var method))
+            ulong signature = CalculateSignature(data, start, length);
+            if (_signatures.TryGetValue(signature, out DeliveryMethod method))
             {
                 _signatures.TryRemove(signature, out _);
                 return method;

@@ -59,7 +59,7 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
 
     private void DeferredInit()
     {
-        SafeInit<SteamP2PLoader>(sn => sn.Init());
+        SafeInit<SteamP2PLoader>(s => s.Init());
         SafeInit<SceneNet>(sn => sn.Init());
         SafeInit<LootManager>(lm => lm.Init());
         SafeInit<LocalPlayerManager>(lpm => lpm.Init());
@@ -70,6 +70,7 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         SafeInit<AIRequest>(a => a.Init());
         SafeInit<Send_ClientStatus>(s => s.Init());
         SafeInit<DeadLootBox>(s => s.Init());
+        
     }
 
     private void SafeInit<T>(Action<T> init) where T : Component
@@ -84,4 +85,10 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         {
         }
     }
+
+
+
+
+
+
 }

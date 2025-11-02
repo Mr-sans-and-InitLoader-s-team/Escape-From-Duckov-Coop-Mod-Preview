@@ -56,27 +56,28 @@
 
 1. 找到项目根目录下的 `SetEnvVars_Permanent.bat` 文件
 2. 双击运行该脚本
-3. 按提示输入你的游戏 Managed 文件夹路径
+3. 按提示输入你的游戏文件夹路径
 
    **示例路径**：
    ```
-   C:\Steam\steamapps\common\Escape from Duckov\Duckov_Data\Managed
+   C:\Steam\steamapps\common\Escape from Duckov
    ```
 
-4. 脚本会自动设置环境变量 `DUCKOV_GAME_MANAGED`
+4. 脚本会自动设置环境变量 `DUCKOV_GAME_DIRECTORY`
 5. **重要**：完全关闭 Visual Studio 后重新打开，以加载新的环境变量
 
 #### 方法二：手动配置环境变量
 
 1. 右键点击"此电脑" → "属性" → "高级系统设置" → "环境变量"
 2. 在"用户变量"区域点击"新建"
-3. 变量名：`DUCKOV_GAME_MANAGED`
+3. 变量名：`DUCKOV_GAME_DIRECTORY`
 4. 变量值：你的游戏 Managed 文件夹完整路径
 5. 点击"确定"保存
 
 ### 步骤 2：准备依赖文件
 
 确保 `Shared` 文件夹中包含以下 DLL 文件：
+
 - `0Harmony.dll`
 - `LiteNetLib.dll`
 
@@ -92,12 +93,13 @@
 
 **Q: 编译时提示找不到引用的 DLL？**
 
-A: 确保你已正确设置 `DUCKOV_GAME_MANAGED` 环境变量，并且已重启 Visual Studio。
+A: 确保你已正确设置 `DUCKOV_GAME_DIRECTORY` 环境变量，并且已重启 Visual Studio。
 
 **Q: 环境变量设置后仍然无效？**
 
-A: 
-1. 在命令行输入 `echo %DUCKOV_GAME_MANAGED%` 验证环境变量是否设置成功
+A:
+
+1. 在命令行输入 `echo %DUCKOV_GAME_DIRECTORY%` 验证环境变量是否设置成功
 2. 确保完全关闭 Visual Studio（包括后台进程）后重新打开
 
 **Q: 路径中包含空格或特殊字符怎么办？**
@@ -109,6 +111,7 @@ A: 脚本已支持包含空格和括号的路径，例如 `Program Files (x86)`�
 ## 🎯 功能特性
 
 ### 核心功能
+
 - ✅ 玩家位置、动作、装备同步
 - ✅ AI 敌人状态同步
 - ✅ 战利品箱同步
@@ -118,6 +121,7 @@ A: 脚本已支持包含空格和括号的路径，例如 `Program Files (x86)`�
 - ✅ 死亡观战模式
 
 ### 网络特性
+
 - 🌐 支持局域网联机
 - 🌐 支持互联网联机
 - ⚡ 优化的网络性能
@@ -151,6 +155,7 @@ A: 脚本已支持包含空格和括号的路径，例如 `Program Files (x86)`�
 - ✅ **必须署名原作者**
 
 详情请参阅：
+
 - [LICENSE.txt](LICENSE.txt) - 完整许可证文本
 - [LICENSE_RESTRICTIONS.txt](LICENSE_RESTRICTIONS.txt) - 额外限制说明
 

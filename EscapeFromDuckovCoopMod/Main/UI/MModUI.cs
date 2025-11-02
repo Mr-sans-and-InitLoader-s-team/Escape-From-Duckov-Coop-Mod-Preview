@@ -73,6 +73,8 @@ public class MModUI : MonoBehaviour
     private string _lastVoteSceneId = "";
     private bool _lastLocalReady = false;
     private readonly HashSet<string> _lastVoteParticipants = new();
+    private float _lastVoteUpdateTime = 0f;
+    private float _lastPlayerListUpdateTime = 0f;  // 玩家列表最后更新时间（用于 Steam 模式定期刷新）
 
     // 现代化UI颜色方案 - 深色模式
     public static class ModernColors
@@ -289,11 +291,13 @@ public class MModUI : MonoBehaviour
             _steamLobbyMaxPlayers = Mathf.Clamp(options.MaxPlayers, 2, 16);
         }
 
-        // 注册Steam Lobby列表更新事件
+        // 注册Steam Lobby相关事件
         if (LobbyManager != null)
         {
             LobbyManager.LobbyListUpdated -= OnLobbyListUpdated;
             LobbyManager.LobbyListUpdated += OnLobbyListUpdated;
+            LobbyManager.LobbyJoined -= OnLobbyJoined;
+            LobbyManager.LobbyJoined += OnLobbyJoined;
             _steamLobbyInfos.Clear();
             _steamLobbyInfos.AddRange(LobbyManager.AvailableLobbies);
         }
@@ -313,6 +317,13 @@ public class MModUI : MonoBehaviour
     {
         _steamLobbyInfos.Clear();
         _steamLobbyInfos.AddRange(lobbies);
+    }
+
+    private void OnLobbyJoined()
+    {
+        Debug.Log("[MModUI] Lobby加入成功，强制刷新玩家列表");
+        // 清空玩家列表缓存，强制刷新
+        _displayedPlayerIds.Clear();
     }
 
     private void CreateUI()
@@ -866,33 +877,129 @@ public class MModUI : MonoBehaviour
         {
             // Steam模式：使用SteamID作为唯一标识，避免重复显示
             var displayedSteamIds = new HashSet<ulong>();
+            var displayedEndPoints = new HashSet<string>();  // 用于无法获取SteamID的玩家
 
             // 添加本地玩家
             if (localPlayerStatus != null)
             {
                 var localSteamId = SteamUser.GetSteamID().m_SteamID;
                 displayedSteamIds.Add(localSteamId);
+                displayedEndPoints.Add(localPlayerStatus.EndPoint);
                 currentPlayerIds.Add(localSteamId.ToString());
                 playerStatusesToDisplay.Add(localPlayerStatus);
             }
 
-            // 添加远程玩家（去重）
+            // 添加远程玩家（从网络状态）
             IEnumerable<PlayerStatus> remoteStatuses = IsServer
                 ? playerStatuses?.Values
                 : clientPlayerStatuses?.Values;
 
             if (remoteStatuses != null)
             {
+                // 第一遍：收集所有能获取SteamID的玩家
+                var statusesWithoutSteamId = new List<PlayerStatus>();
+
                 foreach (var status in remoteStatuses)
                 {
                     // 尝试获取这个状态对应的SteamID
                     ulong steamId = GetSteamIdFromStatus(status);
 
-                    if (steamId > 0 && !displayedSteamIds.Contains(steamId))
+                    if (steamId > 0)
                     {
-                        displayedSteamIds.Add(steamId);
-                        currentPlayerIds.Add(steamId.ToString());
+                        // 有SteamID，按SteamID去重
+                        if (!displayedSteamIds.Contains(steamId))
+                        {
+                            displayedSteamIds.Add(steamId);
+                            displayedEndPoints.Add(status.EndPoint);
+                            currentPlayerIds.Add(steamId.ToString());
+                            playerStatusesToDisplay.Add(status);
+                        }
+                        else
+                        {
+                            // 即使跳过了，也要记录这个 EndPoint，避免后续被当作无 SteamID 的玩家处理
+                            displayedEndPoints.Add(status.EndPoint);
+                        }
+                    }
+                    else
+                    {
+                        // 无法获取SteamID，先暂存
+                        statusesWithoutSteamId.Add(status);
+                    }
+                }
+
+                // 第二遍：处理无法获取SteamID的玩家（可能是网络延迟导致的）
+                // 只有在确实是新玩家时才添加
+                foreach (var status in statusesWithoutSteamId)
+                {
+                    if (!displayedEndPoints.Contains(status.EndPoint))
+                    {
+                        displayedEndPoints.Add(status.EndPoint);
+                        currentPlayerIds.Add(status.EndPoint);
                         playerStatusesToDisplay.Add(status);
+                        Debug.LogWarning($"[MModUI] 添加无SteamID的玩家: {status.EndPoint}");
+                    }
+                }
+            }
+
+            // Steam模式额外逻辑：从 Steam Lobby 成员列表补充玩家信息
+            // 这对客户端特别重要，因为客户端可能看不到其他客户端的 PlayerStatus
+            if (LobbyManager != null && LobbyManager.IsInLobby && SteamManager.Initialized)
+            {
+                int memberCount = SteamMatchmaking.GetNumLobbyMembers(LobbyManager.CurrentLobbyId);
+
+                // 先建立一个 SteamID -> PlayerStatus 的映射（从已有的网络状态）
+                var steamIdToStatus = new Dictionary<ulong, PlayerStatus>();
+                if (remoteStatuses != null)
+                {
+                    foreach (var status in remoteStatuses)
+                    {
+                        ulong sid = GetSteamIdFromStatus(status);
+                        if (sid > 0 && !steamIdToStatus.ContainsKey(sid))
+                        {
+                            steamIdToStatus[sid] = status;
+                        }
+                    }
+                }
+
+                for (int i = 0; i < memberCount; i++)
+                {
+                    CSteamID memberId = SteamMatchmaking.GetLobbyMemberByIndex(LobbyManager.CurrentLobbyId, i);
+
+                    // 如果这个成员还没有被添加到显示列表
+                    if (!displayedSteamIds.Contains(memberId.m_SteamID))
+                    {
+                        // 从缓存获取用户名
+                        string memberName = LobbyManager.GetCachedMemberName(memberId);
+                        if (string.IsNullOrEmpty(memberName))
+                        {
+                            memberName = SteamFriends.GetFriendPersonaName(memberId);
+                        }
+
+                        // 尝试从已有的网络状态中找到这个玩家的实际状态
+                        PlayerStatus actualStatus = null;
+                        if (steamIdToStatus.TryGetValue(memberId.m_SteamID, out actualStatus))
+                        {
+                            // 有实际网络状态，使用它
+                            displayedSteamIds.Add(memberId.m_SteamID);
+                            displayedEndPoints.Add(actualStatus.EndPoint);
+                            currentPlayerIds.Add(memberId.m_SteamID.ToString());
+                            playerStatusesToDisplay.Add(actualStatus);
+                        }
+                        else
+                        {
+                            // 没有实际网络状态，创建虚拟状态
+                            var virtualStatus = new PlayerStatus
+                            {
+                                PlayerName = memberName,
+                                EndPoint = $"Steam:{memberId.m_SteamID}",
+                                IsInGame = false,  // 未知状态
+                                Latency = 0  // 未知延迟
+                            };
+
+                            displayedSteamIds.Add(memberId.m_SteamID);
+                            currentPlayerIds.Add(memberId.m_SteamID.ToString());
+                            playerStatusesToDisplay.Add(virtualStatus);
+                        }
                     }
                 }
             }
@@ -923,12 +1030,28 @@ public class MModUI : MonoBehaviour
             }
         }
 
-        // 如果列表没有变化，直接返回（避免重复创建UI）
-        if (_displayedPlayerIds.SetEquals(currentPlayerIds))
-            return;
+        // 检查是否需要重建UI
+        bool needsRebuild = false;
 
-        // 列表改变了，需要重建UI
-        Debug.Log($"[MModUI] 玩家列表已更新，重建UI (当前: {currentPlayerIds.Count}, 之前: {_displayedPlayerIds.Count})");
+        if (!_displayedPlayerIds.SetEquals(currentPlayerIds))
+        {
+            // 玩家列表变化了
+            needsRebuild = true;
+            Debug.Log($"[MModUI] 玩家列表已更新，重建UI (当前: {currentPlayerIds.Count}, 之前: {_displayedPlayerIds.Count})");
+        }
+        else if (isSteamMode)
+        {
+            // Steam模式下，即使玩家列表没变，也需要定期更新（因为状态可能从虚拟变为实际）
+            // 使用时间限制，避免过于频繁的更新
+            if (Time.time - _lastPlayerListUpdateTime > 2.0f)  // 每2秒最多更新一次
+            {
+                needsRebuild = true;
+                _lastPlayerListUpdateTime = Time.time;
+            }
+        }
+
+        if (!needsRebuild)
+            return;
 
         // 清空现有列表
         foreach (Transform child in _components.PlayerListContent)
@@ -954,13 +1077,26 @@ public class MModUI : MonoBehaviour
     private ulong GetSteamIdFromStatus(PlayerStatus status)
     {
         if (!SteamManager.Initialized || LobbyManager == null || !LobbyManager.IsInLobby)
+        {
             return 0;
+        }
 
-        var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
+        // 如果是 "Steam:xxx" 格式（从Lobby直接获取的），直接解析SteamID
+        if (status.EndPoint.StartsWith("Steam:"))
+        {
+            var steamIdStr = status.EndPoint.Substring(6);  // 去掉 "Steam:" 前缀
+            if (ulong.TryParse(steamIdStr, out ulong steamId))
+            {
+                return steamId;
+            }
+        }
 
         // 如果是 "Host:xxx" 格式，返回房间所有者的SteamID
         if (status.EndPoint.StartsWith("Host:"))
+        {
+            var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
             return lobbyOwner.m_SteamID;
+        }
 
         // 尝试从虚拟IP EndPoint获取
         var parts = status.EndPoint.Split(':');
@@ -1012,7 +1148,7 @@ public class MModUI : MonoBehaviour
 
         if (isSteamMode)
         {
-            // Steam模式：获取Steam用户名和SteamID
+            // Steam模式：使用缓存获取Steam用户名和SteamID
             string steamUsername = "Unknown";
             ulong steamId = 0;
             bool isHost = false;
@@ -1021,105 +1157,47 @@ public class MModUI : MonoBehaviour
             {
                 if (SteamManager.Initialized)
                 {
-                    // 获取房间所有者的SteamID（用于判断谁是主机）
-                    CSteamID lobbyOwner = CSteamID.Nil;
-                    if (LobbyManager != null && LobbyManager.IsInLobby)
-                    {
-                        lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
-                    }
-
                     if (isLocal)
                     {
-                        // 本地玩家：直接获取当前Steam用户名和ID
+                        // 本地玩家：直接获取当前Steam用户名和ID（不需要IsInLobby检查）
                         steamUsername = SteamFriends.GetPersonaName();
                         steamId = SteamUser.GetSteamID().m_SteamID;
-                        isHost = (steamId == lobbyOwner.m_SteamID);
-                    }
-                    else
-                    {
-                        // 远程玩家：从 Steam Lobby 成员列表或 EndPoint 获取 SteamID
-                        bool foundSteamId = false;
-                        System.Net.IPEndPoint ipEndPoint = null;
 
-                        // 方法1：如果是 "Host:xxx" 格式，直接使用房间所有者
-                        if (status.EndPoint.StartsWith("Host:") && lobbyOwner.m_SteamID > 0)
+                        // 判断是否是主机（需要IsInLobby）
+                        if (LobbyManager != null && LobbyManager.IsInLobby)
                         {
-                            steamId = lobbyOwner.m_SteamID;
-                            isHost = true;
-                            foundSteamId = true;
+                            var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
+                            isHost = (steamId == lobbyOwner.m_SteamID);
                         }
                         else
                         {
-                            // 方法2：尝试从虚拟IP EndPoint 通过 Mapper 获取
-                            var parts = status.EndPoint.Split(':');
-                            if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out var ipAddr) && int.TryParse(parts[1], out var port))
-                            {
-                                ipEndPoint = new System.Net.IPEndPoint(ipAddr, port);
-
-                                if (SteamEndPointMapper.Instance != null &&
-                                    SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out CSteamID cSteamId))
-                                {
-                                    steamId = cSteamId.m_SteamID;
-                                    isHost = (steamId == lobbyOwner.m_SteamID);
-                                    foundSteamId = true;
-                                }
-                            }
+                            // 如果还没加入Lobby，根据IsServer判断
+                            isHost = NetService.Instance?.IsServer ?? false;
                         }
+                    }
+                    else if (LobbyManager != null && LobbyManager.IsInLobby)
+                    {
+                        // 远程玩家：从 EndPoint 获取 SteamID
+                        steamId = GetSteamIdFromStatus(status);
 
-                        // 方法3（后备）：如果还没找到，遍历 Steam Lobby 所有成员
-                        if (!foundSteamId && LobbyManager != null && LobbyManager.IsInLobby)
-                        {
-                            var lobbyId = LobbyManager.CurrentLobbyId;
-                            int memberCount = SteamMatchmaking.GetNumLobbyMembers(lobbyId);
-                            var myId = SteamUser.GetSteamID();
+                        // 判断是否是主机
+                        var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
+                        isHost = (steamId > 0 && steamId == lobbyOwner.m_SteamID);
 
-                            // 先尝试匹配 EndPoint
-                            if (ipEndPoint != null && SteamEndPointMapper.Instance != null)
-                            {
-                                for (int i = 0; i < memberCount; i++)
-                                {
-                                    var memberId = SteamMatchmaking.GetLobbyMemberByIndex(lobbyId, i);
-                                    if (memberId.m_SteamID == myId.m_SteamID) continue;
-
-                                    if (SteamEndPointMapper.Instance.TryGetEndPoint(memberId, out var memberEndPoint) &&
-                                        memberEndPoint.Equals(ipEndPoint))
-                                    {
-                                        steamId = memberId.m_SteamID;
-                                        isHost = (steamId == lobbyOwner.m_SteamID);
-                                        foundSteamId = true;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            // 如果还是没找到，按顺序分配（用于显示，虽然不完美但总比 Unknown 好）
-                            if (!foundSteamId && memberCount > 1)
-                            {
-                                // 找到第一个不是自己的成员
-                                for (int i = 0; i < memberCount; i++)
-                                {
-                                    var memberId = SteamMatchmaking.GetLobbyMemberByIndex(lobbyId, i);
-                                    if (memberId.m_SteamID != myId.m_SteamID)
-                                    {
-                                        steamId = memberId.m_SteamID;
-                                        isHost = (steamId == lobbyOwner.m_SteamID);
-                                        foundSteamId = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
-                        // 获取 Steam 用户名
-                        if (foundSteamId)
+                        // 从缓存获取用户名
+                        if (steamId > 0)
                         {
                             var cSteamId = new CSteamID(steamId);
-                            steamUsername = SteamFriends.GetFriendPersonaName(cSteamId);
+                            steamUsername = LobbyManager.GetCachedMemberName(cSteamId);
 
-                            if (string.IsNullOrEmpty(steamUsername) || steamUsername == "[unknown]")
+                            if (string.IsNullOrEmpty(steamUsername))
                             {
-                                SteamFriends.RequestUserInformation(cSteamId, false);
-                                steamUsername = $"Player_{steamId.ToString().Substring(Math.Max(0, steamId.ToString().Length - 4))}";
+                                // 缓存未命中，回退到Steam API
+                                steamUsername = SteamFriends.GetFriendPersonaName(cSteamId);
+                                if (string.IsNullOrEmpty(steamUsername) || steamUsername == "[unknown]")
+                                {
+                                    steamUsername = $"Player_{steamId.ToString().Substring(Math.Max(0, steamId.ToString().Length - 4))}";
+                                }
                             }
                         }
                     }
@@ -1132,7 +1210,7 @@ public class MModUI : MonoBehaviour
             }
 
             // 添加前缀（基于房间所有者判断，而不是本地IsServer状态）
-            string prefix = isHost ? "host" : "client";
+            string prefix = isHost ? "HOST" : "CLIENT";
             displayName = $"{prefix}_{steamUsername}";
 
             // Steam模式：显示完整SteamID
@@ -1186,18 +1264,22 @@ public class MModUI : MonoBehaviour
 
         // 检查是否需要重建UI（只有状态改变时才重建）
         bool needsRebuild = false;
+        string rebuildReason = "";
 
         if (_lastVoteActive != active)
         {
             needsRebuild = true;
+            rebuildReason = "vote active changed";
         }
         else if (_lastVoteSceneId != SceneNet.Instance.sceneTargetId)
         {
             needsRebuild = true;
+            rebuildReason = "target scene changed";
         }
         else if (_lastLocalReady != SceneNet.Instance.localReady)
         {
             needsRebuild = true;
+            rebuildReason = "local ready changed";
         }
         else
         {
@@ -1206,23 +1288,24 @@ public class MModUI : MonoBehaviour
             if (!_lastVoteParticipants.SetEquals(currentParticipants))
             {
                 needsRebuild = true;
+                rebuildReason = $"participants changed ({_lastVoteParticipants.Count} -> {currentParticipants.Count})";
             }
-            else
+        }
+
+        if (!needsRebuild)
+        {
+            // 即使参与者没变，也检查准备状态（每秒最多更新一次）
+            if (Time.time - _lastVoteUpdateTime > 1f)
             {
-                // 检查每个玩家的准备状态是否改变
-                foreach (var pid in SceneNet.Instance.sceneParticipantIds)
-                {
-                    SceneNet.Instance.sceneReady.TryGetValue(pid, out var ready);
-                    var oldReady = false;
-                    // 这里简化处理，假设状态可能改变就重建
-                    // 实际项目中可以用Dictionary缓存每个玩家的准备状态
-                    needsRebuild = true;
-                    break;
-                }
+                needsRebuild = true;
+                rebuildReason = "periodic update";
+                _lastVoteUpdateTime = Time.time;
             }
         }
 
         if (!needsRebuild) return;
+
+        //Debug.Log($"[MModUI] 重建投票面板: {rebuildReason}");
 
         // 更新缓存
         _lastVoteActive = active;
@@ -1286,8 +1369,120 @@ public class MModUI : MonoBehaviour
             statusLayout.flexibleWidth = 0;
             statusLayout.preferredWidth = 60;
 
-            // Steam模式下显示完整ID
-            CreateText("ID", playerRow.transform, pid, 14, ModernColors.TextPrimary);
+            // 获取玩家显示名称和ID
+            string displayName = pid;
+            string displayId = pid;
+
+            if (TransportMode == NetworkTransportMode.SteamP2P && SteamManager.Initialized && LobbyManager != null && LobbyManager.IsInLobby)
+            {
+                // Steam模式：pid 可能是 EndPoint 格式（Host:9050, Client:xxx）或 SteamID
+                ulong steamIdValue = 0;
+
+                // 先尝试直接解析为 SteamID
+                if (ulong.TryParse(pid, out steamIdValue) && steamIdValue > 0)
+                {
+                    // pid 是 SteamID
+                }
+                else
+                {
+                    // pid 是 EndPoint 格式，需要转换为 SteamID
+                    if (pid.StartsWith("Host:"))
+                    {
+                        // 主机的 EndPoint
+                        // 先检查是否是本地玩家
+                        if (localPlayerStatus != null && localPlayerStatus.EndPoint == pid)
+                        {
+                            steamIdValue = SteamUser.GetSteamID().m_SteamID;
+                        }
+                        else
+                        {
+                            // 远程主机，获取 Lobby 所有者的 SteamID
+                            var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
+                            steamIdValue = lobbyOwner.m_SteamID;
+                        }
+                    }
+                    else if (pid.StartsWith("Client:"))
+                    {
+                        // 客户端的 EndPoint，尝试从 PlayerStatus 查找
+                        // 先检查本地玩家
+                        if (localPlayerStatus != null && localPlayerStatus.EndPoint == pid)
+                        {
+                            steamIdValue = SteamUser.GetSteamID().m_SteamID;
+                        }
+                        else
+                        {
+                            // 遍历所有玩家状态，找到匹配的 EndPoint
+                            IEnumerable<PlayerStatus> allStatuses = IsServer
+                                ? playerStatuses?.Values
+                                : clientPlayerStatuses?.Values;
+                            if (allStatuses != null)
+                            {
+                                foreach (var status in allStatuses)
+                                {
+                                    if (status.EndPoint == pid)
+                                    {
+                                        steamIdValue = GetSteamIdFromStatus(status);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 尝试解析虚拟 IP 格式（10.255.0.x:port）
+                        var parts = pid.Split(':');
+                        if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out var ipAddr) && int.TryParse(parts[1], out var port))
+                        {
+                            var ipEndPoint = new System.Net.IPEndPoint(ipAddr, port);
+                            if (SteamEndPointMapper.Instance != null &&
+                                SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out CSteamID cSteamId))
+                            {
+                                steamIdValue = cSteamId.m_SteamID;
+                            }
+                        }
+                    }
+                }
+
+                // 如果成功获取到 SteamID，显示用户名
+                if (steamIdValue > 0)
+                {
+                    var cSteamId = new CSteamID(steamIdValue);
+                    string cachedName = LobbyManager.GetCachedMemberName(cSteamId);
+
+                    if (!string.IsNullOrEmpty(cachedName))
+                    {
+                        // 判断是否是主机
+                        var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
+                        string prefix = (steamIdValue == lobbyOwner.m_SteamID) ? "HOST" : "CLIENT";
+                        displayName = $"{prefix}_{cachedName}";
+                    }
+                    else
+                    {
+                        // 缓存未命中，回退到Steam API
+                        string steamUsername = SteamFriends.GetFriendPersonaName(cSteamId);
+                        if (!string.IsNullOrEmpty(steamUsername) && steamUsername != "[unknown]")
+                        {
+                            var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
+                            string prefix = (steamIdValue == lobbyOwner.m_SteamID) ? "HOST" : "CLIENT";
+                            displayName = $"{prefix}_{steamUsername}";
+                        }
+                        else
+                        {
+                            displayName = $"Player_{steamIdValue.ToString().Substring(Math.Max(0, steamIdValue.ToString().Length - 4))}";
+                        }
+                    }
+
+                    displayId = steamIdValue.ToString();
+                }
+            }
+
+            // 显示名称和ID
+            var nameText = CreateText("Name", playerRow.transform, displayName, 14, ModernColors.TextPrimary);
+            var nameLayout = nameText.gameObject.GetComponent<LayoutElement>();
+            nameLayout.flexibleWidth = 1;
+
+            CreateText("ID", playerRow.transform, displayId, 12, ModernColors.TextSecondary);
         }
     }
 

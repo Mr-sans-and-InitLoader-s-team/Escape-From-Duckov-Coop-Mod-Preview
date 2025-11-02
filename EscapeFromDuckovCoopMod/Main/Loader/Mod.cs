@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -158,17 +158,17 @@ public class ModBehaviourF : MonoBehaviour
         {
             isinit = true;
             Traverse.Create(CharacterMainControl.Main.EquipmentController).Field<Slot>("armorSlot").Value.onSlotContentChanged +=
-                LoaclPlayerManager.Instance.ModBehaviour_onSlotContentChanged;
+                LocalPlayerManager.Instance.ModBehaviour_onSlotContentChanged;
             Traverse.Create(CharacterMainControl.Main.EquipmentController).Field<Slot>("helmatSlot").Value.onSlotContentChanged +=
-                LoaclPlayerManager.Instance.ModBehaviour_onSlotContentChanged;
+                LocalPlayerManager.Instance.ModBehaviour_onSlotContentChanged;
             Traverse.Create(CharacterMainControl.Main.EquipmentController).Field<Slot>("faceMaskSlot").Value.onSlotContentChanged +=
-                LoaclPlayerManager.Instance.ModBehaviour_onSlotContentChanged;
+                LocalPlayerManager.Instance.ModBehaviour_onSlotContentChanged;
             Traverse.Create(CharacterMainControl.Main.EquipmentController).Field<Slot>("backpackSlot").Value.onSlotContentChanged +=
-                LoaclPlayerManager.Instance.ModBehaviour_onSlotContentChanged;
+                LocalPlayerManager.Instance.ModBehaviour_onSlotContentChanged;
             Traverse.Create(CharacterMainControl.Main.EquipmentController).Field<Slot>("headsetSlot").Value.onSlotContentChanged +=
-                LoaclPlayerManager.Instance.ModBehaviour_onSlotContentChanged;
+                LocalPlayerManager.Instance.ModBehaviour_onSlotContentChanged;
 
-            CharacterMainControl.Main.OnHoldAgentChanged += LoaclPlayerManager.Instance.Main_OnHoldAgentChanged;
+            CharacterMainControl.Main.OnHoldAgentChanged += LocalPlayerManager.Instance.Main_OnHoldAgentChanged;
         }
 
 
@@ -296,6 +296,16 @@ public class ModBehaviourF : MonoBehaviour
                 var (id, p, f) = _pendingAiTrans.Dequeue();
                 AITool.ApplyAiTransform(id, p, f);
             }
+
+            if (NetService.Instance.netManager != null)
+            {
+                if (!SteamP2PLoader.Instance._isOptimized && SteamP2PLoader.Instance.UseSteamP2P)
+                {
+                    NetService.Instance.netManager.UpdateTime = 1;
+                    SteamP2PLoader.Instance._isOptimized = true;
+                    Debug.Log("[SteamP2P扩展] ✓ LiteNetLib网络线程已优化 (1ms 更新周期)");
+                }
+            }
         }
 
         if (networkStarted && IsServer)
@@ -308,8 +318,8 @@ public class ModBehaviourF : MonoBehaviour
             }
         }
 
-        LoaclPlayerManager.Instance.UpdatePlayerStatuses();
-        LoaclPlayerManager.Instance.UpdateRemoteCharacters();
+        LocalPlayerManager.Instance.UpdatePlayerStatuses();
+        LocalPlayerManager.Instance.UpdateRemoteCharacters();
 
         if (Input.GetKeyDown(ModUI.Instance.toggleWindowKey)) ModUI.Instance.showPlayerStatusWindow = !ModUI.Instance.showPlayerStatusWindow;
 
@@ -360,11 +370,11 @@ public class ModBehaviourF : MonoBehaviour
             // 动态剔除“已死/被销毁/不在本地图”的目标
             Spectator.Instance._spectateList = Spectator.Instance._spectateList.Where(c =>
             {
-                if (!LoaclPlayerManager.Instance.IsAlive(c)) return false;
+                if (!LocalPlayerManager.Instance.IsAlive(c)) return false;
 
                 var mySceneId = localPlayerStatus != null ? localPlayerStatus.SceneId : null;
                 if (string.IsNullOrEmpty(mySceneId))
-                    LoaclPlayerManager.Instance.ComputeIsInGame(out mySceneId);
+                    LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
 
                 // 反查该 CMC 对应的 peer 的 SceneId
                 string peerScene = null;
@@ -403,7 +413,7 @@ public class ModBehaviourF : MonoBehaviour
                 _spectateIdx = 0;
 
             // 当前目标若死亡，自动跳到下一个
-            if (!LoaclPlayerManager.Instance.IsAlive(Spectator.Instance._spectateList[_spectateIdx]))
+            if (!LocalPlayerManager.Instance.IsAlive(Spectator.Instance._spectateList[_spectateIdx]))
                 Spectator.Instance.SpectateNext();
 
             // 鼠标左/右键切换（加个轻微节流）
@@ -1386,6 +1396,13 @@ public class ModBehaviourF : MonoBehaviour
                 break;
             }
 
+            case Op.AI_HEALTH_REPORT:
+            {
+                if (IsServer)
+                    COOPManager.AIHealth.HandleAiHealthReport(peer, reader);
+                break;
+            }
+
 
             // --- 客户端：读取 aiId，并把它传下去 ---
             case Op.DEAD_LOOT_SPAWN:
@@ -1577,7 +1594,7 @@ public class ModBehaviourF : MonoBehaviour
         {
             if (!networkStarted || localPlayerStatus == null) return;
 
-            var ok = LoaclPlayerManager.Instance.ComputeIsInGame(out var sid);
+            var ok = LocalPlayerManager.Instance.ComputeIsInGame(out var sid);
             localPlayerStatus.SceneId = sid;
             localPlayerStatus.IsInGame = ok;
 

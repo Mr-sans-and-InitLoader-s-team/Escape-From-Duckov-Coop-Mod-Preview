@@ -14,6 +14,10 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using Steamworks;
+using System.Collections.Generic;
+using UnityEngine;
+
 namespace EscapeFromDuckovCoopMod;
 
 public class ModUI : MonoBehaviour
@@ -30,10 +34,17 @@ public class ModUI : MonoBehaviour
     private string _manualIP = "127.0.0.1";
     private string _manualPort = "9050";
     private int _port = 9050;
-    private string _status = "未连接";
+    private string _status = "";
     private Rect mainWindowRect = new(10, 10, 400, 700);
     private Vector2 playerStatusScrollPos = Vector2.zero;
     private Rect playerStatusWindowRect = new(420, 10, 300, 400);
+    private readonly List<SteamLobbyManager.LobbyInfo> _steamLobbyInfos = new();
+    private string _steamLobbyName = string.Empty;
+    private string _steamLobbyPassword = string.Empty;
+    private bool _steamLobbyFriendsOnly;
+    private int _steamLobbyMaxPlayers = 2;
+    private string _steamJoinPassword = string.Empty;
+    private bool _steamShowLobbyBrowser;
 
     private NetService Service => NetService.Instance;
     private bool IsServer => Service != null && Service.IsServer;
@@ -82,14 +93,25 @@ public class ModUI : MonoBehaviour
     private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
     private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
     private Dictionary<string, PlayerStatus> clientPlayerStatuses => Service?.clientPlayerStatuses;
+    private SteamLobbyManager LobbyManager => SteamLobbyManager.Instance;
+    private NetworkTransportMode TransportMode => Service?.TransportMode ?? NetworkTransportMode.Direct;
+
+    void Update()
+    {
+        // 언어 변경 감지 및 자동 리로드
+        CoopLocalization.CheckLanguageChange();
+    }
 
     private void OnGUI()
     {
         if (showUI)
         {
-            mainWindowRect = GUI.Window(94120, mainWindowRect, DrawMainWindow, "联机Mod控制面板");
+            mainWindowRect = GUI.Window(94120, mainWindowRect, DrawMainWindow, CoopLocalization.Get("ui.window.title"));
 
-            if (showPlayerStatusWindow) playerStatusWindowRect = GUI.Window(94121, playerStatusWindowRect, DrawPlayerStatusWindow, "玩家状态");
+            if (showPlayerStatusWindow)
+            {
+                playerStatusWindowRect = GUI.Window(94121, playerStatusWindowRect, DrawPlayerStatusWindow, CoopLocalization.Get("ui.window.playerStatus"));
+            }
         }
 
         if (SceneNet.Instance.sceneVoteActive)
@@ -97,16 +119,17 @@ public class ModUI : MonoBehaviour
             var h = 220f;
             var area = new Rect(10, Screen.height * 0.5f - h * 0.5f, 320, h);
             GUILayout.BeginArea(area, GUI.skin.box);
-            GUILayout.Label($"地图投票 / 准备  [{SceneInfoCollection.GetSceneInfo(SceneNet.Instance.sceneTargetId).DisplayName}]");
-            GUILayout.Label($"按 {readyKey} 切换准备（当前：{(SceneNet.Instance.localReady ? "已准备" : "未准备")}）");
+            GUILayout.Label(CoopLocalization.Get("ui.vote.mapVote", SceneInfoCollection.GetSceneInfo(SceneNet.Instance.sceneTargetId).DisplayName));
+            var readyStatus = SceneNet.Instance.localReady ? CoopLocalization.Get("ui.vote.ready") : CoopLocalization.Get("ui.vote.notReady");
+            GUILayout.Label(CoopLocalization.Get("ui.vote.pressKey", readyKey, readyStatus));
 
             GUILayout.Space(8);
-            GUILayout.Label("玩家准备状态：");
+            GUILayout.Label(CoopLocalization.Get("ui.vote.playerReadyStatus"));
             foreach (var pid in SceneNet.Instance.sceneParticipantIds)
             {
                 var r = false;
                 SceneNet.Instance.sceneReady.TryGetValue(pid, out r);
-                GUILayout.Label($"• {pid}  —— {(r ? "✅ 就绪" : "⌛ 未就绪")}");
+                GUILayout.Label($"• {pid}  —— {(r ? CoopLocalization.Get("ui.vote.readyIcon") : CoopLocalization.Get("ui.vote.notReadyIcon"))}");
             }
 
             GUILayout.EndArea();
@@ -132,7 +155,7 @@ public class ModUI : MonoBehaviour
             }
 
             GUI.Label(new Rect(0, Screen.height - 40, Screen.width, 30),
-                "观战模式：左键 ▶ 下一个 | 右键 ◀ 上一个  | 正在观战", style);
+                CoopLocalization.Get("ui.spectator.mode"), style);
         }
     }
 
@@ -151,85 +174,426 @@ public class ModUI : MonoBehaviour
             _hostSet.Clear();
             _hostList.AddRange(svc.hostList);
             foreach (var host in svc.hostSet) _hostSet.Add(host);
+
+            var options = svc.LobbyOptions;
+            _steamLobbyName = options.LobbyName;
+            _steamLobbyPassword = options.Password;
+            _steamLobbyFriendsOnly = options.Visibility == SteamLobbyVisibility.FriendsOnly;
+            _steamLobbyMaxPlayers = Mathf.Clamp(options.MaxPlayers, 2, 16);
+        }
+
+        if (LobbyManager != null)
+        {
+            LobbyManager.LobbyListUpdated -= OnLobbyListUpdated;
+            LobbyManager.LobbyListUpdated += OnLobbyListUpdated;
+            _steamLobbyInfos.Clear();
+            _steamLobbyInfos.AddRange(LobbyManager.AvailableLobbies);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (LobbyManager != null)
+        {
+            LobbyManager.LobbyListUpdated -= OnLobbyListUpdated;
+        }
+    }
+
+    private void OnLobbyListUpdated(IReadOnlyList<SteamLobbyManager.LobbyInfo> lobbies)
+    {
+        _steamLobbyInfos.Clear();
+        _steamLobbyInfos.AddRange(lobbies);
+    }
+
+    private void UpdateLobbyOptionsFromUI()
+    {
+        if (Service == null)
+            return;
+
+        var maxPlayers = Mathf.Clamp(_steamLobbyMaxPlayers, 2, 16);
+        _steamLobbyMaxPlayers = maxPlayers;
+        var options = new SteamLobbyOptions
+        {
+            LobbyName = _steamLobbyName,
+            Password = _steamLobbyPassword,
+            Visibility = _steamLobbyFriendsOnly ? SteamLobbyVisibility.FriendsOnly : SteamLobbyVisibility.Public,
+            MaxPlayers = maxPlayers
+        };
+
+        Service.ConfigureLobbyOptions(options);
+    }
+
+    private void DrawTransportModeSelector()
+    {
+        if (Service == null)
+            return;
+
+        GUILayout.Label(CoopLocalization.Get("ui.transport.label"));
+        var modeLabels = new[]
+        {
+            CoopLocalization.Get("ui.transport.mode.direct"),
+            CoopLocalization.Get("ui.transport.mode.steam")
+        };
+
+        var currentIndex = TransportMode == NetworkTransportMode.Direct ? 0 : 1;
+        var selectedIndex = GUILayout.Toolbar(currentIndex, modeLabels);
+
+        if (selectedIndex != currentIndex)
+        {
+            var newMode = selectedIndex == 0 ? NetworkTransportMode.Direct : NetworkTransportMode.SteamP2P;
+            Service.SetTransportMode(newMode);
+
+            if (newMode == NetworkTransportMode.SteamP2P && LobbyManager != null)
+            {
+                LobbyManager.RequestLobbyList();
+            }
+        }
+    }
+
+    private void DrawDirectClientSection()
+    {
+        GUILayout.Label(CoopLocalization.Get("ui.hostList.title"));
+
+        if (hostList.Count == 0)
+        {
+            GUILayout.Label(CoopLocalization.Get("ui.hostList.empty"));
+        }
+        else
+        {
+            foreach (var host in hostList)
+            {
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button(CoopLocalization.Get("ui.hostList.connect"), GUILayout.Width(80)))
+                {
+                    var parts = host.Split(':');
+                    if (parts.Length == 2 && int.TryParse(parts[1], out var parsedPort))
+                    {
+                        if (netManager == null || !netManager.IsRunning || IsServer || !networkStarted)
+                        {
+                            NetService.Instance.StartNetwork(false);
+                        }
+
+                        NetService.Instance.ConnectToHost(parts[0], parsedPort);
+                    }
+                }
+
+                GUILayout.Label(host);
+                GUILayout.EndHorizontal();
+            }
+        }
+
+        GUILayout.Space(20);
+        GUILayout.Label(CoopLocalization.Get("ui.manualConnect.title"));
+
+        GUILayout.BeginHorizontal();
+        GUILayout.Label(CoopLocalization.Get("ui.manualConnect.ip"), GUILayout.Width(40));
+        manualIP = GUILayout.TextField(manualIP, GUILayout.Width(150));
+        GUILayout.EndHorizontal();
+
+        GUILayout.BeginHorizontal();
+        GUILayout.Label(CoopLocalization.Get("ui.manualConnect.port"), GUILayout.Width(40));
+        manualPort = GUILayout.TextField(manualPort, GUILayout.Width(150));
+        GUILayout.EndHorizontal();
+
+        if (GUILayout.Button(CoopLocalization.Get("ui.manualConnect.button")))
+        {
+            if (int.TryParse(manualPort, out var parsedPort))
+            {
+                if (netManager == null || !netManager.IsRunning || IsServer || !networkStarted)
+                {
+                    NetService.Instance.StartNetwork(false);
+                }
+
+                NetService.Instance.ConnectToHost(manualIP, parsedPort);
+            }
+            else
+            {
+                status = CoopLocalization.Get("ui.manualConnect.portError");
+            }
+        }
+    }
+
+    private void DrawDirectServerSection()
+    {
+        GUILayout.Label($"{CoopLocalization.Get("ui.server.listenPort")} {port}");
+        GUILayout.Label($"{CoopLocalization.Get("ui.server.connections")} {netManager?.ConnectedPeerList.Count ?? 0}");
+    }
+
+    private void DrawSteamClientSection()
+    {
+        var manager = LobbyManager;
+        if (manager == null || !SteamManager.Initialized)
+        {
+            GUILayout.Label(CoopLocalization.Get("ui.steam.notInitialized"));
+            return;
+        }
+
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button(CoopLocalization.Get("ui.steam.refresh"), GUILayout.Width(120)))
+        {
+            manager.RequestLobbyList();
+        }
+        GUILayout.EndHorizontal();
+
+        if (_steamLobbyInfos.Count == 0)
+        {
+            GUILayout.Label(CoopLocalization.Get("ui.steam.lobbiesEmpty"));
+        }
+        else
+        {
+            foreach (var lobby in _steamLobbyInfos)
+            {
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button(CoopLocalization.Get("ui.steam.joinButton"), GUILayout.Width(80)))
+                {
+                    AttemptSteamLobbyJoin(lobby);
+                }
+
+                var lobbyLabel = $"{lobby.LobbyName} ({lobby.MemberCount}/{lobby.MaxMembers})";
+                if (lobby.RequiresPassword)
+                {
+                    lobbyLabel += " 🔒";
+                }
+
+                GUILayout.Label(lobbyLabel);
+                GUILayout.EndHorizontal();
+            }
+        }
+
+        GUILayout.Space(10);
+        GUILayout.Label(CoopLocalization.Get("ui.steam.joinPassword"));
+        var newJoinPassword = GUILayout.PasswordField(_steamJoinPassword, '*');
+        if (newJoinPassword != _steamJoinPassword)
+        {
+            _steamJoinPassword = newJoinPassword;
+        }
+
+        if (manager.IsInLobby && !manager.IsHost)
+        {
+            GUILayout.Space(10);
+            if (GUILayout.Button(CoopLocalization.Get("ui.steam.leaveLobby"), GUILayout.Height(32)))
+            {
+                NetService.Instance?.StopNetwork();
+            }
+        }
+    }
+
+    private void DrawSteamServerSection()
+    {
+        GUILayout.Label(CoopLocalization.Get("ui.steam.lobbySettings"));
+
+        GUILayout.Label(CoopLocalization.Get("ui.steam.lobbyName"));
+        var newLobbyName = GUILayout.TextField(_steamLobbyName);
+        if (newLobbyName != _steamLobbyName)
+        {
+            _steamLobbyName = newLobbyName;
+            UpdateLobbyOptionsFromUI();
+        }
+
+        GUILayout.Label(CoopLocalization.Get("ui.steam.lobbyPassword"));
+        var newLobbyPassword = GUILayout.PasswordField(_steamLobbyPassword, '*');
+        if (newLobbyPassword != _steamLobbyPassword)
+        {
+            _steamLobbyPassword = newLobbyPassword;
+            UpdateLobbyOptionsFromUI();
+        }
+
+        var visibilityLabels = new[]
+        {
+            CoopLocalization.Get("ui.steam.visibility.public"),
+            CoopLocalization.Get("ui.steam.visibility.friends")
+        };
+
+        var visibilityIndex = _steamLobbyFriendsOnly ? 1 : 0;
+        var newVisibilityIndex = GUILayout.Toolbar(visibilityIndex, visibilityLabels);
+        if (newVisibilityIndex != visibilityIndex)
+        {
+            _steamLobbyFriendsOnly = newVisibilityIndex == 1;
+            UpdateLobbyOptionsFromUI();
+        }
+
+        GUILayout.Label(CoopLocalization.Get("ui.steam.maxPlayers", _steamLobbyMaxPlayers));
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("-", GUILayout.Width(30)))
+        {
+            var updated = Mathf.Max(2, _steamLobbyMaxPlayers - 1);
+            if (updated != _steamLobbyMaxPlayers)
+            {
+                _steamLobbyMaxPlayers = updated;
+                UpdateLobbyOptionsFromUI();
+            }
+        }
+
+        GUILayout.Label(_steamLobbyMaxPlayers.ToString(), GUILayout.Width(40));
+
+        if (GUILayout.Button("+", GUILayout.Width(30)))
+        {
+            var updated = Mathf.Min(16, _steamLobbyMaxPlayers + 1);
+            if (updated != _steamLobbyMaxPlayers)
+            {
+                _steamLobbyMaxPlayers = updated;
+                UpdateLobbyOptionsFromUI();
+            }
+        }
+        GUILayout.EndHorizontal();
+
+        var manager = LobbyManager;
+        if (manager != null && manager.IsInLobby)
+        {
+            if (manager.TryGetLobbyInfo(manager.CurrentLobbyId, out var lobbyInfo))
+            {
+                GUILayout.Label(CoopLocalization.Get("ui.steam.currentLobby", lobbyInfo.LobbyName, lobbyInfo.MemberCount, lobbyInfo.MaxMembers));
+            }
+            else
+            {
+                GUILayout.Label(CoopLocalization.Get("ui.steam.currentLobby", _steamLobbyName, netManager?.ConnectedPeerList.Count ?? 1, Service?.LobbyOptions.MaxPlayers ?? 2));
+            }
+            GUILayout.Space(10);
+            if (manager.IsHost)
+            {
+                if (GUILayout.Button(CoopLocalization.Get("ui.steam.leaveLobby"), GUILayout.Height(32)))
+                {
+                    NetService.Instance?.StopNetwork();
+                }
+            }
+        }
+        else
+        {
+            GUILayout.Label(CoopLocalization.Get("ui.steam.server.waiting"));
+            if (!IsServer)
+            {
+                if (GUILayout.Button(CoopLocalization.Get("ui.steam.createHost"), GUILayout.Height(40)))
+                {
+                    UpdateLobbyOptionsFromUI();
+                    NetService.Instance?.StartNetwork(true);
+                }
+            }
+            else if (GUILayout.Button(CoopLocalization.Get("ui.steam.leaveLobby"), GUILayout.Height(32)))
+            {
+                NetService.Instance?.StopNetwork();
+            }
+        }
+    }
+
+    private void DrawSteamMode()
+    {
+        var manager = LobbyManager;
+        var roleLabel = CoopLocalization.Get("ui.mode.client");
+
+        if (manager != null && manager.IsInLobby)
+        {
+            roleLabel = manager.IsHost ? CoopLocalization.Get("ui.mode.server") : CoopLocalization.Get("ui.mode.client");
+        }
+        else if (IsServer)
+        {
+            roleLabel = CoopLocalization.Get("ui.mode.server");
+        }
+
+        GUILayout.Label($"{CoopLocalization.Get("ui.mode.current")}: {roleLabel}");
+
+        GUILayout.BeginHorizontal();
+        var createSelected = GUILayout.Toggle(!_steamShowLobbyBrowser, CoopLocalization.Get("ui.steam.tab.create"), GUI.skin.button);
+        if (createSelected && _steamShowLobbyBrowser)
+        {
+            _steamShowLobbyBrowser = false;
+        }
+
+        var browseSelected = GUILayout.Toggle(_steamShowLobbyBrowser, CoopLocalization.Get("ui.steam.tab.browse"), GUI.skin.button);
+        if (browseSelected && !_steamShowLobbyBrowser)
+        {
+            _steamShowLobbyBrowser = true;
+            manager?.RequestLobbyList();
+        }
+        else if (!createSelected && !browseSelected)
+        {
+            _steamShowLobbyBrowser = false;
+        }
+        GUILayout.EndHorizontal();
+
+        GUILayout.Space(10);
+
+        if (_steamShowLobbyBrowser)
+        {
+            DrawSteamClientSection();
+        }
+        else
+        {
+            DrawSteamServerSection();
+        }
+    }
+
+    private void AttemptSteamLobbyJoin(SteamLobbyManager.LobbyInfo lobby)
+    {
+        var manager = LobbyManager;
+        if (manager == null)
+        {
+            status = CoopLocalization.Get("ui.steam.error.notInitialized");
+            return;
+        }
+
+        var password = lobby.RequiresPassword ? _steamJoinPassword : string.Empty;
+        if (manager.TryJoinLobbyWithPassword(lobby.LobbyId, password, out var error))
+        {
+            status = CoopLocalization.Get("ui.status.connecting");
+            return;
+        }
+
+        switch (error)
+        {
+            case SteamLobbyManager.LobbyJoinError.SteamNotInitialized:
+                status = CoopLocalization.Get("ui.steam.error.notInitialized");
+                break;
+            case SteamLobbyManager.LobbyJoinError.LobbyMetadataUnavailable:
+                status = CoopLocalization.Get("ui.steam.error.metadata");
+                break;
+            case SteamLobbyManager.LobbyJoinError.IncorrectPassword:
+                status = CoopLocalization.Get("ui.steam.error.password");
+                break;
+            default:
+                status = CoopLocalization.Get("ui.steam.error.generic");
+                break;
         }
     }
 
     private void DrawMainWindow(int windowID)
     {
         GUILayout.BeginVertical();
-        GUILayout.Label($"当前模式: {(IsServer ? "服务器" : "客户端")}");
-
-        if (GUILayout.Button("切换到" + (IsServer ? "客户端" : "服务器") + "模式"))
-        {
-            var target = !IsServer;
-            NetService.Instance.StartNetwork(target);
-        }
+        DrawTransportModeSelector();
 
         GUILayout.Space(10);
-
-        if (!IsServer)
+        if (TransportMode == NetworkTransportMode.SteamP2P)
         {
-            GUILayout.Label("🔍 局域网主机列表");
-
-            if (hostList.Count == 0)
-                GUILayout.Label("（等待广播回应，暂无主机）");
-            else
-                foreach (var host in hostList)
-                {
-                    GUILayout.BeginHorizontal();
-                    if (GUILayout.Button("连接", GUILayout.Width(60)))
-                    {
-                        var parts = host.Split(':');
-                        if (parts.Length == 2 && int.TryParse(parts[1], out var p))
-                        {
-                            if (netManager == null || !netManager.IsRunning || IsServer || !networkStarted) NetService.Instance.StartNetwork(false);
-
-                            NetService.Instance.ConnectToHost(parts[0], p);
-                        }
-                    }
-
-                    GUILayout.Label(host);
-                    GUILayout.EndHorizontal();
-                }
-
-            GUILayout.Space(20);
-            GUILayout.Label("手动输入 IP 和端口连接:");
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("IP:", GUILayout.Width(40));
-            manualIP = GUILayout.TextField(manualIP, GUILayout.Width(150));
-            GUILayout.EndHorizontal();
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("端口:", GUILayout.Width(40));
-            manualPort = GUILayout.TextField(manualPort, GUILayout.Width(150));
-            GUILayout.EndHorizontal();
-            if (GUILayout.Button("手动连接"))
-            {
-                if (int.TryParse(manualPort, out var p))
-                {
-                    if (netManager == null || !netManager.IsRunning || IsServer || !networkStarted) NetService.Instance.StartNetwork(false);
-
-                    NetService.Instance.ConnectToHost(manualIP, p);
-                }
-                else
-                {
-                    status = "端口格式错误";
-                }
-            }
-
-            GUILayout.Space(20);
-            GUILayout.Label("状态: " + status);
+            DrawSteamMode();
         }
         else
         {
-            GUILayout.Label($"服务器监听端口: {port}");
-            GUILayout.Label($"当前连接数: {netManager?.ConnectedPeerList.Count ?? 0}");
+            GUILayout.Label($"{CoopLocalization.Get("ui.mode.current")}: {(IsServer ? CoopLocalization.Get("ui.mode.server") : CoopLocalization.Get("ui.mode.client"))}");
+
+            if (GUILayout.Button(CoopLocalization.Get("ui.mode.switchTo", IsServer ? CoopLocalization.Get("ui.mode.client") : CoopLocalization.Get("ui.mode.server"))))
+            {
+                var target = !IsServer;
+                NetService.Instance.StartNetwork(target);
+            }
+
+            GUILayout.Space(10);
+
+            if (IsServer)
+                DrawDirectServerSection();
+            else
+                DrawDirectClientSection();
         }
 
-        GUILayout.Space(10);
-        showPlayerStatusWindow = GUILayout.Toggle(showPlayerStatusWindow, $"显示玩家状态窗口 (切换键: {toggleWindowKey})");
+        GUILayout.Space(20);
+        var displayStatus = string.IsNullOrEmpty(status) ? CoopLocalization.Get("ui.status.notConnected") : status;
+        GUILayout.Label($"{CoopLocalization.Get("ui.status.label")} {displayStatus}");
 
-        if (GUILayout.Button("[Debug] 打印出该地图的所有lootbox"))
+        GUILayout.Space(10);
+        showPlayerStatusWindow = GUILayout.Toggle(showPlayerStatusWindow, CoopLocalization.Get("ui.playerStatus.toggle", toggleWindowKey));
+
+        if (GUILayout.Button(CoopLocalization.Get("ui.debug.printLootBoxes")))
+        {
             foreach (var i in LevelManager.LootBoxInventories)
+            {
                 try
                 {
                     Debug.Log($"Name {i.Value.name}" + $" DisplayNameKey {i.Value.DisplayNameKey}" + $" Key {i.Key}");
@@ -237,33 +601,8 @@ public class ModUI : MonoBehaviour
                 catch
                 {
                 }
-        //if (GUILayout.Button("[Debug] 所有maplist"))
-        //{
-        //    const string keyword = "MapSelectionEntry";
-
-        //    var trs = Object.FindObjectsByType<Transform>(
-        //        FindObjectsInactive.Include, FindObjectsSortMode.None);
-
-        //    var gos = trs
-        //        .Select(t => t.gameObject)
-        //        .Where(go => go.name.IndexOf(keyword, System.StringComparison.OrdinalIgnoreCase) >= 0)
-        //        .ToList();
-
-        //    foreach (var i in gos)
-        //    {
-        //        try
-        //        {
-        //            var map = i.GetComponentInChildren<MapSelectionEntry>();
-        //            if (map != null)
-        //            {
-        //                Debug.Log($"BeaconIndex {map.BeaconIndex}" + $" SceneID {map.SceneID}" + $" name {map.name}");
-        //            }
-        //        }
-        //        catch { continue; }
-        //    }
-
-        //}
-
+            }
+        }
 
         GUILayout.EndVertical();
         GUI.DragWindow();
@@ -279,12 +618,12 @@ public class ModUI : MonoBehaviour
         if (localPlayerStatus != null)
         {
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"ID: {localPlayerStatus.EndPoint}", GUILayout.Width(180));
+            GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.id")} {localPlayerStatus.EndPoint}", GUILayout.Width(180));
             GUILayout.EndHorizontal();
             GUILayout.BeginHorizontal();
-            GUILayout.Label($"名称: {localPlayerStatus.PlayerName}", GUILayout.Width(180));
-            GUILayout.Label($"延迟: {localPlayerStatus.Latency}ms", GUILayout.Width(100));
-            GUILayout.Label($"游戏中: {(localPlayerStatus.IsInGame ? "是" : "否")}");
+            GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.name")} {localPlayerStatus.PlayerName}", GUILayout.Width(180));
+            GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.latency")} {localPlayerStatus.Latency}ms", GUILayout.Width(100));
+            GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.inGame")} {(localPlayerStatus.IsInGame ? CoopLocalization.Get("ui.playerStatus.yes") : CoopLocalization.Get("ui.playerStatus.no"))}");
             GUILayout.EndHorizontal();
             GUILayout.Space(10);
         }
@@ -294,12 +633,12 @@ public class ModUI : MonoBehaviour
             {
                 var st = kvp.Value;
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"ID: {st.EndPoint}", GUILayout.Width(180));
+                GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.id")} {st.EndPoint}", GUILayout.Width(180));
                 GUILayout.EndHorizontal();
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"名称: {st.PlayerName}", GUILayout.Width(180));
-                GUILayout.Label($"延迟: {st.Latency}ms", GUILayout.Width(100));
-                GUILayout.Label($"游戏中: {(st.IsInGame ? "是" : "否")}");
+                GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.name")} {st.PlayerName}", GUILayout.Width(180));
+                GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.latency")} {st.Latency}ms", GUILayout.Width(100));
+                GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.inGame")} {(st.IsInGame ? CoopLocalization.Get("ui.playerStatus.yes") : CoopLocalization.Get("ui.playerStatus.no"))}");
                 GUILayout.EndHorizontal();
                 GUILayout.Space(10);
             }
@@ -308,12 +647,12 @@ public class ModUI : MonoBehaviour
             {
                 var st = kvp.Value;
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"ID: {st.EndPoint}", GUILayout.Width(180));
+                GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.id")} {st.EndPoint}", GUILayout.Width(180));
                 GUILayout.EndHorizontal();
                 GUILayout.BeginHorizontal();
-                GUILayout.Label($"名称: {st.PlayerName}", GUILayout.Width(180));
-                GUILayout.Label($"延迟: {st.Latency}ms", GUILayout.Width(100));
-                GUILayout.Label($"游戏中: {(st.IsInGame ? "是" : "否")}");
+                GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.name")} {st.PlayerName}", GUILayout.Width(180));
+                GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.latency")} {st.Latency}ms", GUILayout.Width(100));
+                GUILayout.Label($"{CoopLocalization.Get("ui.playerStatus.inGame")} {(st.IsInGame ? CoopLocalization.Get("ui.playerStatus.yes") : CoopLocalization.Get("ui.playerStatus.no"))}");
                 GUILayout.EndHorizontal();
                 GUILayout.Space(10);
             }

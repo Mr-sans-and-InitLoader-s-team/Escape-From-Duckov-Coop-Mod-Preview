@@ -56,21 +56,21 @@ Before building for the first time, you need to set up the game path environment
 
 1. Locate the `SetEnvVars_Permanent.bat` file in the project root directory
 2. Double-click to run the script
-3. Enter your game's Managed folder path when prompted
+3. Enter your game folder path when prompted
 
    **Example path**:
    ```
-   C:\Steam\steamapps\common\Escape from Duckov\Duckov_Data\Managed
+   C:\Steam\steamapps\common\Escape from Duckov
    ```
 
-4. The script will automatically set the `DUCKOV_GAME_MANAGED` environment variable
+4. The script will automatically set the `DUCKOV_GAME_DIRECTORY` environment variable
 5. **Important**: Close Visual Studio completely and reopen it to load the new environment variable
 
 #### Method 2: Manual Configuration
 
 1. Right-click "This PC" → "Properties" → "Advanced system settings" → "Environment Variables"
 2. Under "User variables", click "New"
-3. Variable name: `DUCKOV_GAME_MANAGED`
+3. Variable name: `DUCKOV_GAME_DIRECTORY`
 4. Variable value: Full path to your game's Managed folder
 5. Click "OK" to save
 
@@ -92,12 +92,12 @@ After successful compilation, output files will be in the `EscapeFromDuckovCoopM
 
 **Q: Build fails with missing DLL references?**
 
-A: Make sure you have correctly set the `DUCKOV_GAME_MANAGED` environment variable and restarted Visual Studio.
+A: Make sure you have correctly set the `DUCKOV_GAME_DIRECTORY` environment variable and restarted Visual Studio.
 
 **Q: Environment variable not working after setting?**
 
 A: 
-1. Verify the variable is set by running `echo %DUCKOV_GAME_MANAGED%` in command prompt
+1. Verify the variable is set by running `echo %DUCKOV_GAME_DIRECTORY%` in command prompt
 2. Ensure Visual Studio is completely closed (including background processes) before reopening
 
 **Q: What if my path contains spaces or special characters?**

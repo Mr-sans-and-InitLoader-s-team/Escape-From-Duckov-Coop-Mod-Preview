@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -119,7 +119,7 @@ public static class CoopTool
 
     public static bool TryGetProjectilePrefab(int weaponTypeId, out Projectile pfb)
     {
-        return LoaclPlayerManager.Instance._projCacheByWeaponType.TryGetValue(weaponTypeId, out pfb);
+        return LocalPlayerManager.Instance._projCacheByWeaponType.TryGetValue(weaponTypeId, out pfb);
     }
 
 
@@ -261,7 +261,7 @@ public static class CoopTool
         HealthM.Instance.ForceSetHealth(h, _cliSelfHpMax, _cliSelfHpCur);
 
         // 若现在血量已到 0，补一次死亡事件（只在客户端本地）
-        LoaclPlayerManager.Instance.Client_EnsureSelfDeathEvent(h, cmc);
+        LocalPlayerManager.Instance.Client_EnsureSelfDeathEvent(h, cmc);
 
         _cliSelfHpPending = false;
     }
@@ -314,7 +314,7 @@ public static class CoopTool
 
         // 计算主机当前 SceneId（仅当真正处于关卡中）
         string hostSceneId = null;
-        LoaclPlayerManager.Instance.ComputeIsInGame(out hostSceneId); // 返回 false 也无所谓，hostSceneId 可能为 null/空
+        LocalPlayerManager.Instance.ComputeIsInGame(out hostSceneId); // 返回 false 也无所谓，hostSceneId 可能为 null/空
 
         // 主机自己
         var hostPid = NetService.Instance.GetPlayerId(null);

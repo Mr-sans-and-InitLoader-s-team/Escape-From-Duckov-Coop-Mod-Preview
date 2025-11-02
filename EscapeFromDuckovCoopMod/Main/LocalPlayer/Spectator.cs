@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -73,7 +73,7 @@ public class Spectator : MonoBehaviour
 
         var mySceneId = localPlayerStatus != null ? localPlayerStatus.SceneId : null;
         if (string.IsNullOrEmpty(mySceneId))
-            LoaclPlayerManager.Instance.ComputeIsInGame(out mySceneId);
+            LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
         var myK = CanonicalizeSceneId(mySceneId);
 
         int cand = 0, kept = 0;
@@ -83,7 +83,7 @@ public class Spectator : MonoBehaviour
             {
                 var go = kv.Value;
                 var cmc = go ? go.GetComponent<CharacterMainControl>() : null;
-                if (!LoaclPlayerManager.Instance.IsAlive(cmc) || cmc == exclude) continue;
+                if (!LocalPlayerManager.Instance.IsAlive(cmc) || cmc == exclude) continue;
                 cand++;
 
                 string peerScene = null;
@@ -101,7 +101,7 @@ public class Spectator : MonoBehaviour
             {
                 var go = kv.Value;
                 var cmc = go ? go.GetComponent<CharacterMainControl>() : null;
-                if (!LoaclPlayerManager.Instance.IsAlive(cmc) || cmc == exclude) continue;
+                if (!LocalPlayerManager.Instance.IsAlive(cmc) || cmc == exclude) continue;
                 cand++;
 
                 //  先从 clientPlayerStatuses 拿 SceneId

@@ -52,6 +52,7 @@ public enum Op : byte
 
     SCENE_VOTE_REQ = 210, // 客户端 -> 主机：请求发起场景投票
 
+    AI_HEALTH_REPORT = 226, // 客户端 -> 主机：本地命中 AI 后上报权威血量
     AI_TRANSFORM_SNAPSHOT = 233,
     AI_SEED_SNAPSHOT = 230, // 主机 -> 所有客户端：场景种子 + 每个Root的派生种子
     AI_FREEZE_TOGGLE = 231, // （可选）切换冻结

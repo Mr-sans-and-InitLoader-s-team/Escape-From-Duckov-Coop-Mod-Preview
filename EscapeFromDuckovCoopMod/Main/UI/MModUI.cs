@@ -877,7 +877,10 @@ public class MModUI : MonoBehaviour
             }
 
             // 添加远程玩家（去重）
-            var remoteStatuses = IsServer ? playerStatuses?.Values : clientPlayerStatuses?.Values;
+            IEnumerable<PlayerStatus> remoteStatuses = IsServer
+                ? playerStatuses?.Values
+                : clientPlayerStatuses?.Values;
+
             if (remoteStatuses != null)
             {
                 foreach (var status in remoteStatuses)
@@ -903,7 +906,10 @@ public class MModUI : MonoBehaviour
                 playerStatusesToDisplay.Add(localPlayerStatus);
             }
 
-            var remoteStatuses = IsServer ? playerStatuses?.Values : clientPlayerStatuses?.Values;
+            IEnumerable<PlayerStatus> remoteStatuses = IsServer
+                ? playerStatuses?.Values
+                : clientPlayerStatuses?.Values;
+
             if (remoteStatuses != null)
             {
                 foreach (var status in remoteStatuses)

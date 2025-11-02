@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,11 +14,17 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using Steamworks;
 using System.Net;
 using System.Net.Sockets;
 
 namespace EscapeFromDuckovCoopMod;
 
+public enum NetworkTransportMode
+{
+    Direct,
+    SteamP2P
+}
 public class NetService : MonoBehaviour, INetEventListener
 {
     public static NetService Instance;
@@ -65,6 +71,9 @@ public class NetService : MonoBehaviour, INetEventListener
     public NetManager netManager;
     public NetDataWriter writer;
     public bool IsServer { get; private set; }
+
+    public NetworkTransportMode TransportMode { get; private set; } = NetworkTransportMode.Direct;
+    public SteamLobbyOptions LobbyOptions { get; private set; } = SteamLobbyOptions.CreateDefault();
 
     public void OnEnable()
     {
@@ -183,29 +192,11 @@ public class NetService : MonoBehaviour, INetEventListener
 
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
-        var peerEndPoint = peer?.EndPoint?.ToString() ?? "Unknown";
-        Debug.Log(CoopLocalization.Get("net.disconnected", peerEndPoint, disconnectInfo.Reason.ToString()));
+        Debug.Log(CoopLocalization.Get("net.disconnected", peer.EndPoint.ToString(), disconnectInfo.Reason.ToString()));
         if (!IsServer)
         {
             status = CoopLocalization.Get("net.connectionLost");
             isConnecting = false;
-            
-            // 只有在手动断开连接时才清除缓存，自动重连失败时保留缓存
-            if (isManualConnection && (disconnectInfo.Reason == DisconnectReason.DisconnectPeerCalled || 
-                disconnectInfo.Reason == DisconnectReason.RemoteConnectionClose))
-            {
-                hasSuccessfulConnection = false;
-                cachedConnectedIP = "";
-                cachedConnectedPort = 0;
-                Debug.Log("[COOP] 手动断开连接，清除缓存的连接信息");
-            }
-            else
-            {
-                Debug.Log($"[COOP] 连接断开 ({disconnectInfo.Reason})，保留缓存的连接信息用于重连");
-            }
-            
-            // 重置手动连接标记
-            isManualConnection = false;
         }
 
         if (connectedPeer == peer) connectedPeer = null;
@@ -213,7 +204,7 @@ public class NetService : MonoBehaviour, INetEventListener
         if (playerStatuses.ContainsKey(peer))
         {
             var _st = playerStatuses[peer];
-            if (_st != null && !string.IsNullOrEmpty(_st.EndPoint) && SceneNet.Instance != null)
+            if (_st != null && !string.IsNullOrEmpty(_st.EndPoint))
                 SceneNet.Instance._cliLastSceneIdByPlayer.Remove(_st.EndPoint);
             playerStatuses.Remove(peer);
         }
@@ -223,6 +214,35 @@ public class NetService : MonoBehaviour, INetEventListener
             Destroy(remoteCharacters[peer]);
             remoteCharacters.Remove(peer);
         }
+
+        if (!SteamP2PLoader.Instance.UseSteamP2P || SteamP2PManager.Instance == null)
+            return;
+        try
+        {
+            Debug.Log($"[Patch_OnPeerDisconnected] LiteNetLib断开: {peer.EndPoint}, 原因: {disconnectInfo.Reason}");
+            if (SteamEndPointMapper.Instance != null &&
+                SteamEndPointMapper.Instance.TryGetSteamID(peer.EndPoint, out CSteamID remoteSteamID))
+            {
+                Debug.Log($"[Patch_OnPeerDisconnected] 关闭Steam P2P会话: {remoteSteamID}");
+                if (SteamNetworking.CloseP2PSessionWithUser(remoteSteamID))
+                {
+                    Debug.Log($"[Patch_OnPeerDisconnected] ✓ 成功关闭P2P会话");
+                }
+                SteamEndPointMapper.Instance.UnregisterSteamID(remoteSteamID);
+                Debug.Log($"[Patch_OnPeerDisconnected] ✓ 已清理映射");
+                if (SteamP2PManager.Instance != null)
+                {
+                    SteamP2PManager.Instance.ClearAcceptedSession(remoteSteamID);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[Patch_OnPeerDisconnected] 异常: {ex}");
+        }
+
+
+
     }
 
     public void OnNetworkError(IPEndPoint endPoint, SocketError socketError)
@@ -278,9 +298,9 @@ public class NetService : MonoBehaviour, INetEventListener
         }
     }
 
-    public void StartNetwork(bool isServer)
+    public void StartNetwork(bool isServer, bool keepSteamLobby = false)
     {
-        StopNetwork();
+        StopNetwork(!keepSteamLobby);
         COOPManager.AIHandle.freezeAI = !isServer;
         IsServer = isServer;
         writer = new NetDataWriter();
@@ -289,13 +309,18 @@ public class NetService : MonoBehaviour, INetEventListener
             BroadcastReceiveEnabled = true
         };
 
+
         if (IsServer)
         {
             var started = netManager.Start(port);
             if (started)
+            {
                 Debug.Log(CoopLocalization.Get("net.serverStarted", port));
+            }
             else
+            {
                 Debug.LogError(CoopLocalization.Get("net.serverStartFailed"));
+            }
         }
         else
         {
@@ -303,7 +328,10 @@ public class NetService : MonoBehaviour, INetEventListener
             if (started)
             {
                 Debug.Log(CoopLocalization.Get("net.clientStarted"));
-                CoopTool.SendBroadcastDiscovery();
+                if (TransportMode == NetworkTransportMode.Direct)
+                {
+                    CoopTool.SendBroadcastDiscovery();
+                }
             }
             else
             {
@@ -329,9 +357,65 @@ public class NetService : MonoBehaviour, INetEventListener
             ItemAgent_Gun.OnMainCharacterShootEvent -= COOPManager.WeaponHandle.Host_OnMainCharacterShoot;
             ItemAgent_Gun.OnMainCharacterShootEvent += COOPManager.WeaponHandle.Host_OnMainCharacterShoot;
         }
+
+
+        // ===== 正确的 Steam P2P 初始化路径：在 P2P 可用时执行 =====
+        bool wantsP2P = TransportMode == NetworkTransportMode.SteamP2P;
+        bool p2pAvailable =
+            wantsP2P &&
+            SteamP2PLoader.Instance != null &&
+            SteamManager.Initialized &&
+            SteamP2PManager.Instance != null &&   // Loader.Init 正常时会挂上
+            SteamP2PLoader.Instance.UseSteamP2P;
+
+        Debug.Log($"[StartNetwork] WantsP2P={wantsP2P}, P2P可用={p2pAvailable}, UseSteamP2P={SteamP2PLoader.Instance?.UseSteamP2P}, " +
+                  $"SteamInit={SteamManager.Initialized}, IsServer={IsServer}, NetRunning={netManager?.IsRunning}");
+
+        if (p2pAvailable)
+        {
+            Debug.Log("[StartNetwork] 联机Mod已启动，初始化Steam P2P组件"); // ← 现在会正常打印
+
+            if (netManager != null)
+            {
+                // 使用 Steam P2P 时让 LiteNetLib 不去占 UDP socket
+                netManager.UseNativeSockets = false;
+                Debug.Log("[StartNetwork] ✓ UseNativeSockets=false（P2P 模式）");
+            }
+
+            // 保险：确保必要组件存在（Loader.Init 一般已创建）
+            if (SteamEndPointMapper.Instance == null)
+                DontDestroyOnLoad(new GameObject("SteamEndPointMapper").AddComponent<SteamEndPointMapper>());
+            if (SteamLobbyManager.Instance == null)
+                DontDestroyOnLoad(new GameObject("SteamLobbyManager").AddComponent<SteamLobbyManager>());
+
+            // 【可选】是否在这里创建 Lobby：建议不要，这会与 OnLobbyCreated 的二次 Start 冲突（见下文）
+            if (!keepSteamLobby && IsServer && SteamLobbyManager.Instance != null && !SteamLobbyManager.Instance.IsInLobby)
+            {
+                SteamLobbyManager.Instance.CreateLobby(LobbyOptions);
+            }
+        }
+        else
+        {
+            // 回退到纯 UDP
+            if (netManager != null)
+            {
+                netManager.UseNativeSockets = true;
+                if (wantsP2P)
+                {
+                    Debug.LogWarning("[StartNetwork] Steam P2P 不可用，回退 UDP（UseNativeSockets=true）");
+                }
+                else
+                {
+                    Debug.Log("[StartNetwork] 使用直连模式（UseNativeSockets=true）");
+                }
+            }
+        }
+
+
+
     }
 
-    public void StopNetwork()
+    public void StopNetwork(bool leaveSteamLobby = true)
     {
         if (netManager != null && netManager.IsRunning)
         {
@@ -339,11 +423,14 @@ public class NetService : MonoBehaviour, INetEventListener
             Debug.Log(CoopLocalization.Get("net.networkStopped"));
         }
 
+        IsServer = false;
         networkStarted = false;
         connectedPeer = null;
 
-        // 停止网络时清除缓存的连接信息
-        ClearConnectionCache();
+        if (leaveSteamLobby && TransportMode == NetworkTransportMode.SteamP2P && SteamLobbyManager.Instance != null && SteamLobbyManager.Instance.IsInLobby)
+        {
+            SteamLobbyManager.Instance.LeaveLobby();
+        }
 
         playerStatuses.Clear();
         clientPlayerStatuses.Clear();
@@ -690,4 +777,44 @@ public class NetService : MonoBehaviour, INetEventListener
             Debug.LogError($"[COOP] 场景切换后重连异常: {ex}");
         }
     }
+
+    public void SetTransportMode(NetworkTransportMode mode)
+    {
+        if (TransportMode == mode)
+            return;
+
+        TransportMode = mode;
+
+        if (SteamP2PLoader.Instance != null)
+        {
+            SteamP2PLoader.Instance.UseSteamP2P = mode == NetworkTransportMode.SteamP2P;
+        }
+
+        if (mode != NetworkTransportMode.SteamP2P && SteamLobbyManager.Instance != null)
+        {
+            SteamLobbyManager.Instance.LeaveLobby();
+        }
+
+        if (networkStarted)
+        {
+            StopNetwork();
+        }
+    }
+
+    public void ConfigureLobbyOptions(SteamLobbyOptions? options)
+    {
+        LobbyOptions = options ?? SteamLobbyOptions.CreateDefault();
+
+        if (SteamLobbyManager.Instance != null)
+        {
+            SteamLobbyManager.Instance.UpdateLobbySettings(LobbyOptions);
+        }
+    }
+
+
+
+
+
+
+
 }

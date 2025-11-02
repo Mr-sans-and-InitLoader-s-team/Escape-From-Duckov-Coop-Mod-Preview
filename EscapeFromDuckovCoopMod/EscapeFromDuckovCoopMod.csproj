@@ -277,10 +277,7 @@
             <_ModFolder>$(DUCKOV_MODS_DIRECTORY)\$(ProjectName)</_ModFolder>
         </PropertyGroup>
 
-        <Copy
-            SourceFiles="$(OutputPath)\$(AssemblyName).dll"
-            DestinationFolder="$(_ModFolder)"
-            SkipUnchangedFiles="true"/>
-        <Message Text="Copied DLL -&gt; $(_ModFolder)\$(AssemblyName).dll" Importance="High"/>
+        <Copy SourceFiles="$(OutputPath)\$(AssemblyName).dll" DestinationFolder="$(_ModFolder)" SkipUnchangedFiles="true" />
+        <Message Text="Copied DLL -&gt; $(_ModFolder)\$(AssemblyName).dll" Importance="High" />
     </Target>
 </Project>

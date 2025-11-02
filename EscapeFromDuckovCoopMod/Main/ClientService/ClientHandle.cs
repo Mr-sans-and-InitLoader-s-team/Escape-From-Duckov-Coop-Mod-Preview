@@ -32,7 +32,7 @@ public class ClientHandle
 
     public void HandleClientStatusUpdate(NetPeer peer, NetPacketReader reader)
     {
-        var endPoint = reader.GetString();
+        var endPoint = reader.GetString();  // 客户端自报的EndPoint（Client:xxxxx），仅用于日志/调试
         var playerName = reader.GetString();
         var isInGame = reader.GetBool();
         var position = reader.GetVector3();
@@ -54,7 +54,11 @@ public class ClientHandle
             playerStatuses[peer] = new PlayerStatus();
 
         var st = playerStatuses[peer];
-        st.EndPoint = endPoint;
+        // ⚠️ 重要：服务器端必须保持使用 peer.EndPoint（虚拟IP格式），不能用客户端自报的 Client:xxxxx
+        // st.EndPoint = endPoint;  // ❌ 错误：不要覆盖服务器端的虚拟IP EndPoint
+        if (string.IsNullOrEmpty(st.EndPoint))
+            st.EndPoint = peer.EndPoint.ToString();  // ✅ 使用服务器端的虚拟IP EndPoint
+
         st.PlayerName = playerName;
         st.Latency = peer.Ping;
         st.IsInGame = isInGame;

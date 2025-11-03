@@ -275,34 +275,15 @@
         </PackageReference>
     </ItemGroup>
 
-    <!-- 本地化文件 -->
-    <ItemGroup>
-        <None Include="..\Localization\*.json">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-            <Link>Localization\%(Filename)%(Extension)</Link>
-        </None>
-    </ItemGroup>
-
     <Target Name="CopyToModsFolder" AfterTargets="Build">
         <PropertyGroup>
             <_ModFolder>$(DUCKOV_MODS_DIRECTORY)\$(ProjectName)</_ModFolder>
         </PropertyGroup>
 
-        <!-- 复制DLL -->
         <Copy
             SourceFiles="$(OutputPath)\$(AssemblyName).dll"
             DestinationFolder="$(_ModFolder)"
             SkipUnchangedFiles="true"/>
         <Message Text="Copied DLL -&gt; $(_ModFolder)\$(AssemblyName).dll" Importance="High"/>
-
-        <!-- 复制本地化文件 -->
-        <ItemGroup>
-            <LocalizationFiles Include="$(OutputPath)\Localization\*.json"/>
-        </ItemGroup>
-        <Copy
-            SourceFiles="@(LocalizationFiles)"
-            DestinationFolder="$(_ModFolder)\Localization"
-            SkipUnchangedFiles="true"/>
-        <Message Text="Copied Localization files -&gt; $(_ModFolder)\Localization" Importance="High"/>
     </Target>
 </Project>

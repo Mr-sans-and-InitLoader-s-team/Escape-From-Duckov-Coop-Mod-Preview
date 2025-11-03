@@ -52,7 +52,6 @@ public enum Op : byte
 
     SCENE_VOTE_REQ = 210, // 客户端 -> 主机：请求发起场景投票
 
-    AI_HEALTH_REPORT = 226, // 客户端 -> 主机：本地命中 AI 后上报权威血量
     AI_TRANSFORM_SNAPSHOT = 233,
     AI_SEED_SNAPSHOT = 230, // 主机 -> 所有客户端：场景种子 + 每个Root的派生种子
     AI_FREEZE_TOGGLE = 231, // （可选）切换冻结
@@ -94,5 +93,10 @@ public enum Op : byte
     LOOT_REQ_TAKE = 253, // 客户端 -> 主机：请求“取出”
     LOOT_PUT_OK = 254, // 主机 -> 发起客户端：确认“放入”成功，附回执 token
     LOOT_TAKE_OK = 255, // 主机 -> 发起客户端：确认“取出”成功 + 返回 Item 快照
-    LOOT_DENY = 249 // 主机 -> 发起客户端：拒绝（例如并发冲突/格子无物品/容量不足）
+    LOOT_DENY = 249, // 主机 -> 发起客户端：拒绝（例如并发冲突/格子无物品/容量不足）
+    
+    // ===== 聊天系统操作码 =====
+    CHAT_MESSAGE_SEND = 200, // 客户端 -> 主机：发送聊天消息
+    CHAT_MESSAGE_BROADCAST = 201, // 主机 -> 所有客户端：广播单条聊天消息
+    CHAT_HISTORY_SYNC = 202 // 主机 -> 客户端：发送完整聊天历史记录
 }

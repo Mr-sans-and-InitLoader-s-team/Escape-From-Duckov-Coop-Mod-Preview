@@ -327,25 +327,72 @@ public class SteamP2PManager : MonoBehaviour
     #region Steam 回调处理
     private void OnP2PSessionRequest(P2PSessionRequest_t request)
     {
-        Debug.Log($"[SteamP2P] 收到P2P会话请求 from {request.m_steamIDRemote}");
+        Debug.Log($"[SteamP2P] ========== 收到P2P会话请求 ==========");
+        Debug.Log($"[SteamP2P] 来自: {request.m_steamIDRemote}");
+        
         if (SteamNetworking.AcceptP2PSessionWithUser(request.m_steamIDRemote))
         {
-            Debug.Log($"[SteamP2P] 已接受P2P会话 from {request.m_steamIDRemote}");
-            byte[] handshake = System.Text.Encoding.UTF8.GetBytes("HANDSHAKE");
-            for (int i = 0; i < 3; i++)
+            Debug.Log($"[SteamP2P] ✓ 已接受P2P会话 from {request.m_steamIDRemote}");
+            
+            // 立即注册端点映射
+            if (SteamEndPointMapper.Instance != null)
             {
-                SteamNetworking.SendP2PPacket(request.m_steamIDRemote, handshake, (uint)handshake.Length,
-                    EP2PSend.k_EP2PSendUnreliableNoDelay, 0);
+                var endPoint = SteamEndPointMapper.Instance.RegisterSteamID(request.m_steamIDRemote);
+                Debug.Log($"[SteamP2P] ✓ 已注册端点映射: {request.m_steamIDRemote} -> {endPoint}");
             }
-            bool sent = SteamNetworking.SendP2PPacket(request.m_steamIDRemote, handshake, (uint)handshake.Length,
-                EP2PSend.k_EP2PSendReliable, 0);
-            Debug.Log($"[SteamP2P] NAT穿透握手完成: {(sent ? "成功" : "失败")}");
-            SteamEndPointMapper.Instance?.OnP2PSessionEstablished(request.m_steamIDRemote);
+            
+            // 发送握手包以完成 NAT 穿透
+            byte[] handshake = System.Text.Encoding.UTF8.GetBytes("HANDSHAKE");
+            
+            // 发送多个不可靠握手包（快速触发）
+            int successCount = 0;
+            for (int i = 0; i < 5; i++)
+            {
+                bool sent = SteamNetworking.SendP2PPacket(
+                    request.m_steamIDRemote, handshake, (uint)handshake.Length,
+                    EP2PSend.k_EP2PSendUnreliableNoDelay, 0
+                );
+                if (sent) successCount++;
+            }
+            Debug.Log($"[SteamP2P] 发送不可靠握手包: {successCount}/5 成功");
+            
+            // 发送可靠握手包（确保至少一个到达）
+            bool reliableSent = SteamNetworking.SendP2PPacket(
+                request.m_steamIDRemote, handshake, (uint)handshake.Length,
+                EP2PSend.k_EP2PSendReliable, 0
+            );
+            Debug.Log($"[SteamP2P] 发送可靠握手包: {(reliableSent ? "成功" : "失败")}");
+            
+            // 检查会话状态
+            if (SteamNetworking.GetP2PSessionState(request.m_steamIDRemote, out P2PSessionState_t state))
+            {
+                Debug.Log($"[SteamP2P] P2P会话状态:");
+                Debug.Log($"  - 连接活跃: {state.m_bConnectionActive}");
+                Debug.Log($"  - 正在连接: {state.m_bConnecting}");
+                Debug.Log($"  - 使用中继: {state.m_bUsingRelay}");
+                Debug.Log($"  - 发送队列: {state.m_nBytesQueuedForSend} 字节");
+                
+                if (state.m_bConnectionActive == 1)
+                {
+                    Debug.Log($"[SteamP2P] ✓ P2P会话已完全建立！");
+                    SteamEndPointMapper.Instance?.OnP2PSessionEstablished(request.m_steamIDRemote);
+                }
+                else
+                {
+                    Debug.LogWarning($"[SteamP2P] ⚠️ P2P会话尚未完全建立，等待连接激活...");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"[SteamP2P] ⚠️ 无法获取P2P会话状态");
+            }
         }
         else
         {
-            Debug.LogError($"[SteamP2P] 接受P2P会话失败 from {request.m_steamIDRemote}");
+            Debug.LogError($"[SteamP2P] ❌ 接受P2P会话失败 from {request.m_steamIDRemote}");
         }
+        
+        Debug.Log($"[SteamP2P] ========================================");
     }
     private void OnP2PSessionConnectFail(P2PSessionConnectFail_t failure)
     {

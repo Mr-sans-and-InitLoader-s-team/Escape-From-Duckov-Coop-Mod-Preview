@@ -12,7 +12,7 @@ public class SteamLobbyOptions
 {
     public string LobbyName { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
-    public int MaxPlayers { get; set; } = 2;
+    public int MaxPlayers { get; set; } = 4;
     public SteamLobbyVisibility Visibility { get; set; } = SteamLobbyVisibility.Public;
 
     public static SteamLobbyOptions CreateDefault()
@@ -21,7 +21,7 @@ public class SteamLobbyOptions
         {
             LobbyName = "Duckov Lobby",
             Password = string.Empty,
-            MaxPlayers = 2,
+            MaxPlayers = 4,
             Visibility = SteamLobbyVisibility.Public
         };
 

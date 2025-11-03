@@ -60,12 +60,10 @@ namespace EscapeFromDuckovCoopMod
 
         private readonly Dictionary<CSteamID, LobbyMetadata> _lobbyMetadata = new();
         private readonly List<LobbyInfo> _availableLobbies = new();
-        private readonly Dictionary<CSteamID, string> _lobbyMembersCache = new();  // SteamID -> 用户名缓存
 
         public IReadOnlyList<LobbyInfo> AvailableLobbies => _availableLobbies;
 
         public event Action<IReadOnlyList<LobbyInfo>>? LobbyListUpdated;
-        public event Action? LobbyJoined;  // 新增：Lobby 加入成功事件
 
         public bool IsInLobby => _currentLobbyId != CSteamID.Nil;
         public bool IsHost => _isHost;
@@ -223,10 +221,10 @@ namespace EscapeFromDuckovCoopMod
             if (_currentLobbyId != CSteamID.Nil)
             {
                 Debug.Log($"[SteamLobby] 离开Lobby: {_currentLobbyId}");
+                Debug.Log($"[SteamLobby] 调用堆栈:\n{System.Environment.StackTrace}");
                 SteamMatchmaking.LeaveLobby(_currentLobbyId);
                 _currentLobbyId = CSteamID.Nil;
                 _isHost = false;
-                _lobbyMembersCache.Clear();  // 清空成员缓存
             }
         }
 
@@ -250,34 +248,6 @@ namespace EscapeFromDuckovCoopMod
             }
 
             return SteamMatchmaking.GetLobbyOwner(_currentLobbyId);
-        }
-
-        /// <summary>
-        /// 从缓存中获取 Lobby 成员的用户名
-        /// </summary>
-        public string GetCachedMemberName(CSteamID steamId)
-        {
-            if (_lobbyMembersCache.TryGetValue(steamId, out string name))
-            {
-                return name;
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// 检查 SteamID 是否在当前 Lobby 的成员缓存中
-        /// </summary>
-        public bool IsCachedMember(CSteamID steamId)
-        {
-            return _lobbyMembersCache.ContainsKey(steamId);
-        }
-
-        /// <summary>
-        /// 获取所有已缓存的 Lobby 成员（SteamID 和用户名）
-        /// </summary>
-        public IReadOnlyDictionary<CSteamID, string> GetAllCachedMembers()
-        {
-            return _lobbyMembersCache;
         }
 
         private void OnGameLobbyJoinRequested(GameLobbyJoinRequested_t callback)
@@ -369,17 +339,6 @@ namespace EscapeFromDuckovCoopMod
                 Debug.Log($"[SteamLobby] Lobby主机: {hostId}");
                 Debug.Log($"[SteamLobby] 我的Steam ID: {myId}");
 
-                // 初始化缓存：加载所有已存在的成员
-                _lobbyMembersCache.Clear();
-                int memberCount = SteamMatchmaking.GetNumLobbyMembers(_currentLobbyId);
-                for (int i = 0; i < memberCount; i++)
-                {
-                    CSteamID memberId = SteamMatchmaking.GetLobbyMemberByIndex(_currentLobbyId, i);
-                    string memberName = SteamFriends.GetFriendPersonaName(memberId);
-                    _lobbyMembersCache[memberId] = memberName;
-                    Debug.Log($"[SteamLobby] 缓存成员: {memberName} (SteamID: {memberId.m_SteamID})");
-                }
-
                 if (hostId == myId)
                 {
                     Debug.Log("[SteamLobby] ✓ 我是主机，启动联机服务器");
@@ -400,9 +359,6 @@ namespace EscapeFromDuckovCoopMod
                     Debug.Log("[SteamLobby] Lobby加入成功，自动连接到主机");
                     SteamLobbyHelper.TriggerMultiplayerConnect(hostId);
                 }
-
-                // 触发 Lobby 加入成功事件
-                LobbyJoined?.Invoke();
             }
             else
             {
@@ -420,34 +376,38 @@ namespace EscapeFromDuckovCoopMod
             switch (stateChange)
             {
                 case EChatMemberStateChange.k_EChatMemberStateChangeEntered:
-                    Debug.Log($"[SteamLobby] {userName} (SteamID: {userId.m_SteamID}) 加入了Lobby");
-                    // 缓存成员信息
-                    _lobbyMembersCache[userId] = userName;
+                    Debug.Log($"[SteamLobby] {userName} 加入了Lobby");
                     if (SteamEndPointMapper.Instance != null)
                     {
-                        SteamEndPointMapper.Instance.RegisterSteamID(userId);
+                        var endpoint = SteamEndPointMapper.Instance.RegisterSteamID(userId);
+                        
+                        // 同时注册到聊天传输层（主机需要知道客户端的 SteamID 才能发送消息）
+                        if (endpoint != null)
+                        {
+                            EscapeFromDuckovCoopMod.Chat.Network.ChatTransportBridge.RegisterClientSteamId(
+                                endpoint.ToString(), 
+                                userId
+                            );
+                            Debug.Log($"[SteamLobby] ✓ 已注册客户端到聊天传输层: {endpoint} <-> {userId}");
+                        }
                     }
                     break;
                 case EChatMemberStateChange.k_EChatMemberStateChangeLeft:
                     Debug.Log($"[SteamLobby] {userName} 离开了Lobby");
-                    // 移除缓存
-                    _lobbyMembersCache.Remove(userId);
                     if (SteamEndPointMapper.Instance != null)
                     {
                         SteamEndPointMapper.Instance.UnregisterSteamID(userId);
+                        Debug.Log($"[SteamLobby] ✓ 已从聊天传输层移除客户端: {userId}");
                     }
                     break;
                 case EChatMemberStateChange.k_EChatMemberStateChangeDisconnected:
                     Debug.Log($"[SteamLobby] {userName} 断开连接");
-                    _lobbyMembersCache.Remove(userId);
                     break;
                 case EChatMemberStateChange.k_EChatMemberStateChangeKicked:
                     Debug.Log($"[SteamLobby] {userName} 被踢出");
-                    _lobbyMembersCache.Remove(userId);
                     break;
                 case EChatMemberStateChange.k_EChatMemberStateChangeBanned:
                     Debug.Log($"[SteamLobby] {userName} 被封禁");
-                    _lobbyMembersCache.Remove(userId);
                     break;
             }
 
@@ -475,18 +435,17 @@ namespace EscapeFromDuckovCoopMod
             }
 
             Debug.Log($"[SteamLobby] 找到 {callback.m_nLobbiesMatching} 个Lobby");
-
             for (int i = 0; i < callback.m_nLobbiesMatching; i++)
             {
                 var lobbyId = SteamMatchmaking.GetLobbyByIndex(i);
-
                 if (!_lobbyMetadata.ContainsKey(lobbyId))
-                {
                     CacheLobbySnapshot(lobbyId);
-                }
 
                 SteamMatchmaking.RequestLobbyData(lobbyId);
             }
+
+            // ✅ 关键：立刻刷新一次可用列表并触发 LobbyListUpdated 事件，避免 UI 空窗
+            RefreshLobbyListCache();  // <-- 新增
         }
 
         private void OnLobbyDataUpdate(LobbyDataUpdate_t callback)

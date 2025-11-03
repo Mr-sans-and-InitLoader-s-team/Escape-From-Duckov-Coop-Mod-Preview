@@ -32,29 +32,56 @@ namespace EscapeFromDuckovCoopMod
                 Debug.Log($"[SteamEndPointMapper] Steam ID {steamID} 已注册为 {existingEndPoint}");
                 return existingEndPoint;
             }
+            
             IPEndPoint virtualEndPoint = GenerateVirtualEndPoint(port);
             _steamToEndPoint[steamID] = virtualEndPoint;
             _endPointToSteam[virtualEndPoint] = steamID;
+            
+            Debug.Log($"[SteamEndPointMapper] Steam ID {steamID} 已注册为 {virtualEndPoint}");
+            
             if (SteamManager.Initialized)
             {
+                // 主动接受 P2P 会话
                 bool accepted = Steamworks.SteamNetworking.AcceptP2PSessionWithUser(steamID);
+                Debug.Log($"[SteamEndPointMapper] 接受P2P会话: {(accepted ? "成功" : "失败")}");
+                
+                // 发送握手包以触发 NAT 穿透
                 byte[] handshake = System.Text.Encoding.UTF8.GetBytes("HANDSHAKE");
-                for (int i = 0; i < 3; i++)
+                
+                // 发送多个不可靠握手包（快速触发）
+                for (int i = 0; i < 5; i++)
                 {
-                    Steamworks.SteamNetworking.SendP2PPacket(
+                    bool sent = Steamworks.SteamNetworking.SendP2PPacket(
                         steamID, handshake, (uint)handshake.Length,
                         Steamworks.EP2PSend.k_EP2PSendUnreliableNoDelay, 0
                     );
+                    Debug.Log($"[SteamEndPointMapper] 发送握手包 #{i+1}: {(sent ? "成功" : "失败")}");
                 }
-                bool sent = Steamworks.SteamNetworking.SendP2PPacket(
+                
+                // 发送一个可靠握手包（确保至少一个到达）
+                bool reliableSent = Steamworks.SteamNetworking.SendP2PPacket(
                     steamID, handshake, (uint)handshake.Length,
                     Steamworks.EP2PSend.k_EP2PSendReliable, 0
                 );
+                Debug.Log($"[SteamEndPointMapper] 发送可靠握手包: {(reliableSent ? "成功" : "失败")}");
+                
+                // 检查会话状态
                 Steamworks.P2PSessionState_t state;
                 if (Steamworks.SteamNetworking.GetP2PSessionState(steamID, out state))
                 {
+                    Debug.Log($"[SteamEndPointMapper] P2P会话状态 - 连接活跃: {state.m_bConnectionActive}, " +
+                             $"正在连接: {state.m_bConnecting}, 使用中继: {state.m_bUsingRelay}");
+                }
+                else
+                {
+                    Debug.LogWarning($"[SteamEndPointMapper] 无法获取P2P会话状态");
                 }
             }
+            else
+            {
+                Debug.LogWarning($"[SteamEndPointMapper] Steam未初始化，无法建立P2P会话");
+            }
+            
             return virtualEndPoint;
         }
         public System.Collections.IEnumerator WaitForP2PSessionEstablished(CSteamID steamID, System.Action<bool> callback, float timeoutSeconds = 10f)

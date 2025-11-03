@@ -35,6 +35,7 @@
     { "key": "ui.vote.playerReadyStatus", "value": "プレイヤー準備状態：" },
     { "key": "ui.vote.readyIcon", "value": "準備完了" },
     { "key": "ui.vote.notReadyIcon", "value": "未準備" },
+    { "key": "ui.vote.cancel", "value": "投票をキャンセル" },
     { "key": "ui.spectator.mode", "value": "観戦モード: 左クリック ▶ 次 | 右クリック ◀ 前 | 観戦中" },
     { "key": "scene.waitingForHost", "value": "[Coop] ホストの読み込み待機中… (遅延が続く場合は100秒後に自動入場)" },
     { "key": "scene.hostReady", "value": "ホスト準備完了、入場中…" },

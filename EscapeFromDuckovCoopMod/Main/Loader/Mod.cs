@@ -1043,10 +1043,22 @@ public class ModBehaviourF : MonoBehaviour
 
             case Op.SCENE_CANCEL:
                 {
-                    SceneNet.Instance.sceneVoteActive = false;
-                    SceneNet.Instance.sceneReady.Clear();
-                    SceneNet.Instance.localReady = false;
+                    // 调用统一的取消投票处理方法（包含触发器重置）
+                    if (!IsServer)
+                    {
+                        SceneNet.Instance.Client_OnVoteCancelled();
+                        Debug.Log("[COOP] 收到服务器取消投票通知");
+                    }
+                    else
+                    {
+                        // 服务器端直接清除状态（不应该收到这个消息，但保险起见）
+                        SceneNet.Instance.sceneVoteActive = false;
+                        SceneNet.Instance.sceneReady.Clear();
+                        SceneNet.Instance.localReady = false;
+                        EscapeFromDuckovCoopMod.Utils.SceneTriggerResetter.ResetAllSceneTriggers();
+                    }
 
+                    // 处理观战玩家
                     if (Spectator.Instance._spectatorActive && Spectator.Instance._spectatorEndOnVotePending)
                     {
                         Spectator.Instance._spectatorEndOnVotePending = false;

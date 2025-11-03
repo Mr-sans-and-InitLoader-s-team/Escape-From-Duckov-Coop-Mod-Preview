@@ -35,6 +35,7 @@
     { "key": "ui.vote.playerReadyStatus", "value": "Status de prontidão dos jogadores:" },
     { "key": "ui.vote.readyIcon", "value": "Pronto" },
     { "key": "ui.vote.notReadyIcon", "value": "Não pronto" },
+    { "key": "ui.vote.cancel", "value": "Cancelar Votação" },
     { "key": "ui.spectator.mode", "value": "Modo Espectador: Botão Esquerdo ▶ Próximo | Botão Direito ◀ Anterior | Observando" },
     { "key": "scene.waitingForHost", "value": "[Coop] Aguardando o host terminar de carregar… (Entrada automática após 100s se houver atraso)" },
     { "key": "scene.hostReady", "value": "Host pronto, entrando…" },

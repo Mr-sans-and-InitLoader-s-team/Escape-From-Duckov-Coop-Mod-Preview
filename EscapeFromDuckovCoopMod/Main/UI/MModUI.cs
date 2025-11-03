@@ -1351,6 +1351,15 @@ public class MModUI : MonoBehaviour
             SceneNet.Instance.localReady ? ModernColors.Success : ModernColors.Warning);
         CreateText("ReadyHint", readySection.transform, CoopLocalization.Get("ui.vote.pressKey", readyKey, ""), 13, ModernColors.TextTertiary);
 
+        // 取消投票按钮（只有房主才能看到）
+        if (IsServer)
+        {
+            CreateDivider(_components.VotePanel.transform);
+            var cancelButton = CreateModernButton("CancelVote", _components.VotePanel.transform,
+                CoopLocalization.Get("ui.vote.cancel", "取消投票"),
+                OnCancelVote, -1, ModernColors.Error, 40, 14);
+        }
+
         // 玩家列表标题
         var listTitle = CreateText("PlayerListTitle", _components.VotePanel.transform, CoopLocalization.Get("ui.vote.playerReadyStatus"), 16, ModernColors.TextSecondary);
         var listTitleLayout = listTitle.gameObject.GetComponent<LayoutElement>();
@@ -1484,6 +1493,30 @@ public class MModUI : MonoBehaviour
 
             CreateText("ID", playerRow.transform, displayId, 12, ModernColors.TextSecondary);
         }
+    }
+
+    /// <summary>
+    /// 取消投票按钮回调
+    /// </summary>
+    private void OnCancelVote()
+    {
+        if (SceneNet.Instance == null)
+        {
+            SetStatusText("[!] 投票系统未初始化", ModernColors.Error);
+            return;
+        }
+
+        // 只有房主才能取消投票
+        if (!IsServer)
+        {
+            SetStatusText("[!] 只有房主可以取消投票", ModernColors.Error);
+            return;
+        }
+
+        // 调用取消投票方法
+        SceneNet.Instance.CancelVote();
+        SetStatusText("[OK] 已取消投票", ModernColors.Success);
+        Debug.Log("[MModUI] 房主取消了投票");
     }
 
     private void UpdateSpectatorPanel()

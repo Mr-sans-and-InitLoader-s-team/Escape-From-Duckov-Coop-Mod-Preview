@@ -35,6 +35,7 @@
     { "key": "ui.vote.playerReadyStatus", "value": "플레이어 준비 상태：" },
     { "key": "ui.vote.readyIcon", "value": "준비됨" },
     { "key": "ui.vote.notReadyIcon", "value": "준비 안 됨" },
+    { "key": "ui.vote.cancel", "value": "투표 취소" },
     { "key": "ui.spectator.mode", "value": "관전 모드: 좌클릭 ▶ 다음 | 우클릭 ◀ 이전 | 관전 중" },
     { "key": "scene.waitingForHost", "value": "[Coop] 호스트 로딩 대기 중… (입장이 지연되면 100초 후 자동 입장)" },
     { "key": "scene.hostReady", "value": "호스트 준비 완료, 입장 중…" },

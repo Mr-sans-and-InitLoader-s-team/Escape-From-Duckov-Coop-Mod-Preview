@@ -35,6 +35,8 @@
     { "key": "ui.vote.playerReadyStatus", "value": "Player Ready Status:" },
     { "key": "ui.vote.readyIcon", "value": "Ready" },
     { "key": "ui.vote.notReadyIcon", "value": "Not Ready" },
+    { "key": "ui.vote.cancel", "value": "Cancel Vote" },
+    { "key": "ui.vote.title", "value": "Map Vote" },
     { "key": "ui.spectator.mode", "value": "Spectator Mode: LMB ▶ Next | RMB ◀ Previous | Spectating" },
     { "key": "scene.waitingForHost", "value": "[Coop] Waiting for host to finish loading… (Auto-enter after 100s if delayed)" },
     { "key": "scene.hostReady", "value": "Host ready, entering…" },

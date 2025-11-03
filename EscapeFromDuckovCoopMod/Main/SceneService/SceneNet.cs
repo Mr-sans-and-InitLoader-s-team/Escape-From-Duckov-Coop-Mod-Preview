@@ -387,13 +387,68 @@ public class SceneNet : MonoBehaviour
         w.Put(ready);
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
 
-        // ★ 本地乐观更新：立即把自己的 ready 写进就绪表，以免 UI 卡在“未准备”
+        // ★ 本地乐观更新：立即把自己的 ready 写进就绪表，以免 UI 卡在"未准备"
         if (sceneVoteActive && localPlayerStatus != null)
         {
             var me = localPlayerStatus.EndPoint ?? string.Empty;
             if (!string.IsNullOrEmpty(me) && sceneReady.ContainsKey(me))
                 sceneReady[me] = ready;
         }
+    }
+
+    /// <summary>
+    /// 取消当前投票（房主或投票发起者可调用）
+    /// </summary>
+    public void CancelVote()
+    {
+        if (!sceneVoteActive)
+        {
+            Debug.LogWarning("[SCENE] 没有正在进行的投票");
+            return;
+        }
+
+        Debug.Log("[SCENE] 取消投票，重置场景触发器");
+
+        // 如果是服务器，广播取消投票消息给所有客户端
+        if (IsServer && networkStarted && netManager != null)
+        {
+            var w = new NetDataWriter();
+            w.Put((byte)Op.SCENE_CANCEL);
+            netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            Debug.Log("[SCENE] 服务器已广播取消投票消息");
+        }
+
+        // 清除投票状态
+        sceneVoteActive = false;
+        sceneParticipantIds.Clear();
+        sceneReady.Clear();
+        localReady = false;
+
+        // 重置场景触发器，允许重新触发投票
+        EscapeFromDuckovCoopMod.Utils.SceneTriggerResetter.ResetAllSceneTriggers();
+    }
+
+    /// <summary>
+    /// 客户端接收到服务器的取消投票消息
+    /// </summary>
+    public void Client_OnVoteCancelled()
+    {
+        if (IsServer)
+        {
+            Debug.LogWarning("[SCENE] 服务器不应该接收客户端的取消投票消息");
+            return;
+        }
+
+        Debug.Log("[SCENE] 收到服务器取消投票通知，重置本地状态");
+
+        // 清除投票状态
+        sceneVoteActive = false;
+        sceneParticipantIds.Clear();
+        sceneReady.Clear();
+        localReady = false;
+
+        // 重置场景触发器，允许重新触发投票
+        EscapeFromDuckovCoopMod.Utils.SceneTriggerResetter.ResetAllSceneTriggers();
     }
 
     private void TryPerformSceneLoad_Local(string targetSceneId, string curtainGuid,

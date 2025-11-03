@@ -263,6 +263,9 @@
         <Reference Include="UnityEngine.UI">
             <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.UI.dll</HintPath>
         </Reference>
+        <Reference Include="UnityEngine.UIModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.UIModule.dll</HintPath>
+        </Reference>
     </ItemGroup>
 
     <ItemGroup>

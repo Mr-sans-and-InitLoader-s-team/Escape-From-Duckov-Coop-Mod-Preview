@@ -51,7 +51,7 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         go.AddComponent<DeadLootBox>();
         go.AddComponent<LootManager>();
         go.AddComponent<SceneNet>();
-        go.AddComponent<ModUI>();
+        go.AddComponent<MModUI>();
         CoopTool.Init();
 
         DeferredInit();
@@ -66,7 +66,7 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         SafeInit<HealthM>(hm => hm.Init());
         SafeInit<SendLocalPlayerStatus>(s => s.Init());
         SafeInit<Spectator>(s => s.Init());
-        SafeInit<ModUI>(ui => ui.Init());
+        SafeInit<MModUI>(ui => ui.Init());
         SafeInit<AIRequest>(a => a.Init());
         SafeInit<Send_ClientStatus>(s => s.Init());
         SafeInit<DeadLootBox>(s => s.Init());

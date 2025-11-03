@@ -6,6 +6,21 @@
         <Nullable>disable</Nullable>
         <LangVersion>latest</LangVersion>
         <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+        <IsWindows>$([MSBuild]::IsOSPlatform('WINDOWS'))</IsWindows>
+    </PropertyGroup>
+
+    <!-- Custom Run Program -->
+    <PropertyGroup>
+        <StartAction>Program</StartAction>
+        <StartWorkingDirectory>$(DuckovPath)</StartWorkingDirectory>
+
+        <!-- Windows -->
+        <StartProgram Condition="'$(IsWindows)' == 'true'">C:\Windows\System32\cmd.exe</StartProgram>
+        <StartArguments Condition="'$(IsWindows)' == 'true'">/c start "" "./Duckov.exe"</StartArguments>
+
+        <!-- Mac -->
+        <StartProgram Condition="'$(IsWindows)' != 'true'">/bin/bash</StartProgram>
+        <StartArguments Condition="'$(IsWindows)' != 'true'">-c "open '$(DuckovPath)/Duckov.app'"</StartArguments>
     </PropertyGroup>
 
     <ItemGroup>

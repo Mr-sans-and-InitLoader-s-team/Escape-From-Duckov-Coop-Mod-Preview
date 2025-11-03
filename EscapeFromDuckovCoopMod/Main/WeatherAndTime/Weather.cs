@@ -32,6 +32,18 @@ public class Weather
     private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
 
     private bool networkStarted => Service != null && Service.networkStarted;
+    
+    private static FieldInfo GetFieldSafe(Type type, string fieldName)
+    {
+        try
+        {
+            return type.GetField(fieldName, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     // ========== 环境同步：主机广播 ==========
     public void Server_BroadcastEnvSync(NetPeer target = null)
@@ -62,7 +74,11 @@ public class Weather
         {
             try
             {
-                seed = (int)AccessTools.Field(wm.GetType(), "seed").GetValue(wm);
+                var seedField = GetFieldSafe(wm.GetType(), "seed");
+                if (seedField != null)
+                {
+                    seed = (int)seedField.GetValue(wm);
+                }
             }
             catch
             {
@@ -70,7 +86,11 @@ public class Weather
 
             try
             {
-                forceWeather = (bool)AccessTools.Field(wm.GetType(), "forceWeather").GetValue(wm);
+                var forceWeatherField = GetFieldSafe(wm.GetType(), "forceWeather");
+                if (forceWeatherField != null)
+                {
+                    forceWeather = (bool)forceWeatherField.GetValue(wm);
+                }
             }
             catch
             {
@@ -78,7 +98,11 @@ public class Weather
 
             try
             {
-                forceWeatherVal = (int)AccessTools.Field(wm.GetType(), "forceWeatherValue").GetValue(wm);
+                var forceWeatherValField = GetFieldSafe(wm.GetType(), "forceWeatherValue");
+                if (forceWeatherValField != null)
+                {
+                    forceWeatherVal = (int)forceWeatherValField.GetValue(wm);
+                }
             }
             catch
             {
@@ -153,7 +177,11 @@ public class Weather
                 var k = 0;
                 try
                 {
-                    k = (int)AccessTools.Field(typeof(global::Door), "doorClosedDataKeyCached").GetValue(d);
+                    var doorField = GetFieldSafe(typeof(global::Door), "doorClosedDataKeyCached");
+                    if (doorField != null)
+                    {
+                        k = (int)doorField.GetValue(d);
+                    }
                 }
                 catch
                 {
@@ -213,8 +241,8 @@ public class Weather
             var inst = GameClock.Instance;
             if (inst != null)
             {
-                AccessTools.Field(inst.GetType(), "days")?.SetValue(inst, day);
-                AccessTools.Field(inst.GetType(), "secondsOfDay")?.SetValue(inst, secOfDay);
+                GetFieldSafe(inst.GetType(), "days")?.SetValue(inst, day);
+                GetFieldSafe(inst.GetType(), "secondsOfDay")?.SetValue(inst, secOfDay);
                 try
                 {
                     inst.clockTimeScale = timeScale;
@@ -237,10 +265,10 @@ public class Weather
             var wm = WeatherManager.Instance;
             if (wm != null && seed != -1)
             {
-                AccessTools.Field(wm.GetType(), "seed")?.SetValue(wm, seed); // 写 seed :contentReference[oaicite:11]{index=11}
+                GetFieldSafe(wm.GetType(), "seed")?.SetValue(wm, seed);
                 wm.GetType().GetMethod("SetupModules", BindingFlags.NonPublic | BindingFlags.Instance)
-                    ?.Invoke(wm, null); // 把 seed 带给 Storm/Precipitation :contentReference[oaicite:12]{index=12}
-                AccessTools.Field(wm.GetType(), "_weatherDirty")?.SetValue(wm, true); // 标脏以便下帧重新取 GetWeather
+                    ?.Invoke(wm, null);
+                GetFieldSafe(wm.GetType(), "_weatherDirty")?.SetValue(wm, true);
             }
         }
         catch

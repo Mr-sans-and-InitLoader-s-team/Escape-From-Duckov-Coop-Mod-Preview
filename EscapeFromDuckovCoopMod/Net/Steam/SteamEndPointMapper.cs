@@ -27,14 +27,19 @@ namespace EscapeFromDuckovCoopMod
         }
         public IPEndPoint RegisterSteamID(CSteamID steamID, int port = 27015)
         {
+            var localSteamId = SteamManager.Initialized ? SteamUser.GetSteamID() : default(CSteamID);
+            var isLocal = (steamID == localSteamId);
+            
             if (_steamToEndPoint.TryGetValue(steamID, out IPEndPoint existingEndPoint))
             {
-                Debug.Log($"[SteamEndPointMapper] Steam ID {steamID} 已注册为 {existingEndPoint}");
+                Debug.Log($"[SteamEndPointMapper]  Steam ID {steamID} 已注册为 {existingEndPoint} isLocal={isLocal}");
                 return existingEndPoint;
             }
             IPEndPoint virtualEndPoint = GenerateVirtualEndPoint(port);
             _steamToEndPoint[steamID] = virtualEndPoint;
             _endPointToSteam[virtualEndPoint] = steamID;
+            
+            Debug.Log($"[SteamEndPointMapper]  新映射: {steamID} → {virtualEndPoint} isLocal={isLocal} localSteamId={localSteamId.m_SteamID}");
             if (SteamManager.Initialized)
             {
                 bool accepted = Steamworks.SteamNetworking.AcceptP2PSessionWithUser(steamID);
@@ -93,6 +98,23 @@ namespace EscapeFromDuckovCoopMod
         public bool TryGetSteamID(IPEndPoint endPoint, out CSteamID steamID)
         {
             return _endPointToSteam.TryGetValue(endPoint, out steamID);
+        }
+        
+        public void DebugPrintAllMappings(string context = "")
+        {
+            if (_endPointToSteam.Count > 0)
+            {
+                var localSteamId = SteamManager.Initialized ? SteamUser.GetSteamID().m_SteamID : 0;
+                Debug.Log($"[SteamEndPointMapper]{context} 当前所有映射({_endPointToSteam.Count}个) localSteamId={localSteamId}:");
+                foreach (var kvp in _endPointToSteam)
+                {
+                    Debug.Log($"  {kvp.Key} → {kvp.Value.m_SteamID}");
+                }
+            }
+            else
+            {
+                Debug.Log($"[SteamEndPointMapper]{context} 当前无映射");
+            }
         }
         public bool TryGetEndPoint(CSteamID steamID, out IPEndPoint endPoint)
         {

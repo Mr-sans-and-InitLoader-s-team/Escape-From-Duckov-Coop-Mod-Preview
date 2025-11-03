@@ -18,7 +18,7 @@ using System.Collections;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Duckov.UI;
-using Duckov.Utilities;
+﻿using Duckov.Utilities;
 using ItemStatsSystem;
 using UnityEngine.SceneManagement;
 using static EscapeFromDuckovCoopMod.LootNet;
@@ -206,18 +206,38 @@ public static class LootboxDetectUtil
     public static bool IsLootboxInventory(Inventory inv)
     {
         if (inv == null) return false;
-        // 排除私有库存（仓库/宠物包）
         if (IsPrivateInventory(inv)) return false;
 
-        var dict = InteractableLootbox.Inventories;
-        if (dict != null)
-            foreach (var kv in dict)
-                if (kv.Value == inv)
-                    return true;
-        var boxes = Object.FindObjectsOfType<InteractableLootbox>(true);
-        foreach (var b in boxes)
-            if (b && b.Inventory == inv)
-                return true;
+        try
+        {
+            if (InteractableLootbox.Inventories != null)
+            {
+                foreach (var kv in InteractableLootbox.Inventories)
+                {
+                    if (kv.Value != null && ReferenceEquals(kv.Value, inv))
+                        return true;
+                }
+            }
+        }
+        catch
+        {
+        }
+        
+        try
+        {
+            var boxes = Object.FindObjectsOfType<InteractableLootbox>(true);
+            if (boxes != null)
+            {
+                foreach (var b in boxes)
+                {
+                    if (b != null && b.Inventory != null && ReferenceEquals(b.Inventory, inv))
+                        return true;
+                }
+            }
+        }
+        catch
+        {
+        }
 
         return false;
     }

@@ -128,6 +128,42 @@ public class NetService : MonoBehaviour, INetEventListener
                 Rotation = Quaternion.identity,
                 CustomFaceJson = null
             };
+        
+            var relay = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridP2PRelay.Instance;
+            if (relay != null)
+            {
+                var endPoint = peer.EndPoint as System.Net.IPEndPoint;
+                Debug.Log($"[NetService] OnPeerConnected - relay={relay != null}, endPoint={endPoint}, mapper={SteamEndPointMapper.Instance != null}");
+                
+                if (endPoint != null && SteamEndPointMapper.Instance != null)
+                {
+                    if (SteamEndPointMapper.Instance.TryGetSteamID(endPoint, out Steamworks.CSteamID steamID))
+                    {
+                        var natType = EscapeFromDuckovCoopMod.Net.HybridP2P.NATType.Moderate;
+                        relay.RegisterConnection(peer.EndPoint.ToString(), steamID, natType);
+                        Debug.Log($"[NetService] Registered connection to HybridP2PRelay: {peer.EndPoint} -> {steamID}, NAT: {natType}");
+                        
+                        if (!IsServer)
+                        {
+                            var hostStatus = playerStatuses[peer];
+                            hostStatus.NATType = natType;
+                            hostStatus.UseRelay = false;
+                        }
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[NetService] TryGetSteamID failed for {endPoint}");
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"[NetService] Cannot register: endPoint={endPoint}, mapper={SteamEndPointMapper.Instance != null}");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"[NetService] HybridP2PRelay.Instance is null");
+            }
 
         if (IsServer) SendLocalPlayerStatus.Instance.SendPlayerStatusUpdate();
 
@@ -206,6 +242,13 @@ public class NetService : MonoBehaviour, INetEventListener
         {
             status = CoopLocalization.Get("net.connectionLost");
             isConnecting = false;
+            
+            var ui = MModUI.Instance;
+            if (ui != null)
+            {
+                string reason = $"{CoopLocalization.Get("net.disconnected", peer.EndPoint.ToString(), disconnectInfo.Reason.ToString())}";
+                ui.ShowDisconnectDialog(reason);
+            }
         }
 
         if (connectedPeer == peer) connectedPeer = null;
@@ -222,6 +265,13 @@ public class NetService : MonoBehaviour, INetEventListener
         {
             Destroy(remoteCharacters[peer]);
             remoteCharacters.Remove(peer);
+        }
+        
+        var relay = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridP2PRelay.Instance;
+        if (relay != null)
+        {
+            relay.UnregisterConnection(peer.EndPoint.ToString());
+            Debug.Log($"[NetService] Unregistered connection from HybridP2PRelay: {peer.EndPoint}");
         }
 
         if (!SteamP2PLoader.Instance.UseSteamP2P || SteamP2PManager.Instance == null)
@@ -256,7 +306,8 @@ public class NetService : MonoBehaviour, INetEventListener
 
     public void OnNetworkError(IPEndPoint endPoint, SocketError socketError)
     {
-        Debug.LogError(CoopLocalization.Get("net.networkError", socketError, endPoint.ToString()));
+        string endPointStr = endPoint != null ? endPoint.ToString() : "null";
+        Debug.LogError(CoopLocalization.Get("net.networkError", socketError, endPointStr));
     }
 
     public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)

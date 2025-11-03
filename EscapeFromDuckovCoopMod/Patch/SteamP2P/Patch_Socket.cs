@@ -106,6 +106,48 @@ namespace EscapeFromDuckovCoopMod
         {
             if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
                 return true;
+            
+            try
+            {
+                if (buffer == null)
+                {
+                    Debug.LogError("[Patch_ReceiveFrom] Buffer is null, returning to original method");
+                    return true;
+                }
+                
+                if (remoteEP == null)
+                {
+                    Debug.LogError("[Patch_ReceiveFrom] RemoteEP is null, returning to original method");
+                    return true;
+                }
+                
+                if (offset < 0)
+                {
+                    Debug.LogError($"[Patch_ReceiveFrom] Invalid offset: {offset}, must be >= 0");
+                    __result = 0;
+                    return false;
+                }
+                
+                if (size <= 0)
+                {
+                    Debug.LogError($"[Patch_ReceiveFrom] Invalid size: {size}, must be > 0");
+                    __result = 0;
+                    return false;
+                }
+                
+                if (offset + size > buffer.Length)
+                {
+                    Debug.LogError($"[Patch_ReceiveFrom] Buffer overflow: offset({offset}) + size({size}) > buffer.Length({buffer.Length})");
+                    __result = 0;
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Patch_ReceiveFrom] Parameter validation exception: {ex.Message}");
+                return true;
+            }
+            
             try
             {
                 if (SteamP2PManager.Instance != null)

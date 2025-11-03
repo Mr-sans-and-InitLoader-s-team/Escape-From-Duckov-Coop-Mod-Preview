@@ -283,6 +283,12 @@
         </None>
     </ItemGroup>
 
+    <Target Name="UpdateGitCommitHash" BeforeTargets="BeforeBuild">
+        <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;$(ProjectDir)..\UpdateGitHash.ps1&quot; -ProjectDir &quot;$(ProjectDir)..&quot;" 
+              ContinueOnError="true"
+              IgnoreExitCode="true" />
+    </Target>
+
     <Target Name="CopyToModsFolder" AfterTargets="Build">
         <PropertyGroup>
             <_ModFolder>$(DUCKOV_MODS_DIRECTORY)\$(ProjectName)</_ModFolder>

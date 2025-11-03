@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -238,30 +238,46 @@ public class ModUI : MonoBehaviour
             
         try
         {
+            // 检查T键输入（打开聊天）
+            if (Input.GetKeyDown(KeyCode.T))
+            {
+                ShowChatInputDialog();
+            }
+            
             // 检查Enter键输入
             if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
             {
-                var chatUIManager = EscapeFromDuckovCoopMod.Chat.UI.ChatUIManager.Instance;
-                if (chatUIManager != null && chatUIManager.IsInitialized)
-                {
-                    // 切换聊天输入覆盖层
-                    chatUIManager.ToggleInputOverlay();
-                }
-            }
-            
-            // 检查ESC键输入（关闭聊天输入）
-            if (Input.GetKeyDown(KeyCode.Escape))
-            {
-                var chatUIManager = EscapeFromDuckovCoopMod.Chat.UI.ChatUIManager.Instance;
-                if (chatUIManager != null && chatUIManager.IsInputActive)
-                {
-                    chatUIManager.HideInputOverlay();
-                }
+                ShowChatInputDialog();
             }
         }
         catch (System.Exception ex)
         {
             Debug.LogError($"[ModUI] 处理聊天输入时发生错误: {ex.Message}");
+        }
+    }
+    
+    /// <summary>
+    /// 显示聊天输入对话框
+    /// </summary>
+    private void ShowChatInputDialog()
+    {
+        try
+        {
+            // 使用ChatInputDialog显示输入框
+            string userInput = EscapeFromDuckovCoopMod.Chat.UI.ChatInputDialog.ShowInputDialog(
+                "聊天输入", 
+                "请输入聊天消息:", 
+                ""
+            );
+            
+            if (!string.IsNullOrEmpty(userInput))
+            {
+                HandleChatMessageSent(userInput);
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[ModUI] 显示聊天输入对话框失败: {ex.Message}");
         }
     }
     

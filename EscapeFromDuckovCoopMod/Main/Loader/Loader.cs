@@ -42,6 +42,7 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         DontDestroyOnLoad(go);
 
         go.AddComponent<SteamP2PLoader>();
+        go.AddComponent<EscapeFromDuckovCoopMod.Net.HybridP2P.HybridP2PRelay>();
         go.AddComponent<AIRequest>();
         go.AddComponent<Send_ClientStatus>();
         go.AddComponent<HealthM>();
@@ -51,6 +52,7 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         go.AddComponent<DeadLootBox>();
         go.AddComponent<LootManager>();
         go.AddComponent<SceneNet>();
+        go.AddComponent<VoteSystemRPC>();
         go.AddComponent<MModUI>();
         CoopTool.Init();
 

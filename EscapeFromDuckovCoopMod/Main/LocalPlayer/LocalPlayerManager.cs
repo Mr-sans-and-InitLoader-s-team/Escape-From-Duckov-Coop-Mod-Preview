@@ -462,4 +462,6 @@ public class PlayerStatus
     public string CustomFaceJson { get; set; }
     public List<EquipmentSyncData> EquipmentList { get; set; } = new();
     public List<WeaponSyncData> WeaponList { get; set; } = new();
+    public EscapeFromDuckovCoopMod.Net.HybridP2P.NATType NATType { get; set; } = EscapeFromDuckovCoopMod.Net.HybridP2P.NATType.Unknown;
+    public bool UseRelay { get; set; }
 }

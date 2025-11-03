@@ -15,7 +15,7 @@
 // GNU Affero General Public License for more details.
 
 using System.Reflection;
-using Duckov.UI;
+﻿using Duckov.UI;
 using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
@@ -59,6 +59,22 @@ public class AIHealth
     public void Server_BroadcastAiHealth(int aiId, float maxHealth, float currentHealth)
     {
         if (!networkStarted || !IsServer) return;
+        
+        bool isDead = currentHealth <= 0f;
+        var connectedCount = netManager?.ConnectedPeerList?.Count ?? 0;
+        
+        if (ModBehaviourF.LogAiHpDebug || isDead)
+        {
+            Debug.Log($"[AI-HP][SERVER-BROADCAST] aiId={aiId} hp={currentHealth:F1}/{maxHealth:F1} dead={isDead} 广播给{connectedCount}个客户端");
+            if (netManager?.ConnectedPeerList != null)
+            {
+                foreach (var peer in netManager.ConnectedPeerList)
+                {
+                    Debug.Log($"[AI-HP][SERVER-BROADCAST]   -> {peer.EndPoint}");
+                }
+            }
+        }
+        
         var w = new NetDataWriter();
         w.Put((byte)Op.AI_HEALTH_SYNC);
         w.Put(aiId);
@@ -89,8 +105,9 @@ public class AIHealth
         _cliNextReportAt[aiId] = now + 0.05f;
         _cliLastReportedHp[aiId] = cur;
 
-        if (ModBehaviourF.LogAiHpDebug)
-            Debug.Log($"[AI-HP][CLIENT] report aiId={aiId} max={max} cur={cur}");
+        bool isDead = cur <= 0f;
+        if (ModBehaviourF.LogAiHpDebug || isDead)
+            Debug.Log($"[AI-HP][CLIENT-REPORT] aiId={aiId} max={max:F1} cur={cur:F1} isDead={isDead}");
     }
 
     public void HandleAiHealthReport(NetPeer sender, NetPacketReader r)
@@ -102,22 +119,24 @@ public class AIHealth
         var aiId = r.GetInt();
         var max = r.GetFloat();
         var cur = r.GetFloat();
+        
+        var senderEndpoint = sender?.EndPoint?.ToString() ?? "unknown";
 
         if (!AITool.aiById.TryGetValue(aiId, out var cmc) || !cmc)
         {
-            if (ModBehaviourF.LogAiHpDebug)
-                Debug.LogWarning($"[AI-HP][SERVER] report missing AI aiId={aiId} from={sender?.EndPoint}");
+            Debug.LogWarning($"[AI-HP][SERVER-RECV]  AI不存在: aiId={aiId} from={senderEndpoint}");
             return;
         }
 
         var h = cmc.Health;
         if (!h)
         {
-            if (ModBehaviourF.LogAiHpDebug)
-                Debug.LogWarning($"[AI-HP][SERVER] report aiId={aiId} has no Health");
+            Debug.LogWarning($"[AI-HP][SERVER-RECV]  AI无Health组件: aiId={aiId} from={senderEndpoint}");
             return;
         }
 
+        var serverCurrentHp = h.CurrentHealth;
+        var serverMaxHp = h.MaxHealth;
         var applyMax = max > 0f ? max : h.MaxHealth;
         var maxForClamp = applyMax > 0f ? applyMax : h.MaxHealth;
         var clampedCur = maxForClamp > 0f ? Mathf.Clamp(cur, 0f, maxForClamp) : Mathf.Max(0f, cur);
@@ -131,15 +150,21 @@ public class AIHealth
         {
         }
 
+        bool clientReportDead = cur <= 0f;
+        bool serverCurrentlyDead = serverCurrentHp <= 0f;
+        
+        Debug.Log($"[AI-HP][SERVER-RECV] aiId={aiId} from={senderEndpoint} | 客户端报告: hp={cur:F1}/{max:F1} dead={clientReportDead} | 服务器当前: hp={serverCurrentHp:F1}/{serverMaxHp:F1} dead={serverCurrentlyDead}");
+
         HealthM.Instance.ForceSetHealth(h, applyMax, clampedCur, false);
 
-        if (ModBehaviourF.LogAiHpDebug)
-            Debug.Log($"[AI-HP][SERVER] apply report aiId={aiId} max={applyMax} cur={clampedCur} from={sender?.EndPoint}");
+        Debug.Log($"[AI-HP][SERVER-APPLY] aiId={aiId} 应用血量: {clampedCur:F1}/{applyMax:F1} wasDead={wasDead}");
 
         Server_BroadcastAiHealth(aiId, applyMax, clampedCur);
 
         if (clampedCur <= 0f && !wasDead)
         {
+            Debug.Log($"[AI-HP][SERVER-DEATH]  AI死亡触发 aiId={aiId} from={senderEndpoint}");
+            
             var di = new DamageInfo();
 
             try
@@ -194,18 +219,26 @@ public class AIHealth
             try
             {
                 cmc.Health.OnDeadEvent?.Invoke(di);
+                Debug.Log($"[AI-HP][SERVER-DEATH] OnDeadEvent已触发 aiId={aiId}");
             }
-            catch
+            catch (Exception e)
             {
+                Debug.LogError($"[AI-HP][SERVER-DEATH] OnDeadEvent异常: {e.Message}");
             }
 
             try
             {
                 AITool.TryFireOnDead(cmc.Health, di);
+                Debug.Log($"[AI-HP][SERVER-DEATH] TryFireOnDead已触发 aiId={aiId}");
             }
-            catch
+            catch (Exception e)
             {
+                Debug.LogError($"[AI-HP][SERVER-DEATH] TryFireOnDead异常: {e.Message}");
             }
+        }
+        else if (clampedCur <= 0f && wasDead)
+        {
+            Debug.Log($"[AI-HP][SERVER-DEATH] AI已死亡(重复) aiId={aiId} from={senderEndpoint}");
         }
     }
 
@@ -214,17 +247,26 @@ public class AIHealth
     {
         if (IsServer) return;
 
+        bool isDead = cur <= 0f;
+        
         // AI 尚未注册：缓存 max/cur，等 RegisterAi 时一起冲
         if (!AITool.aiById.TryGetValue(aiId, out var cmc) || !cmc)
         {
             COOPManager.AIHandle._cliPendingAiHealth[aiId] = cur;
             if (max > 0f) COOPManager.AIHandle._cliPendingAiMax[aiId] = max;
-            Debug.Log($"[AI-HP][CLIENT] pending aiId={aiId} max={max} cur={cur}");
+            Debug.Log($"[AI-HP][CLIENT-RECV]  AI未注册，缓存血量: aiId={aiId} max={max:F1} cur={cur:F1} dead={isDead}");
             return;
         }
 
         var h = cmc.Health;
-        if (!h) return;
+        if (!h)
+        {
+            Debug.LogWarning($"[AI-HP][CLIENT-RECV]  AI无Health组件: aiId={aiId}");
+            return;
+        }
+        
+        var clientCurrentHp = h.CurrentHealth;
+        Debug.Log($"[AI-HP][CLIENT-RECV] aiId={aiId} | 服务器同步: hp={cur:F1}/{max:F1} dead={isDead} | 客户端当前: hp={clientCurrentHp:F1}");
 
         try
         {
@@ -359,13 +401,19 @@ public class AIHealth
         {
         }
 
-        // 死亡则本地立即隐藏，防“幽灵AI”
+        // 死亡则本地立即隐藏，防"幽灵AI"
         if (cur <= 0f)
         {
+            Debug.Log($"[AI-HP][CLIENT-DEATH]  客户端处理AI死亡 aiId={aiId}");
+            
             try
             {
                 var ai = cmc.GetComponent<AICharacterController>();
-                if (ai) ai.enabled = false;
+                if (ai)
+                {
+                    ai.enabled = false;
+                    Debug.Log($"[AI-HP][CLIENT-DEATH] 禁用AICharacterController aiId={aiId}");
+                }
 
                 // 释放/隐藏血条
                 try
@@ -377,21 +425,32 @@ public class AIHealth
                         var miRel = AccessTools.DeclaredMethod(typeof(HealthBar), "Release", Type.EmptyTypes);
                         if (miRel != null) miRel.Invoke(hb, null);
                         else hb.gameObject.SetActive(false);
+                        Debug.Log($"[AI-HP][CLIENT-DEATH] 隐藏血条 aiId={aiId}");
                     }
                 }
-                catch
+                catch (Exception e)
                 {
+                    Debug.LogWarning($"[AI-HP][CLIENT-DEATH] 隐藏血条失败: {e.Message}");
                 }
 
                 cmc.gameObject.SetActive(false);
+                Debug.Log($"[AI-HP][CLIENT-DEATH] 隐藏GameObject aiId={aiId}");
             }
-            catch
+            catch (Exception e)
             {
+                Debug.LogError($"[AI-HP][CLIENT-DEATH] 处理死亡异常: {e.Message}");
             }
 
 
             if (AITool._cliAiDeathFxOnce.Add(aiId))
+            {
                 FxManager.Client_PlayAiDeathFxAndSfx(cmc);
+                Debug.Log($"[AI-HP][CLIENT-DEATH] 播放死亡特效 aiId={aiId}");
+            }
+            else
+            {
+                Debug.Log($"[AI-HP][CLIENT-DEATH] 跳过重复的死亡特效 aiId={aiId}");
+            }
         }
     }
 }

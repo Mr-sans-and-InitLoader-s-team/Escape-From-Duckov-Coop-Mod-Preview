@@ -23,6 +23,7 @@
     { "key": "ui.playerStatus.toggle", "value": "Mostrar janela de status do jogador (Tecla: {0})" },
     { "key": "ui.playerStatus.id", "value": "ID:" },
     { "key": "ui.playerStatus.name", "value": "Nome:" },
+    { "key": "ui.playerStatus.ping", "value": "Ping" },
     { "key": "ui.playerStatus.latency", "value": "Latência:" },
     { "key": "ui.playerStatus.inGame", "value": "No jogo:" },
     { "key": "ui.playerStatus.yes", "value": "Sim" },

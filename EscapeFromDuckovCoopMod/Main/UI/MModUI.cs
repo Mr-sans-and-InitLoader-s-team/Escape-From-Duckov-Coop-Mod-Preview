@@ -41,7 +41,7 @@ public class MModUI : MonoBehaviour
     private GameObject _hostEntryPrefab;
     private GameObject _playerEntryPrefab;
 
-    public bool showUI = true;
+    public bool showUI = false; // 完全禁用MModUI，使用ModUI
     public bool showPlayerStatusWindow;
     public KeyCode toggleUIKey = KeyCode.Equals;  // = 键
     public KeyCode togglePlayerStatusKey = KeyCode.P;

@@ -163,10 +163,19 @@ public static class HealthTool
             _srvHooked.Add(h);
         }
 
-        // 1) 若服务器已缓存了该客户端“自报”的权威血量，先套用并广给其他客户端
+        // 1) 若服务器已缓存了该客户端"自报"的权威血量，先套用并广给其他客户端
         if (peer != null && _srvPendingHp.TryGetValue(peer, out var snap))
         {
-            HealthM.Instance.ApplyHealthAndEnsureBar(instance, snap.max, snap.cur);
+            // 使用防回环标志避免循环广播
+            HealthM.Instance._srvApplyingHealth.Add(h);
+            try
+            {
+                HealthM.Instance.ApplyHealthAndEnsureBar(instance, snap.max, snap.cur);
+            }
+            finally
+            {
+                HealthM.Instance._srvApplyingHealth.Remove(h);
+            }
             _srvPendingHp.Remove(peer);
             HealthM.Instance.Server_OnHealthChanged(peer, h);
             return;

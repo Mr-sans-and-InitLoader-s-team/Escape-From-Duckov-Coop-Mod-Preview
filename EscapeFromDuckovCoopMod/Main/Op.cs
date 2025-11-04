@@ -92,7 +92,10 @@ public enum Op : byte
     LOOT_STATE = 251, // 主机 -> 客户端：下发容器快照（全量）
     LOOT_REQ_PUT = 252, // 客户端 -> 主机：请求“放入”
     LOOT_REQ_TAKE = 253, // 客户端 -> 主机：请求“取出”
-    LOOT_PUT_OK = 254, // 主机 -> 发起客户端：确认“放入”成功，附回执 token
-    LOOT_TAKE_OK = 255, // 主机 -> 发起客户端：确认“取出”成功 + 返回 Item 快照
-    LOOT_DENY = 249 // 主机 -> 发起客户端：拒绝（例如并发冲突/格子无物品/容量不足）
+    LOOT_PUT_OK = 254,
+    LOOT_TAKE_OK = 255,
+    LOOT_DENY = 249,
+    
+    TELEPORT_REQUEST = 100,
+    TELEPORT_EXECUTE = 101
 }

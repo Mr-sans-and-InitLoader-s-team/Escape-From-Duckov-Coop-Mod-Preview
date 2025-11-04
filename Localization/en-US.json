@@ -123,6 +123,9 @@
     { "key": "ui.manualConnect.hint", "value": "Hint: Must be in a level to connect" },
     { "key": "ui.actions.quickActions", "value": "Quick Actions" },
     { "key": "ui.debug.lootBoxCount", "value": "Printed {0} loot boxes" },
-    { "key": "ui.hint.toggleUI", "value": "{0} Show/Hide" }
+    { "key": "ui.hint.toggleUI", "value": "{0} Show/Hide" },
+    { "key": "ui.teleport.toPlayer", "value": "Teleport to Player" },
+    { "key": "ui.teleport.fromMap", "value": "Teleport from Map ({0})" },
+    { "key": "ui.teleport.noGround", "value": "No ground found" }
   ]
 }

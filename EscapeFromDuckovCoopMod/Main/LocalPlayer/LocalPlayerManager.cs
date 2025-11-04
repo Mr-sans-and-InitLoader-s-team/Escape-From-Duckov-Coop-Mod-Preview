@@ -65,10 +65,31 @@ public class LocalPlayerManager : MonoBehaviour
     public void InitializeLocalPlayer()
     {
         var bool1 = ComputeIsInGame(out var ids);
+        
+        string localPlayerName = IsServer ? "Host" : "Client";
+        
+        if (SteamManager.Initialized)
+        {
+            try
+            {
+                localPlayerName = Steamworks.SteamFriends.GetPersonaName();
+                if (string.IsNullOrEmpty(localPlayerName))
+                {
+                    localPlayerName = IsServer ? "Host" : "Client";
+                }
+                Debug.Log($"[LocalPlayerManager] Local player name: {localPlayerName}");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"[LocalPlayerManager] Failed to get Steam name: {ex.Message}");
+                localPlayerName = IsServer ? "Host" : "Client";
+            }
+        }
+        
         Service.localPlayerStatus = new PlayerStatus
         {
             EndPoint = IsServer ? $"Host:{port}" : $"Client:{Guid.NewGuid().ToString().Substring(0, 8)}",
-            PlayerName = IsServer ? "Host" : "Client",
+            PlayerName = localPlayerName,
             Latency = 0,
             IsInGame = bool1,
             LastIsInGame = bool1,

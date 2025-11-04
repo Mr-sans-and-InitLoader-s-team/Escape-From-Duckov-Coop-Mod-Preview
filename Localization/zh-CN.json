@@ -123,6 +123,9 @@
     { "key": "ui.manualConnect.hint", "value": "提示：必须在关卡内才能连接" },
     { "key": "ui.actions.quickActions", "value": "快捷操作" },
     { "key": "ui.debug.lootBoxCount", "value": "已输出 {0} 个战利品箱" },
-    { "key": "ui.hint.toggleUI", "value": "{0} 显示/隐藏" }
+    { "key": "ui.hint.toggleUI", "value": "{0} 显示/隐藏" },
+    { "key": "ui.teleport.toPlayer", "value": "传送到玩家" },
+    { "key": "ui.teleport.fromMap", "value": "从地图传送 ({0})" },
+    { "key": "ui.teleport.noGround", "value": "未找到落脚点" }
   ]
 }

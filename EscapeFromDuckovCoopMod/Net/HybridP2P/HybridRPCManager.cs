@@ -196,7 +196,7 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
                 if (netService.connectedPeer != null)
                 {
                     netService.connectedPeer.Send(writer, deliveryMethod);
-                    Debug.Log($"[HybridRPCManager] Sent LAN RPC to server");
+                    // Debug.Log($"[HybridRPCManager] Sent LAN RPC to server");
                 }
             }
         }
@@ -257,7 +257,7 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
 
                 case RPCTarget.AllClients:
                     netService.netManager.SendToAll(writer, deliveryMethod);
-                    Debug.Log($"[HybridRPCManager] Sent LAN RPC to all {netService.netManager.ConnectedPeersCount} clients");
+                    // Debug.Log($"[HybridRPCManager] Sent LAN RPC to all {netService.netManager.ConnectedPeersCount} clients");
                     break;
 
                 case RPCTarget.TargetClient:
@@ -283,7 +283,7 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
 
                 case RPCTarget.AllClientsExceptSender:
                     netService.netManager.SendToAll(writer, deliveryMethod); // 简化版，暂不排除发送者
-                    Debug.Log($"[HybridRPCManager] Sent LAN RPC to all clients (simplified)");
+                    // Debug.Log($"[HybridRPCManager] Sent LAN RPC to all clients (simplified)");
                     break;
             }
         }
@@ -334,7 +334,7 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
             if (_rpcHandlers.TryGetValue(rpcId, out RPCHandler handler))
             {
                 string rpcName = _rpcIdToName.TryGetValue(rpcId, out string name) ? name : $"RPC_{rpcId}";
-                Debug.Log($"[HybridRPCManager] Invoking LAN RPC '{rpcName}' from {senderConnectionId}");
+                // Debug.Log($"[HybridRPCManager] Invoking LAN RPC '{rpcName}' from {senderConnectionId}");
                 handler?.Invoke(senderConnectionId, dataReader);
             }
             else

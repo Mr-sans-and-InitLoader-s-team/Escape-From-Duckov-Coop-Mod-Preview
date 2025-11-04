@@ -114,11 +114,14 @@ public class SceneNet : MonoBehaviour
             Spectator.Instance.EndSpectatorAndShowClosure();
         }
 
+        Debug.Log($"[SERVER-LOAD] Broadcasting begin load");
+        
         var voteRPC = VoteSystemRPC.Instance;
         if (voteRPC != null && voteRPC.UseRPCMode)
         {
+            Debug.Log($"[SERVER-LOAD] Using RPC mode");
             voteRPC.Server_BroadcastBeginLoad();
-            Debug.Log($"[SERVER-LOAD] 开始加载通过RPC广播");
+            Debug.Log($"[SERVER-LOAD] RPC broadcast completed");
         }
         else
         {
@@ -201,11 +204,14 @@ public class SceneNet : MonoBehaviour
         sceneReady[pid] = ready;
 
         // 群发给所有客户端
+        Debug.Log($"[SERVER-READY] Broadcasting ready status: pid={pid}, ready={ready}");
+        
         var voteRPC = VoteSystemRPC.Instance;
         if (voteRPC != null && voteRPC.UseRPCMode)
         {
+            Debug.Log($"[SERVER-READY] Using RPC mode");
             voteRPC.Server_BroadcastReadySet(pid, ready);
-            Debug.Log($"[SERVER-READY] 通过RPC广播准备状态: pid={pid}, ready={ready}");
+            Debug.Log($"[SERVER-READY] RPC broadcast completed");
         }
         else
         {
@@ -344,11 +350,14 @@ public class SceneNet : MonoBehaviour
 
         // A) 同图过滤（仅 v2 有 hostSceneId；v1 无法判断同图，用 B 兜底）
         if (!string.IsNullOrEmpty(hostSceneId) && !string.IsNullOrEmpty(mySceneId))
-            if (!string.Equals(hostSceneId, mySceneId, StringComparison.Ordinal))
+        {
+            bool isSameScene = Spectator.AreSameMap(hostSceneId, mySceneId);
+            if (!isSameScene)
             {
                 Debug.Log($"[SCENE] vote: ignore (diff scene) host='{hostSceneId}' me='{mySceneId}'");
                 return;
             }
+        }
 
         // B) 白名单过滤：不在参与名单，就不显示
         if (sceneParticipantIds.Count > 0)
@@ -699,25 +708,41 @@ public class SceneNet : MonoBehaviour
         }
     }
 
+    private Vector3 _srvUnifiedSpawnPos = Vector3.zero;
+    private Quaternion _srvUnifiedSpawnRot = Quaternion.identity;
+    private string _srvUnifiedSpawnScene = "";
+    
     public void Server_HandleSceneReady(NetPeer fromPeer, string playerId, string sceneId, Vector3 pos, Quaternion rot, string faceJson)
     {
+        Debug.Log($"[SERVER-SCENE-READY] Received from playerId={playerId}, sceneId={sceneId}, pos={pos}");
+        
         if (fromPeer != null) SceneM._srvPeerScene[fromPeer] = sceneId;
 
-        // 1) 回给 fromPeer：同图的所有已知玩家
+        if (_srvUnifiedSpawnScene != sceneId || _srvUnifiedSpawnPos == Vector3.zero)
+        {
+            _srvUnifiedSpawnScene = sceneId;
+            _srvUnifiedSpawnPos = pos;
+            _srvUnifiedSpawnRot = rot;
+            Debug.Log($"[SERVER-SCENE-READY] Set unified spawn for scene {sceneId}: pos={pos}, rot={rot.eulerAngles}");
+        }
+        else
+        {
+            Debug.Log($"[SERVER-SCENE-READY] Using existing unified spawn: pos={_srvUnifiedSpawnPos}");
+        }
+
+        var actualPos = _srvUnifiedSpawnPos;
+        var actualRot = _srvUnifiedSpawnRot;
+
+        // 1) 回给 fromPeer：同图的所有已知玩家（使用统一位置）
         foreach (var kv in SceneM._srvPeerScene)
         {
             var other = kv.Key;
             if (other == fromPeer) continue;
             if (kv.Value == sceneId)
             {
-                // 取 other 的快照（尽量从 playerStatuses 或远端对象抓取）
-                var opos = Vector3.zero;
-                var orot = Quaternion.identity;
                 var oface = "";
                 if (playerStatuses.TryGetValue(other, out var s) && s != null)
                 {
-                    opos = s.Position;
-                    orot = s.Rotation;
                     oface = s.CustomFaceJson ?? "";
                 }
 
@@ -725,14 +750,16 @@ public class SceneNet : MonoBehaviour
                 w.Put((byte)Op.REMOTE_CREATE);
                 w.Put(playerStatuses[other].EndPoint); // other 的 id
                 w.Put(sceneId);
-                w.PutVector3(opos);
-                w.PutQuaternion(orot);
+                w.PutVector3(actualPos);
+                w.PutQuaternion(actualRot);
                 w.Put(oface);
                 fromPeer?.Send(w, DeliveryMethod.ReliableOrdered);
+                
+                Debug.Log($"[SceneNet] Sent existing player {playerStatuses[other].EndPoint} to new player {playerId} at unified pos");
             }
         }
 
-        // 2) 广播给同图的其他人：创建 fromPeer
+        // 2) 广播给同图的其他人：创建 fromPeer（使用统一位置）
         foreach (var kv in SceneM._srvPeerScene)
         {
             var other = kv.Key;
@@ -743,12 +770,14 @@ public class SceneNet : MonoBehaviour
                 w.Put((byte)Op.REMOTE_CREATE);
                 w.Put(playerId);
                 w.Put(sceneId);
-                w.PutVector3(pos);
-                w.PutQuaternion(rot);
+                w.PutVector3(actualPos);
+                w.PutQuaternion(actualRot);
                 var useFace = !string.IsNullOrEmpty(faceJson) ? faceJson :
                     playerStatuses.TryGetValue(fromPeer, out var ss) && !string.IsNullOrEmpty(ss.CustomFaceJson) ? ss.CustomFaceJson : "";
                 w.Put(useFace);
                 other.Send(w, DeliveryMethod.ReliableOrdered);
+                
+                Debug.Log($"[SceneNet] Broadcast new player {playerId} to {playerStatuses[other].EndPoint} at unified pos");
             }
         }
 
@@ -793,7 +822,11 @@ public class SceneNet : MonoBehaviour
         var voteRPC = VoteSystemRPC.Instance;
         if (voteRPC != null && voteRPC.UseRPCMode)
         {
-            Debug.Log("[SceneNet] Using RPC mode for vote system");
+            Debug.Log($"[SceneNet] Using RPC mode for vote system, voteRPC ready: {voteRPC != null}");
+        }
+        else
+        {
+            Debug.Log($"[SceneNet] Using legacy mode for vote system, voteRPC: {voteRPC != null}, UseRPCMode: {voteRPC?.UseRPCMode}");
         }
         
         bool useSteamIds = false;
@@ -945,17 +978,19 @@ public class SceneNet : MonoBehaviour
             }
         }
         
-        // 使用RPC模式发送（如果启用）
+        Debug.Log($"[SERVER-VOTE-SEND] voteRPC null? {voteRPC == null}, UseRPCMode: {voteRPC?.UseRPCMode}");
+        
         if (voteRPC != null && voteRPC.UseRPCMode)
         {
+            Debug.Log($"[SERVER-VOTE-SEND] Calling voteRPC.Server_StartVote");
             voteRPC.Server_StartVote(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile, sceneUseLocation, sceneLocationName, participantSteamIds);
-            Debug.Log($"[SERVER-VOTE-SEND] 投票消息已通过RPC发送");
+            Debug.Log($"[SERVER-VOTE-SEND] RPC call completed");
         }
         else
         {
-            // 使用传统方式发送
+            Debug.Log($"[SERVER-VOTE-SEND] Using legacy mode, sending via SendToAll");
             netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
-            Debug.Log($"[SERVER-VOTE-SEND] 投票消息已发送完成 (SendToAll called - Legacy mode)");
+            Debug.Log($"[SERVER-VOTE-SEND] Legacy SendToAll completed");
         }
 
         // 如需"只发同图"，可以替换为下面这段（二选一）：

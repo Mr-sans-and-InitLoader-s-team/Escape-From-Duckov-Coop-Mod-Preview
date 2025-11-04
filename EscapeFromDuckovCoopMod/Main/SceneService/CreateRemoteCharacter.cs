@@ -102,10 +102,17 @@ public static class CreateRemoteCharacter
         instance.AddComponent<HostForceHealthBar>();
 
         NetInterpUtil.Attach(instance)?.Push(position, rotation);
-        AnimInterpUtil.Attach(instance); // 先挂上，样本由后续网络包填
+        AnimInterpUtil.Attach(instance);
         cmc.gameObject.SetActive(false);
         remoteCharacters[peer] = instance;
         cmc.gameObject.SetActive(true);
+
+        if (playerStatuses.TryGetValue(peer, out var status))
+        {
+            Debug.Log($"[CreateRemoteCharacter] Assigning color to new player: {status.EndPoint}");
+            PlayerColorManager.Instance?.ForceUpdatePlayerColor(status.EndPoint, instance);
+        }
+
         return instance;
     }
 
@@ -187,6 +194,9 @@ public static class CreateRemoteCharacter
         cmc.gameObject.SetActive(false);
         clientRemoteCharacters[playerId] = instance;
         cmc.gameObject.SetActive(true);
+
+        Debug.Log($"[CreateRemoteCharacter] Assigning color to new client player: {playerId}");
+        PlayerColorManager.Instance?.ForceUpdatePlayerColor(playerId, instance);
     }
 
     private static void MakeRemotePhysicsPassive(GameObject go)

@@ -117,10 +117,62 @@ public class NetService : MonoBehaviour, INetEventListener
         }
 
         if (!playerStatuses.ContainsKey(peer))
+        {
+            string playerName = "Player";
+            
+            if (SteamManager.Initialized)
+            {
+                try
+                {
+                    if (IsServer)
+                    {
+                        var endPoint = peer.EndPoint as System.Net.IPEndPoint;
+                        if (endPoint != null && SteamEndPointMapper.Instance != null)
+                        {
+                            if (SteamEndPointMapper.Instance.TryGetSteamID(endPoint, out Steamworks.CSteamID steamID))
+                            {
+                                playerName = Steamworks.SteamFriends.GetFriendPersonaName(steamID);
+                                if (string.IsNullOrEmpty(playerName) || playerName == "[unknown]")
+                                {
+                                    playerName = $"Player_{steamID.m_SteamID.ToString().Substring(Math.Max(0, steamID.m_SteamID.ToString().Length - 4))}";
+                                }
+                                Debug.Log($"[NetService] Client connected: {playerName} (SteamID: {steamID.m_SteamID})");
+                            }
+                            else
+                            {
+                                playerName = $"Player_{peer.Id}";
+                            }
+                        }
+                        else
+                        {
+                            playerName = $"Player_{peer.Id}";
+                        }
+                    }
+                    else
+                    {
+                        playerName = Steamworks.SteamFriends.GetFriendPersonaName(Steamworks.SteamUser.GetSteamID());
+                        if (string.IsNullOrEmpty(playerName))
+                        {
+                            playerName = "Host";
+                        }
+                        Debug.Log($"[NetService] Connected to host: {playerName}");
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"[NetService] Failed to get Steam name: {ex.Message}");
+                    playerName = IsServer ? $"Player_{peer.Id}" : "Host";
+                }
+            }
+            else
+            {
+                playerName = IsServer ? $"Player_{peer.Id}" : "Host";
+            }
+            
             playerStatuses[peer] = new PlayerStatus
             {
                 EndPoint = peer.EndPoint.ToString(),
-                PlayerName = IsServer ? $"Player_{peer.Id}" : "Host",
+                PlayerName = playerName,
                 Latency = peer.Ping,
                 IsInGame = false,
                 LastIsInGame = false,
@@ -128,6 +180,7 @@ public class NetService : MonoBehaviour, INetEventListener
                 Rotation = Quaternion.identity,
                 CustomFaceJson = null
             };
+        }
         
             var relay = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridP2PRelay.Instance;
             if (relay != null)
@@ -306,8 +359,25 @@ public class NetService : MonoBehaviour, INetEventListener
 
     public void OnNetworkError(IPEndPoint endPoint, SocketError socketError)
     {
-        string endPointStr = endPoint != null ? endPoint.ToString() : "null";
-        Debug.LogError(CoopLocalization.Get("net.networkError", socketError, endPointStr));
+        string endPointStr = endPoint != null ? endPoint.ToString() : "Unknown";
+        
+        // 某些SocketError是正常的或可以静默处理的
+        // ConnectionReset: 远程主机主动断开
+        // ConnectionAborted: 连接被中止
+        // InvalidArgument (10014): 通常是底层网络库的临时错误，可以忽略
+        // MessageSize: UDP包大小问题，可以忽略
+        if (socketError == SocketError.ConnectionReset || 
+            socketError == SocketError.ConnectionAborted ||
+            socketError == SocketError.InvalidArgument ||
+            socketError == SocketError.MessageSize)
+        {
+            // 静默处理这些常见且不影响功能的错误
+            Debug.Log($"[NetService] 网络事件: {socketError} from {endPointStr} (正常，已处理)");
+        }
+        else
+        {
+            Debug.LogError(CoopLocalization.Get("net.networkError", socketError, endPointStr));
+        }
     }
 
     public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)

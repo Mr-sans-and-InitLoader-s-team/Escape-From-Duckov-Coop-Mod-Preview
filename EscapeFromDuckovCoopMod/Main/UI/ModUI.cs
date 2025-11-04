@@ -594,15 +594,30 @@ public class ModUI : MonoBehaviour
 
         if (GUILayout.Button(CoopLocalization.Get("ui.debug.printLootBoxes")))
         {
-            foreach (var i in LevelManager.LootBoxInventories)
+            try
             {
-                try
+                var lm = LevelManager.Instance;
+                if (lm == null || LevelManager.LootBoxInventories == null)
                 {
-                    Debug.Log($"Name {i.Value.name}" + $" DisplayNameKey {i.Value.DisplayNameKey}" + $" Key {i.Key}");
+                    Debug.LogWarning("LevelManager or LootBoxInventories is null");
                 }
-                catch
+                else
                 {
+                    foreach (var i in LevelManager.LootBoxInventories)
+                    {
+                        try
+                        {
+                            Debug.Log($"Name {i.Value.name}" + $" DisplayNameKey {i.Value.DisplayNameKey}" + $" Key {i.Key}");
+                        }
+                        catch
+                        {
+                        }
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[PrintLootBoxes] Exception: {ex.Message}");
             }
         }
 

@@ -254,19 +254,21 @@ public class AIHealth
         {
             COOPManager.AIHandle._cliPendingAiHealth[aiId] = cur;
             if (max > 0f) COOPManager.AIHandle._cliPendingAiMax[aiId] = max;
-            Debug.Log($"[AI-HP][CLIENT-RECV]  AI未注册，缓存血量: aiId={aiId} max={max:F1} cur={cur:F1} dead={isDead}");
+            // 注释掉日志避免刷屏
+            // Debug.Log($"[AI-HP][CLIENT-RECV]  AI未注册，缓存血量: aiId={aiId} max={max:F1} cur={cur:F1} dead={isDead}");
             return;
         }
 
         var h = cmc.Health;
         if (!h)
         {
-            Debug.LogWarning($"[AI-HP][CLIENT-RECV]  AI无Health组件: aiId={aiId}");
+            // Debug.LogWarning($"[AI-HP][CLIENT-RECV]  AI无Health组件: aiId={aiId}");
             return;
         }
         
         var clientCurrentHp = h.CurrentHealth;
-        Debug.Log($"[AI-HP][CLIENT-RECV] aiId={aiId} | 服务器同步: hp={cur:F1}/{max:F1} dead={isDead} | 客户端当前: hp={clientCurrentHp:F1}");
+        // 注释掉日志避免刷屏，仅在显著变化时记录
+        // Debug.Log($"[AI-HP][CLIENT-RECV] aiId={aiId} | 服务器同步: hp={cur:F1}/{max:F1} dead={isDead} | 客户端当前: hp={clientCurrentHp:F1}");
 
         try
         {

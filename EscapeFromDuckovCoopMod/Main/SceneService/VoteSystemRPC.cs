@@ -55,7 +55,8 @@ namespace EscapeFromDuckovCoopMod
             rpcManager.RegisterRPC("VoteCancel", OnRPC_VoteCancel);
 
             _rpcRegistered = true;
-            Debug.Log("[VoteSystemRPC] All RPCs registered");
+            UseRPCMode = true;
+            Debug.Log("[VoteSystemRPC] All RPCs registered, UseRPCMode enabled");
         }
 
         #region Server -> Client RPCs
@@ -70,11 +71,16 @@ namespace EscapeFromDuckovCoopMod
 
             var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
             if (rpcManager == null || !rpcManager.IsServer)
+            {
+                Debug.LogWarning("[VoteSystemRPC] Server_StartVote: rpcManager null or not server");
                 return;
+            }
 
             string hostSceneId = "";
             LocalPlayerManager.Instance.ComputeIsInGame(out hostSceneId);
             hostSceneId = hostSceneId ?? string.Empty;
+
+            Debug.Log($"[VoteSystemRPC] Server sending vote start RPC: target={targetSceneId}, hostScene={hostSceneId}, participants={participantSteamIds.Count}");
 
             rpcManager.CallRPC("VoteStart", Net.HybridP2P.RPCTarget.AllClients, 0, (writer) =>
             {
@@ -93,7 +99,7 @@ namespace EscapeFromDuckovCoopMod
                 }
             }, DeliveryMethod.ReliableOrdered);
 
-            Debug.Log($"[VoteSystemRPC] Server sent vote start: target={targetSceneId}, participants={participantSteamIds.Count}");
+            Debug.Log($"[VoteSystemRPC] Server vote start RPC sent successfully");
         }
 
         public void Server_BroadcastReadySet(string pid, bool ready)
@@ -202,7 +208,13 @@ namespace EscapeFromDuckovCoopMod
 
         private void OnRPC_VoteStart(long senderConnectionId, NetDataReader reader)
         {
-            if (_sceneNet == null) return;
+            Debug.Log($"[VoteSystemRPC] OnRPC_VoteStart called from sender {senderConnectionId}");
+            
+            if (_sceneNet == null)
+            {
+                Debug.LogWarning("[VoteSystemRPC] OnRPC_VoteStart: _sceneNet is null");
+                return;
+            }
 
             string targetSceneId = reader.GetString();
             string curtainGuid = reader.GetString();
@@ -219,7 +231,7 @@ namespace EscapeFromDuckovCoopMod
                 participantSteamIds.Add(reader.GetULong());
             }
 
-            Debug.Log($"[VoteSystemRPC] Received vote start: target={targetSceneId}, participants={participantCount}");
+            Debug.Log($"[VoteSystemRPC] Received vote start: target={targetSceneId}, hostScene={hostSceneId}, participants={participantCount}");
 
             _sceneNet.sceneTargetId = targetSceneId;
             _sceneNet.sceneCurtainGuid = string.IsNullOrEmpty(curtainGuid) ? null : curtainGuid;
@@ -233,10 +245,12 @@ namespace EscapeFromDuckovCoopMod
             {
                 var pid = $"steam_{steamId}";
                 _sceneNet.sceneParticipantIds.Add(pid);
+                Debug.Log($"[VoteSystemRPC] Added participant: steam_{steamId}");
             }
 
             var mySteamId = SteamUser.GetSteamID().m_SteamID;
             var myPid = $"steam_{mySteamId}";
+            Debug.Log($"[VoteSystemRPC] My SteamID: {mySteamId}, myPid: {myPid}");
 
             if (!string.IsNullOrEmpty(hostSceneId))
             {
@@ -244,9 +258,12 @@ namespace EscapeFromDuckovCoopMod
                 LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
                 mySceneId = mySceneId ?? string.Empty;
 
-                if (!string.Equals(hostSceneId, mySceneId, System.StringComparison.Ordinal))
+                bool isSameScene = Spectator.AreSameMap(hostSceneId, mySceneId);
+                Debug.Log($"[VoteSystemRPC] Scene check: host={hostSceneId}, me={mySceneId}, isSame={isSameScene}");
+                
+                if (!isSameScene)
                 {
-                    Debug.Log($"[VoteSystemRPC] Different scene: host={hostSceneId}, me={mySceneId}");
+                    Debug.Log($"[VoteSystemRPC] Different scene, ignoring vote");
                     return;
                 }
             }

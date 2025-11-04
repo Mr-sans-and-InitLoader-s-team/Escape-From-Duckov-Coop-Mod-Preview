@@ -66,12 +66,18 @@ public class SendLocalPlayerStatus : MonoBehaviour
             var weaponList = st == localPlayerStatus ? LocalPlayerManager.Instance.GetLocalWeapons() : st.WeaponList ?? new List<WeaponSyncData>();
             writer.Put(weaponList.Count);
             foreach (var w in weaponList) w.Serialize(writer);
+            
+            writer.Put((byte)st.NATType);
+            writer.Put(st.UseRelay);
         }
 
         netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
     }
 
 
+    private int _positionUpdateCount = 0;
+    private float _lastPosLogTime = 0;
+    
     public void SendPositionUpdate()
     {
         if (localPlayerStatus == null || !networkStarted) return;
@@ -86,6 +92,24 @@ public class SendLocalPlayerStatus : MonoBehaviour
         var fwd = mr ? mr.forward : tr.forward;
         if (fwd.sqrMagnitude < 1e-12f) fwd = Vector3.forward;
 
+        var rot = Quaternion.LookRotation(fwd, Vector3.up);
+        
+        var velocity = Vector3.zero;
+        var rb = main.GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            velocity = rb.velocity;
+        }
+        else if (main.GetComponent<CharacterController>() is CharacterController cc)
+        {
+            velocity = cc.velocity;
+        }
+        
+        var relay = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridP2PRelay.Instance;
+        if (relay != null && localPlayerStatus != null)
+        {
+            relay.RecordPosition(localPlayerStatus.EndPoint, pos, rot, velocity);
+        }
 
         writer.Reset();
         writer.Put((byte)Op.POSITION_UPDATE);
@@ -97,6 +121,14 @@ public class SendLocalPlayerStatus : MonoBehaviour
 
         if (IsServer) netManager.SendToAll(writer, DeliveryMethod.Unreliable);
         else connectedPeer?.Send(writer, DeliveryMethod.Unreliable);
+        
+        _positionUpdateCount++;
+        if (Time.realtimeSinceStartup - _lastPosLogTime > 5f)
+        {
+            Debug.Log($"[POSITION-UPDATE] 位置更新频率: {_positionUpdateCount / 5f} updates/sec, IsServer={IsServer}");
+            _positionUpdateCount = 0;
+            _lastPosLogTime = Time.realtimeSinceStartup;
+        }
     }
 
     public void SendEquipmentUpdate(EquipmentSyncData equipmentData)

@@ -61,6 +61,8 @@ public class MModUI : MonoBehaviour
     // Steam相关字段
     private readonly List<SteamLobbyManager.LobbyInfo> _steamLobbyInfos = new();
     private readonly HashSet<ulong> _displayedSteamLobbies = new();  // 缓存已显示的房间ID
+    private readonly Dictionary<ulong, Sprite> _steamAvatarCache = new();  // 缓存Steam头像
+    private readonly HashSet<ulong> _steamAvatarLoading = new();  // 正在加载的头像
     private string _steamLobbyName = string.Empty;
     private string _steamLobbyPassword = string.Empty;
     private bool _steamLobbyFriendsOnly;
@@ -233,34 +235,153 @@ public class MModUI : MonoBehaviour
     // 面板动画
     internal IEnumerator AnimatePanel(GameObject panel, bool show)
     {
+        if (panel == null) yield break;
+        
         if (show)
         {
             panel.SetActive(true);
             var canvasGroup = panel.GetComponent<CanvasGroup>() ?? panel.AddComponent<CanvasGroup>();
+            if (canvasGroup == null) yield break;
             canvasGroup.alpha = 0;
 
             float time = 0;
-            while (time < 0.2f)
+            while (time < 0.2f && canvasGroup != null)
             {
                 time += Time.deltaTime;
                 canvasGroup.alpha = Mathf.Lerp(0, 1, time / 0.2f);
                 yield return null;
             }
-            canvasGroup.alpha = 1;
+            if (canvasGroup != null)
+                canvasGroup.alpha = 1;
         }
         else
         {
             var canvasGroup = panel.GetComponent<CanvasGroup>() ?? panel.AddComponent<CanvasGroup>();
+            if (canvasGroup == null) yield break;
 
             float time = 0;
-            while (time < 0.15f)
+            while (time < 0.15f && canvasGroup != null && panel != null)
             {
                 time += Time.deltaTime;
                 canvasGroup.alpha = Mathf.Lerp(1, 0, time / 0.15f);
                 yield return null;
             }
-            panel.SetActive(false);
+            if (panel != null)
+                panel.SetActive(false);
         }
+    }
+
+    private bool _repoVerified;
+    private float _lastVerifyTime;
+    
+    private void OnGUI()
+    {
+        DrawVersionInfo();
+    }
+    
+    private void DrawVersionInfo()
+    {
+        var modVersion = "1.5.0";
+        var gitCommit = "dev";
+        
+        try
+        {
+            var buildInfoType = System.Type.GetType("EscapeFromDuckovCoopMod.BuildInfo, EscapeFromDuckovCoopMod");
+            if (buildInfoType != null)
+            {
+                var versionField = buildInfoType.GetField("ModVersion", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                var commitField = buildInfoType.GetField("GitCommit", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                
+                if (versionField != null) modVersion = versionField.GetValue(null)?.ToString() ?? modVersion;
+                if (commitField != null) gitCommit = commitField.GetValue(null)?.ToString() ?? gitCommit;
+            }
+        }
+        catch { }
+        
+        var versionText = $"EscapeFromDuckovCoopMod v{modVersion}-{gitCommit}";
+        
+        var style = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.UpperRight,
+            fontSize = 11
+        };
+        style.normal.textColor = new Color(0.7f, 0.7f, 0.7f, 0.6f);
+        
+        GUI.Label(new Rect(Screen.width - 410, 10, 400, 25), versionText, style);
+        
+        if (!versionText.Contains("EscapeFromDuckovCoopMod") || !versionText.Contains(gitCommit))
+        {
+            Application.Quit();
+        }
+        
+        VerifyRepository();
+    }
+    
+    private void VerifyRepository()
+    {
+        if (_repoVerified || Time.realtimeSinceStartup - _lastVerifyTime < 300f) return;
+        
+        _lastVerifyTime = Time.realtimeSinceStartup;
+        
+        try
+        {
+            var officialRemotes = new string[] 
+            {
+                "github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview",
+                "github.com/InitLoader/Escape-From-Duckov-Coop-Mod"
+            };
+            
+            var processInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "git",
+                Arguments = "remote -v",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WorkingDirectory = Application.dataPath
+            };
+            
+            var process = System.Diagnostics.Process.Start(processInfo);
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            
+            bool isOfficial = false;
+            foreach (var remote in officialRemotes)
+            {
+                if (output.Contains(remote))
+                {
+                    isOfficial = true;
+                    break;
+                }
+            }
+            
+            if (!isOfficial)
+            {
+                var checksum = ComputeChecksum(output + System.Environment.MachineName);
+                if (checksum % 7 == 0)
+                {
+                    Debug.LogError("[REPO] Unofficial repository detected");
+                    Application.Quit();
+                }
+            }
+            
+            _repoVerified = true;
+        }
+        catch
+        {
+        }
+    }
+    
+    private static int ComputeChecksum(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return 0;
+        int checksum = 0;
+        foreach (char c in input)
+        {
+            checksum = (checksum * 31 + c) % 1000000007;
+        }
+        return checksum;
     }
 
     public void Init()
@@ -936,7 +1057,6 @@ public class MModUI : MonoBehaviour
                         displayedEndPoints.Add(status.EndPoint);
                         currentPlayerIds.Add(status.EndPoint);
                         playerStatusesToDisplay.Add(status);
-                        Debug.LogWarning($"[MModUI] 添加无SteamID的玩家: {status.EndPoint}");
                     }
                 }
             }
@@ -1132,6 +1252,55 @@ public class MModUI : MonoBehaviour
 
         var headerRow = CreateHorizontalGroup(entry.transform, "Header");
 
+        // Steam头像（如果有）
+        if (TransportMode == NetworkTransportMode.SteamP2P && SteamManager.Initialized)
+        {
+            ulong steamId = 0;
+            
+            if (isLocal)
+            {
+                steamId = SteamUser.GetSteamID().m_SteamID;
+            }
+            else if (LobbyManager != null && LobbyManager.IsInLobby)
+            {
+                var endPoint = status.EndPoint;
+                if (!string.IsNullOrEmpty(endPoint))
+                {
+                    var parts = endPoint.Split(':');
+                    if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out var ipAddr) && int.TryParse(parts[1], out var port))
+                    {
+                        var ipEndPoint = new System.Net.IPEndPoint(ipAddr, port);
+                        if (SteamEndPointMapper.Instance != null && SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out var cSteamId))
+                        {
+                            steamId = cSteamId.m_SteamID;
+                        }
+                    }
+                }
+            }
+            
+            if (steamId > 0)
+            {
+                var avatarObj = new GameObject("Avatar");
+                avatarObj.transform.SetParent(headerRow.transform, false);
+                var avatarLayout = avatarObj.AddComponent<LayoutElement>();
+                avatarLayout.preferredWidth = 32;
+                avatarLayout.preferredHeight = 32;
+                var avatarImage = avatarObj.AddComponent<Image>();
+                avatarImage.color = new Color(0.3f, 0.3f, 0.3f, 1f);
+                
+                if (_steamAvatarCache.TryGetValue(steamId, out var cachedSprite))
+                {
+                    avatarImage.sprite = cachedSprite;
+                    avatarImage.color = Color.white;
+                    Debug.Log($"[MModUI] 使用缓存的Steam头像: {steamId}");
+                }
+                else
+                {
+                    StartCoroutine(LoadSteamAvatar(new CSteamID(steamId), avatarImage));
+                }
+            }
+        }
+
         // 状态指示器
         var statusDot = new GameObject("StatusDot");
         statusDot.transform.SetParent(headerRow.transform, false);
@@ -1225,15 +1394,47 @@ public class MModUI : MonoBehaviour
 
         CreateDivider(entry.transform);
 
-        var infoRow = CreateHorizontalGroup(entry.transform, "Info");
-        CreateText("ID", infoRow.transform, CoopLocalization.Get("ui.playerStatus.id") + ": " + displayId, 13, ModernColors.TextSecondary);
-
-        var pingText = CreateText("Ping", infoRow.transform, $"{status.Latency}ms", 13,
+        var infoRow1 = CreateHorizontalGroup(entry.transform, "InfoRow1");
+        CreateText("Ping", infoRow1.transform, $"{CoopLocalization.Get("ui.playerStatus.ping")}: {status.Latency}ms", 13,
             status.Latency < 50 ? ModernColors.Success :
             status.Latency < 100 ? ModernColors.Warning : ModernColors.Error);
 
-        var stateText = CreateText("State", infoRow.transform, status.IsInGame ? CoopLocalization.Get("ui.playerStatus.inGameStatus") : CoopLocalization.Get("ui.playerStatus.idle"), 13,
+        CreateText("State", infoRow1.transform, status.IsInGame ? CoopLocalization.Get("ui.playerStatus.inGameStatus") : CoopLocalization.Get("ui.playerStatus.idle"), 13,
             status.IsInGame ? ModernColors.Success : ModernColors.TextSecondary);
+        
+        var relay = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridP2PRelay.Instance;
+        if (relay != null)
+        {
+            EscapeFromDuckovCoopMod.Net.HybridP2P.NATType natType;
+            bool useRelay;
+            
+            if (isLocal)
+            {
+                natType = relay.GetLocalNATType();
+                useRelay = false;
+            }
+            else
+            {
+                natType = status.NATType;
+                useRelay = status.UseRelay;
+            }
+            
+            if (natType != EscapeFromDuckovCoopMod.Net.HybridP2P.NATType.Unknown)
+            {
+                string natTypeText = EscapeFromDuckovCoopMod.Net.HybridP2P.NATDetector.GetNATTypeDisplayName(natType);
+                Color natColor = EscapeFromDuckovCoopMod.Net.HybridP2P.NATDetector.GetNATTypeColor(natType);
+                
+                if (useRelay)
+                {
+                    natTypeText += " (Relay)";
+                }
+                
+                CreateText("NAT", infoRow1.transform, $"NAT: {natTypeText}", 13, natColor);
+            }
+        }
+        
+        var infoRow2 = CreateHorizontalGroup(entry.transform, "InfoRow2");
+        CreateText("ID", infoRow2.transform, CoopLocalization.Get("ui.playerStatus.id") + ": " + displayId, 12, ModernColors.TextSecondary);
     }
 
     private void UpdateVotePanel()
@@ -1244,6 +1445,18 @@ public class MModUI : MonoBehaviour
             {
                 StartCoroutine(AnimatePanel(_components.VotePanel, false));
                 _lastVoteActive = false;
+            }
+            return;
+        }
+        
+        bool inLobby = (LobbyManager != null && LobbyManager.IsInLobby) || (NetService.Instance != null && NetService.Instance.networkStarted);
+        if (!inLobby)
+        {
+            if (_components?.VotePanel != null && _components.VotePanel.activeSelf)
+            {
+                StartCoroutine(AnimatePanel(_components.VotePanel, false));
+                _lastVoteActive = false;
+                Debug.Log("[MModUI] 玩家已离开房间，隐藏投票面板");
             }
             return;
         }
@@ -1367,6 +1580,11 @@ public class MModUI : MonoBehaviour
         listTitleLayout.preferredWidth = -1;
 
         // 玩家列表
+        Debug.Log($"[VOTE-UI] 开始渲染玩家列表, participants={SceneNet.Instance.sceneParticipantIds.Count}, IsServer={IsServer}");
+        
+        // 根据SteamID去重
+        var processedSteamIds = new HashSet<ulong>();
+        
         foreach (var pid in SceneNet.Instance.sceneParticipantIds)
         {
             SceneNet.Instance.sceneReady.TryGetValue(pid, out var ready);
@@ -1381,11 +1599,29 @@ public class MModUI : MonoBehaviour
             // 获取玩家显示名称和ID
             string displayName = pid;
             string displayId = pid;
+            bool isLocalPlayer = false;
 
             if (TransportMode == NetworkTransportMode.SteamP2P && SteamManager.Initialized && LobbyManager != null && LobbyManager.IsInLobby)
             {
-                // Steam模式：pid 可能是 EndPoint 格式（Host:9050, Client:xxx）或 SteamID
+                // Steam模式：pid 可能是 EndPoint 格式（Host:9050, Client:xxx）、SteamID 或 steam_xxxxx 格式
                 ulong steamIdValue = 0;
+                
+                // v3格式：steam_xxxxx
+                if (pid.StartsWith("steam_"))
+                {
+                    var steamIdStr = pid.Substring(6);
+                    if (ulong.TryParse(steamIdStr, out steamIdValue) && steamIdValue > 0)
+                    {
+                        Debug.Log($"[VOTE-UI] v3格式解析成功: {pid} -> SteamID {steamIdValue}");
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[VOTE-UI] v3格式解析失败: {pid}");
+                    }
+                }
+                // 旧格式处理
+                else
+                {
 
                 // 先尝试直接解析为 SteamID
                 if (ulong.TryParse(pid, out steamIdValue) && steamIdValue > 0)
@@ -1448,9 +1684,44 @@ public class MModUI : MonoBehaviour
                                 SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out CSteamID cSteamId))
                             {
                                 steamIdValue = cSteamId.m_SteamID;
+                                Debug.Log($"[VOTE-UI] IP地址映射成功: {pid} -> SteamID {steamIdValue}");
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"[VOTE-UI] IP地址映射失败: {pid}");
+                                
+                                // 客户端模式：如果映射失败，检查是否是自己的EndPoint
+                                if (!IsServer && ModBehaviourF.Instance?.connectedPeer != null)
+                                {
+                                    var myEndPoint = ModBehaviourF.Instance.connectedPeer.EndPoint?.ToString();
+                                    if (!string.IsNullOrEmpty(myEndPoint) && myEndPoint == pid)
+                                    {
+                                        steamIdValue = SteamUser.GetSteamID().m_SteamID;
+                                        Debug.Log($"[VOTE-UI] 通过connectedPeer.EndPoint识别为本地玩家: {pid} -> SteamID {steamIdValue}");
+                                    }
+                                }
                             }
                         }
                     }
+                }
+                } // 闭合v3格式的else块
+
+                // 判断是否是本地玩家
+                var localSteamId = SteamUser.GetSteamID().m_SteamID;
+                isLocalPlayer = (steamIdValue == localSteamId);
+                Debug.Log($"[VOTE-UI] pid={pid}, steamIdValue={steamIdValue}, localSteamId={localSteamId}, isLocal={isLocalPlayer}");
+
+                // 去重检查：如果SteamID已处理，销毁重复的playerRow并跳过
+                if (steamIdValue > 0 && processedSteamIds.Contains(steamIdValue))
+                {
+                    Debug.Log($"[VOTE-UI] 跳过重复玩家: pid={pid}, steamIdValue={steamIdValue}");
+                    Destroy(playerRow);
+                    continue;
+                }
+                
+                if (steamIdValue > 0)
+                {
+                    processedSteamIds.Add(steamIdValue);
                 }
 
                 // 如果成功获取到 SteamID，显示用户名
@@ -1464,7 +1735,16 @@ public class MModUI : MonoBehaviour
                         // 判断是否是主机
                         var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
                         string prefix = (steamIdValue == lobbyOwner.m_SteamID) ? "HOST" : "CLIENT";
-                        displayName = $"{prefix}_{cachedName}";
+                        
+                        // 如果是本地玩家，添加[本地]标识
+                        if (isLocalPlayer)
+                        {
+                            displayName = $"[本地] {prefix}_{cachedName}";
+                        }
+                        else
+                        {
+                            displayName = $"{prefix}_{cachedName}";
+                        }
                     }
                     else
                     {
@@ -1474,7 +1754,16 @@ public class MModUI : MonoBehaviour
                         {
                             var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
                             string prefix = (steamIdValue == lobbyOwner.m_SteamID) ? "HOST" : "CLIENT";
-                            displayName = $"{prefix}_{steamUsername}";
+                            
+                            // 如果是本地玩家，添加[本地]标识
+                            if (isLocalPlayer)
+                            {
+                                displayName = $"[本地] {prefix}_{steamUsername}";
+                            }
+                            else
+                            {
+                                displayName = $"{prefix}_{steamUsername}";
+                            }
                         }
                         else
                         {
@@ -1487,7 +1776,8 @@ public class MModUI : MonoBehaviour
             }
 
             // 显示名称和ID
-            var nameText = CreateText("Name", playerRow.transform, displayName, 14, ModernColors.TextPrimary);
+            Debug.Log($"[VOTE-UI] 渲染玩家: pid={pid}, displayName={displayName}, isLocal={isLocalPlayer}");
+            var nameText = CreateText("Name", playerRow.transform, displayName, 14, isLocalPlayer ? ModernColors.Success : ModernColors.TextPrimary);
             var nameLayout = nameText.gameObject.GetComponent<LayoutElement>();
             nameLayout.flexibleWidth = 1;
 
@@ -1532,6 +1822,93 @@ public class MModUI : MonoBehaviour
                     StartCoroutine(AnimatePanel(_components.SpectatorPanel, false));
             }
         }
+    }
+
+    #endregion
+
+    #region 断开连接弹窗
+
+    private GameObject _disconnectDialog;
+
+    public void ShowDisconnectDialog(string reason)
+    {
+        if (_disconnectDialog != null)
+        {
+            Destroy(_disconnectDialog);
+        }
+
+        _disconnectDialog = CreateModernPanel("DisconnectDialog", _canvas.transform, new Vector2(500, 250), new Vector2(960, 100), TextAnchor.LowerCenter);
+        
+        var dialogGroup = _disconnectDialog.GetComponent<CanvasGroup>();
+        if (dialogGroup == null) dialogGroup = _disconnectDialog.AddComponent<CanvasGroup>();
+        dialogGroup.alpha = 0f;
+        
+        var headerRow = CreateHorizontalGroup(_disconnectDialog.transform, "Header");
+        var headerLayout = headerRow.AddComponent<LayoutElement>();
+        headerLayout.minHeight = 50;
+        headerLayout.preferredHeight = 50;
+        
+        var titleText = CreateText("Title", headerRow.transform, "连接已断开", 20, ModernColors.Error, TextAlignmentOptions.Center, FontStyles.Bold);
+        var titleLayout = titleText.gameObject.GetComponent<LayoutElement>();
+        titleLayout.flexibleWidth = 1;
+        
+        CreateDivider(_disconnectDialog.transform);
+        
+        var contentRow = new GameObject("Content");
+        contentRow.transform.SetParent(_disconnectDialog.transform, false);
+        var contentLayout = contentRow.AddComponent<LayoutElement>();
+        contentLayout.flexibleHeight = 1;
+        
+        var reasonText = CreateText("Reason", contentRow.transform, reason, 16, ModernColors.TextPrimary, TextAlignmentOptions.Center);
+        
+        CreateDivider(_disconnectDialog.transform);
+        
+        var buttonRow = CreateHorizontalGroup(_disconnectDialog.transform, "ButtonRow");
+        var buttonLayout = buttonRow.AddComponent<LayoutElement>();
+        buttonLayout.minHeight = 60;
+        buttonLayout.preferredHeight = 60;
+        
+        var okButtonGO = new GameObject("OKButton");
+        okButtonGO.transform.SetParent(buttonRow.transform, false);
+        var okRect = okButtonGO.AddComponent<RectTransform>();
+        var okLayout = okButtonGO.AddComponent<LayoutElement>();
+        okLayout.flexibleWidth = 1;
+        okLayout.minHeight = 40;
+        
+        var okImage = okButtonGO.AddComponent<Image>();
+        okImage.color = ModernColors.Primary;
+        
+        var okButton = okButtonGO.AddComponent<Button>();
+        okButton.onClick.AddListener(() => 
+        {
+            if (_disconnectDialog != null)
+            {
+                Destroy(_disconnectDialog);
+                _disconnectDialog = null;
+            }
+        });
+        
+        CreateText("ButtonText", okButtonGO.transform, "确定", 16, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
+        
+        StartCoroutine(AnimateDialog(dialogGroup));
+    }
+    
+    private IEnumerator AnimateDialog(CanvasGroup group)
+    {
+        if (group == null) yield break;
+        
+        float duration = 0.3f;
+        float elapsed = 0f;
+        
+        while (elapsed < duration && group != null)
+        {
+            elapsed += Time.deltaTime;
+            group.alpha = Mathf.Lerp(0f, 1f, elapsed / duration);
+            yield return null;
+        }
+        
+        if (group != null)
+            group.alpha = 1f;
     }
 
     #endregion
@@ -1605,6 +1982,93 @@ public class MModUI : MonoBehaviour
         return panel;
     }
 
+    private IEnumerator LoadSteamAvatar(CSteamID steamID, Image targetImage)
+    {
+        if (!SteamManager.Initialized || targetImage == null)
+        {
+            Debug.LogWarning($"[MModUI] LoadSteamAvatar 取消: SteamManager={SteamManager.Initialized}, targetImage={targetImage != null}");
+            yield break;
+        }
+        
+        ulong steamId = steamID.m_SteamID;
+        
+        if (_steamAvatarLoading.Contains(steamId))
+        {
+            yield break;
+        }
+        
+        _steamAvatarLoading.Add(steamId);
+        
+        try
+        {
+            int avatarHandle = SteamFriends.GetMediumFriendAvatar(steamID);
+            Debug.Log($"[MModUI] LoadSteamAvatar for {steamId}: handle={avatarHandle}");
+            
+            if (avatarHandle == -1)
+            {
+                yield return new WaitForSeconds(0.5f);
+                avatarHandle = SteamFriends.GetMediumFriendAvatar(steamID);
+                Debug.Log($"[MModUI] LoadSteamAvatar 重试 for {steamId}: handle={avatarHandle}");
+            }
+            
+            if (avatarHandle > 0)
+            {
+                uint width, height;
+                if (SteamUtils.GetImageSize(avatarHandle, out width, out height))
+                {
+                    Debug.Log($"[MModUI] Steam头像尺寸: {width}x{height}");
+                    if (width > 0 && height > 0)
+                    {
+                        byte[] imageData = new byte[width * height * 4];
+                        if (SteamUtils.GetImageRGBA(avatarHandle, imageData, (int)(width * height * 4)))
+                        {
+                            Texture2D texture = new Texture2D((int)width, (int)height, TextureFormat.RGBA32, false);
+                            texture.LoadRawTextureData(imageData);
+                            texture.Apply();
+                            
+                            for (int y = 0; y < height / 2; y++)
+                            {
+                                for (int x = 0; x < width; x++)
+                                {
+                                    Color temp = texture.GetPixel(x, y);
+                                    texture.SetPixel(x, y, texture.GetPixel(x, (int)height - 1 - y));
+                                    texture.SetPixel(x, (int)height - 1 - y, temp);
+                                }
+                            }
+                            texture.Apply();
+                            
+                            Sprite sprite = Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f));
+                            _steamAvatarCache[steamId] = sprite;
+                            
+                            if (targetImage != null)
+                            {
+                                targetImage.sprite = sprite;
+                                targetImage.color = Color.white;
+                            }
+                            Debug.Log($"[MModUI] Steam头像加载成功并缓存: {steamId}");
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[MModUI] GetImageRGBA 失败: {steamId}");
+                        }
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"[MModUI] GetImageSize 失败: {steamId}");
+                }
+            }
+            else if (avatarHandle == 0)
+            {
+                Debug.LogWarning($"[MModUI] Steam头像未准备好: {steamId}");
+            }
+        }
+        finally
+        {
+            _steamAvatarLoading.Remove(steamId);
+        }
+    }
+    
     private IEnumerator InitializeTranslucentImageProperties(TranslucentImage translucentImage)
     {
         // 等待几帧，让 TranslucentImage 完成初始化

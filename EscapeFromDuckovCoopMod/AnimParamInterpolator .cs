@@ -30,13 +30,15 @@ public struct AnimSample
 public class AnimParamInterpolator : MonoBehaviour
 {
     [Header("时间窗")] //不用注释了这都看不懂的话就 nim
-    public float interpolationBackTime = 0.12f;
+    public float interpolationBackTime = 0.08f;
 
-    public float maxExtrapolate = 0.08f;
+    public float maxExtrapolate = 0.06f;
 
-    [Header("平滑")] public float paramSmoothTime = 0.07f;
+    [Header("平滑")] public float paramSmoothTime = 0.05f;
 
-    public float minHoldTime = 0.08f;
+    public float minHoldTime = 0.03f;
+    
+    public float handStateMinHoldTime = 0.01f;
 
     [Header("状态过渡（可选）")] public float crossfadeDuration = 0.05f;
 
@@ -122,7 +124,7 @@ public class AnimParamInterpolator : MonoBehaviour
         var now = Time.unscaledTimeAsDouble;
 
         var desiredHand = t01 < 0.5f ? a.hand : b.hand;
-        if (desiredHand != lastHand && now - tHand >= minHoldTime)
+        if (desiredHand != lastHand && now - tHand >= handStateMinHoldTime)
         {
             TrySetInt(hHand, desiredHand);
             lastHand = desiredHand;
@@ -161,7 +163,8 @@ public class AnimParamInterpolator : MonoBehaviour
             desiredNorm = t01 < 0.5f ? a.normTime : b.normTime;
             if (desiredState >= 0 && (desiredState != lastStateHash || now - tState > 0.5))
             {
-                anim.CrossFade(desiredState, crossfadeDuration, crossfadeLayer, Mathf.Clamp01(desiredNorm));
+                int layerIndex = Mathf.Max(0, crossfadeLayer);
+                anim.CrossFade(desiredState, crossfadeDuration, layerIndex, Mathf.Clamp01(desiredNorm));
                 lastStateHash = desiredState;
                 tState = now;
             }

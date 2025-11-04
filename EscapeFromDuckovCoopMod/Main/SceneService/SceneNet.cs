@@ -14,7 +14,9 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System.Linq;
 using Duckov.UI;
+using Steamworks;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -112,20 +114,30 @@ public class SceneNet : MonoBehaviour
             Spectator.Instance.EndSpectatorAndShowClosure();
         }
 
-        var w = new NetDataWriter();
-        w.Put((byte)Op.SCENE_BEGIN_LOAD);
-        w.Put((byte)1); // ver=1
-        w.Put(sceneTargetId ?? "");
+        var voteRPC = VoteSystemRPC.Instance;
+        if (voteRPC != null && voteRPC.UseRPCMode)
+        {
+            voteRPC.Server_BroadcastBeginLoad();
+            Debug.Log($"[SERVER-LOAD] 开始加载通过RPC广播");
+        }
+        else
+        {
+            var w = new NetDataWriter();
+            w.Put((byte)Op.SCENE_BEGIN_LOAD);
+            w.Put((byte)1); // ver=1
+            w.Put(sceneTargetId ?? "");
 
-        var hasCurtain = !string.IsNullOrEmpty(sceneCurtainGuid);
-        var flags = PackFlag.PackFlags(hasCurtain, sceneUseLocation, sceneNotifyEvac, sceneSaveToFile);
-        w.Put(flags);
+            var hasCurtain = !string.IsNullOrEmpty(sceneCurtainGuid);
+            var flags = PackFlag.PackFlags(hasCurtain, sceneUseLocation, sceneNotifyEvac, sceneSaveToFile);
+            w.Put(flags);
 
-        if (hasCurtain) w.Put(sceneCurtainGuid);
-        w.Put(sceneLocationName ?? "");
+            if (hasCurtain) w.Put(sceneCurtainGuid);
+            w.Put(sceneLocationName ?? "");
 
-        // ★ 群发给所有客户端（客户端会根据是否正在投票/是否在名单自行处理）
-        netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            // ★ 群发给所有客户端（客户端会根据是否正在投票/是否在名单自行处理）
+            netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            Debug.Log($"[SERVER-LOAD] 开始加载通过传统方式广播");
+        }
 
         // 主机本地执行加载
         allowLocalSceneLoad = true;
@@ -153,20 +165,57 @@ public class SceneNet : MonoBehaviour
     {
         if (!IsServer) return;
 
-        // 统一 pid（fromPeer==null 代表主机自己）
-        var pid = fromPeer != null ? NetService.Instance.GetPlayerId(fromPeer) : NetService.Instance.GetPlayerId(null);
-
         if (!sceneVoteActive) return;
-        if (!sceneReady.ContainsKey(pid)) return; // 不在这轮投票里，丢弃
+        
+        // 获取SteamID格式的pid
+        string pid = null;
+        if (fromPeer != null)
+        {
+            var endPoint = fromPeer.EndPoint as System.Net.IPEndPoint;
+            if (endPoint != null && SteamEndPointMapper.Instance != null)
+            {
+                if (SteamEndPointMapper.Instance.TryGetSteamID(endPoint, out var steamId))
+                {
+                    pid = $"steam_{steamId.m_SteamID}";
+                    Debug.Log($"[SERVER-READY] 收到客户端准备: SteamID={steamId.m_SteamID}, ready={ready}");
+                }
+            }
+        }
+        else
+        {
+            // 主机自己
+            if (SteamManager.Initialized)
+            {
+                var hostSteamId = SteamUser.GetSteamID().m_SteamID;
+                pid = $"steam_{hostSteamId}";
+                Debug.Log($"[SERVER-READY] 主机准备: SteamID={hostSteamId}, ready={ready}");
+            }
+        }
+        
+        if (string.IsNullOrEmpty(pid) || !sceneReady.ContainsKey(pid))
+        {
+            Debug.LogWarning($"[SERVER-READY] 未找到玩家: pid={pid}, participants={sceneParticipantIds.Count}");
+            return;
+        }
 
         sceneReady[pid] = ready;
 
-        // 群发给所有客户端（不再二次按“同图”过滤）
-        var w = new NetDataWriter();
-        w.Put((byte)Op.SCENE_READY_SET);
-        w.Put(pid);
-        w.Put(ready);
-        netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+        // 群发给所有客户端
+        var voteRPC = VoteSystemRPC.Instance;
+        if (voteRPC != null && voteRPC.UseRPCMode)
+        {
+            voteRPC.Server_BroadcastReadySet(pid, ready);
+            Debug.Log($"[SERVER-READY] 通过RPC广播准备状态: pid={pid}, ready={ready}");
+        }
+        else
+        {
+            var w = new NetDataWriter();
+            w.Put((byte)Op.SCENE_READY_SET);
+            w.Put(pid);
+            w.Put(ready);
+            netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            Debug.Log($"[SERVER-READY] 通过传统方式广播准备状态: pid={pid}, ready={ready}");
+        }
 
         // 检查是否全员准备
         foreach (var id in sceneParticipantIds)
@@ -180,17 +229,20 @@ public class SceneNet : MonoBehaviour
     // ===== 客户端：收到“投票开始”（带参与者 pid 列表）=====
     public void Client_OnSceneVoteStart(NetPacketReader r)
     {
+        Debug.Log($"[CLIENT-VOTE-PARSE] 开始解析投票消息, availableBytes={r.AvailableBytes}");
+        
         // ——读包：严格按顺序——
         if (!EnsureAvailable(r, 2))
         {
-            Debug.LogWarning("[SCENE] vote: header too short");
+            Debug.LogWarning("[CLIENT-VOTE-PARSE] vote: header too short");
             return;
         }
 
         var ver = r.GetByte(); // switch 里已经吃掉了 op，这里是 ver
-        if (ver != 1 && ver != 2)
+        Debug.Log($"[CLIENT-VOTE-PARSE] 投票版本: {ver}");
+        if (ver < 1 || ver > 3)
         {
-            Debug.LogWarning($"[SCENE] vote: unsupported ver={ver}");
+            Debug.LogWarning($"[CLIENT-VOTE-PARSE] vote: unsupported ver={ver}");
             return;
         }
 
@@ -252,15 +304,37 @@ public class SceneNet : MonoBehaviour
         }
 
         sceneParticipantIds.Clear();
-        for (var i = 0; i < cnt; i++)
+        
+        if (ver >= 3)
         {
-            if (!TryGetString(r, out var pid))
+            // 版本3：接收SteamID列表
+            for (var i = 0; i < cnt; i++)
             {
-                Debug.LogWarning($"[SCENE] vote: bad pid[{i}]");
-                return;
+                if (!EnsureAvailable(r, 8))
+                {
+                    Debug.LogWarning($"[SCENE] vote: bad steamId[{i}]");
+                    return;
+                }
+                
+                var steamId = r.GetULong();
+                var pid = $"steam_{steamId}";
+                sceneParticipantIds.Add(pid);
+                Debug.Log($"[CLIENT-VOTE-PARSE] 接收参与者SteamID: {steamId}");
             }
+        }
+        else
+        {
+            // 版本1/2：接收EndPoint字符串列表（旧版本）
+            for (var i = 0; i < cnt; i++)
+            {
+                if (!TryGetString(r, out var pid))
+                {
+                    Debug.LogWarning($"[SCENE] vote: bad pid[{i}]");
+                    return;
+                }
 
-            sceneParticipantIds.Add(pid ?? "");
+                sceneParticipantIds.Add(pid ?? "");
+            }
         }
 
         // ===== 过滤：不同图 & 不在白名单，直接忽略 =====
@@ -277,13 +351,97 @@ public class SceneNet : MonoBehaviour
             }
 
         // B) 白名单过滤：不在参与名单，就不显示
-        if (sceneParticipantIds.Count > 0 && localPlayerStatus != null)
+        if (sceneParticipantIds.Count > 0)
         {
-            var me = localPlayerStatus.EndPoint ?? string.Empty;
-            if (!sceneParticipantIds.Contains(me))
+            bool found = false;
+            string myIdentifier = null;
+            
+            // 版本3：使用SteamID匹配
+            if (ver >= 3)
             {
-                Debug.Log($"[SCENE] vote: ignore (not in participants) me='{me}'");
-                return;
+                if (SteamManager.Initialized)
+                {
+                    var mySteamId = SteamUser.GetSteamID().m_SteamID;
+                    myIdentifier = $"steam_{mySteamId}";
+                    found = sceneParticipantIds.Contains(myIdentifier);
+                    Debug.Log($"[CLIENT-VOTE-PARSE] v3-SteamID匹配: mySteamId={mySteamId}, found={found}");
+                }
+            }
+            // 版本1/2：使用EndPoint匹配（旧逻辑）
+            else
+            {
+                if (!IsServer)
+                {
+                    // 1. 先尝试connectedPeer的EndPoint
+                    if (connectedPeer != null)
+                    {
+                        myIdentifier = connectedPeer.EndPoint?.ToString() ?? string.Empty;
+                        if (!string.IsNullOrEmpty(myIdentifier) && sceneParticipantIds.Contains(myIdentifier))
+                        {
+                            found = true;
+                            Debug.Log($"[CLIENT-VOTE-PARSE] 通过connectedPeer.EndPoint匹配: {myIdentifier}");
+                        }
+                    }
+                    
+                    // 2. 如果没找到，尝试通过SteamID查找对应的所有IP
+                    if (!found && SteamManager.Initialized && SteamEndPointMapper.Instance != null)
+                    {
+                        var mySteamId = SteamUser.GetSteamID();
+                        
+                        foreach (var pid in sceneParticipantIds)
+                        {
+                            if (pid.StartsWith("Host:"))
+                            {
+                                continue;
+                            }
+                            
+                            var parts = pid.Split(':');
+                            if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out var ipAddr) && int.TryParse(parts[1], out var port))
+                            {
+                                var ipEndPoint = new System.Net.IPEndPoint(ipAddr, port);
+                                
+                                if (SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out var steamId))
+                                {
+                                    if (steamId == mySteamId)
+                                    {
+                                        myIdentifier = pid;
+                                        found = true;
+                                        Debug.Log($"[CLIENT-VOTE-PARSE] 通过SteamID映射匹配: {pid} → {steamId.m_SteamID}");
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // 服务器：使用localPlayerStatus.EndPoint（Host:xxxx格式）
+                else if (IsServer && localPlayerStatus != null)
+                {
+                    myIdentifier = localPlayerStatus.EndPoint ?? string.Empty;
+                    if (!string.IsNullOrEmpty(myIdentifier))
+                    {
+                        found = sceneParticipantIds.Contains(myIdentifier);
+                    }
+                }
+            }
+            
+            Debug.Log($"[CLIENT-VOTE-PARSE] 检查白名单: me='{myIdentifier}', found={found}, participants={sceneParticipantIds.Count}, ver={ver}");
+            foreach (var p in sceneParticipantIds)
+            {
+                Debug.Log($"[CLIENT-VOTE-PARSE] 参与者: {p}");
+            }
+            
+            if (!found)
+            {
+                if (!IsServer)
+                {
+                    Debug.Log($"[CLIENT-VOTE-PARSE] 客户端白名单未匹配，但服务器发来投票，允许参与");
+                }
+                else
+                {
+                    Debug.LogWarning($"[CLIENT-VOTE-PARSE] vote: ignore (not in participants) me='{myIdentifier}'");
+                    return;
+                }
             }
         }
 
@@ -299,7 +457,7 @@ public class SceneNet : MonoBehaviour
         sceneReady.Clear();
         foreach (var pid in sceneParticipantIds) sceneReady[pid] = false;
 
-        Debug.Log($"[SCENE] 收到投票 v{ver}: target='{sceneTargetId}', hostScene='{hostSceneId}', myScene='{mySceneId}', players={cnt}");
+        Debug.Log($"[CLIENT-VOTE-PARSE] ✅ 投票接收成功 v{ver}: target='{sceneTargetId}', hostScene='{hostSceneId}', myScene='{mySceneId}', players={cnt}, voteActive={sceneVoteActive}");
 
         // TODO：在这里弹出你的投票 UI（如果之前就是这里弹的，维持不变）
         // ShowSceneVoteUI(sceneTargetId, sceneLocationName, sceneParticipantIds) 等
@@ -382,17 +540,62 @@ public class SceneNet : MonoBehaviour
     {
         if (IsServer || connectedPeer == null) return;
 
+        var voteRPC = VoteSystemRPC.Instance;
+        if (voteRPC != null && voteRPC.UseRPCMode)
+        {
+            voteRPC.Client_SendReady(ready);
+            
+            // 本地乐观更新：使用SteamID格式
+            if (sceneVoteActive && SteamManager.Initialized)
+            {
+                var mySteamId = SteamUser.GetSteamID().m_SteamID;
+                var me = $"steam_{mySteamId}";
+                if (sceneReady.ContainsKey(me))
+                {
+                    sceneReady[me] = ready;
+                    Debug.Log($"[CLIENT-READY] 本地更新准备状态(RPC): SteamID={mySteamId}, ready={ready}");
+                }
+            }
+            return;
+        }
+
         var w = new NetDataWriter();
         w.Put((byte)Op.SCENE_READY_SET);
         w.Put(ready);
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
 
-        // ★ 本地乐观更新：立即把自己的 ready 写进就绪表，以免 UI 卡在"未准备"
-        if (sceneVoteActive && localPlayerStatus != null)
+        if (sceneVoteActive && sceneReady.Count > 0)
         {
-            var me = localPlayerStatus.EndPoint ?? string.Empty;
-            if (!string.IsNullOrEmpty(me) && sceneReady.ContainsKey(me))
-                sceneReady[me] = ready;
+            string myPid = null;
+            
+            var firstKey = sceneParticipantIds.Count > 0 ? sceneParticipantIds[0] : "";
+            if (firstKey.StartsWith("steam_"))
+            {
+                if (SteamManager.Initialized)
+                {
+                    var mySteamId = SteamUser.GetSteamID().m_SteamID;
+                    myPid = $"steam_{mySteamId}";
+                }
+            }
+            else
+            {
+                foreach (var pid in sceneReady.Keys)
+                {
+                    if (pid.StartsWith("Host:")) continue;
+                    myPid = pid;
+                    break;
+                }
+            }
+            
+            if (!string.IsNullOrEmpty(myPid) && sceneReady.ContainsKey(myPid))
+            {
+                sceneReady[myPid] = ready;
+                Debug.Log($"[CLIENT-READY] 本地更新准备状态: pid={myPid}, ready={ready}");
+            }
+            else
+            {
+                Debug.LogWarning($"[CLIENT-READY] 本地更新失败: pid={myPid}, sceneReady有{sceneReady.Count}项");
+            }
         }
     }
 
@@ -584,9 +787,90 @@ public class SceneNet : MonoBehaviour
         sceneUseLocation = useLocation;
         sceneLocationName = locationName ?? "";
 
-        // 参与者（同图优先；拿不到 SceneId 的竞态由客户端再过滤）
         sceneParticipantIds.Clear();
-        sceneParticipantIds.AddRange(CoopTool.BuildParticipantIds_Server());
+        var participantSteamIds = new List<ulong>();
+        
+        var voteRPC = VoteSystemRPC.Instance;
+        if (voteRPC != null && voteRPC.UseRPCMode)
+        {
+            Debug.Log("[SceneNet] Using RPC mode for vote system");
+        }
+        
+        bool useSteamIds = false;
+        if (SteamManager.Initialized && SteamEndPointMapper.Instance != null)
+        {
+            if (playerStatuses != null && playerStatuses.Count > 0)
+            {
+                var firstPeer = playerStatuses.Keys.FirstOrDefault();
+                if (firstPeer != null)
+                {
+                    var ep = firstPeer.EndPoint as System.Net.IPEndPoint;
+                    useSteamIds = ep != null && SteamEndPointMapper.Instance.TryGetSteamID(ep, out _);
+                }
+            }
+            else
+            {
+                useSteamIds = true;
+            }
+        }
+        
+        if (useSteamIds)
+        {
+            if (SteamManager.Initialized)
+            {
+                var hostSteamId = SteamUser.GetSteamID().m_SteamID;
+                var hostPid = $"steam_{hostSteamId}";
+                sceneParticipantIds.Add(hostPid);
+                participantSteamIds.Add(hostSteamId);
+                Debug.Log($"[SERVER-VOTE-BUILD] Steam模式 - 添加主机: SteamID={hostSteamId}");
+            }
+            
+            if (playerStatuses != null && SteamEndPointMapper.Instance != null)
+            {
+                foreach (var kv in playerStatuses)
+                {
+                    var peer = kv.Key;
+                    if (peer == null) continue;
+                    
+                    var endPoint = peer.EndPoint as System.Net.IPEndPoint;
+                    if (endPoint != null && SteamEndPointMapper.Instance.TryGetSteamID(endPoint, out var steamId))
+                    {
+                        var pid = $"steam_{steamId.m_SteamID}";
+                        if (!sceneParticipantIds.Contains(pid))
+                        {
+                            sceneParticipantIds.Add(pid);
+                            participantSteamIds.Add(steamId.m_SteamID);
+                            Debug.Log($"[SERVER-VOTE-BUILD] Steam模式 - 添加客户端: SteamID={steamId.m_SteamID}, EndPoint={endPoint}");
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            if (localPlayerStatus != null)
+            {
+                var hostPid = localPlayerStatus.EndPoint;
+                sceneParticipantIds.Add(hostPid);
+                Debug.Log($"[SERVER-VOTE-BUILD] LAN模式 - 添加主机: EndPoint={hostPid}");
+            }
+            
+            if (playerStatuses != null)
+            {
+                foreach (var kv in playerStatuses)
+                {
+                    var peer = kv.Key;
+                    if (peer == null) continue;
+                    
+                    var pid = peer.EndPoint.ToString();
+                    if (!sceneParticipantIds.Contains(pid))
+                    {
+                        sceneParticipantIds.Add(pid);
+                        Debug.Log($"[SERVER-VOTE-BUILD] LAN模式 - 添加客户端: EndPoint={pid}");
+                    }
+                }
+            }
+        }
 
         sceneVoteActive = true;
         localReady = false;
@@ -600,25 +884,81 @@ public class SceneNet : MonoBehaviour
 
         var w = new NetDataWriter();
         w.Put((byte)Op.SCENE_VOTE_START);
-        w.Put((byte)2);
-        w.Put(sceneTargetId);
+        
+        if (useSteamIds)
+        {
+            w.Put((byte)3);
+            w.Put(sceneTargetId);
 
-        var hasCurtain = !string.IsNullOrEmpty(sceneCurtainGuid);
-        var flags = PackFlag.PackFlags(hasCurtain, sceneUseLocation, sceneNotifyEvac, sceneSaveToFile);
-        w.Put(flags);
+            var hasCurtain = !string.IsNullOrEmpty(sceneCurtainGuid);
+            var flags = PackFlag.PackFlags(hasCurtain, sceneUseLocation, sceneNotifyEvac, sceneSaveToFile);
+            w.Put(flags);
 
-        if (hasCurtain) w.Put(sceneCurtainGuid);
-        w.Put(sceneLocationName); // 空串也写
-        w.Put(hostSceneId);
+            if (hasCurtain) w.Put(sceneCurtainGuid);
+            w.Put(sceneLocationName);
+            w.Put(hostSceneId);
 
-        w.Put(sceneParticipantIds.Count);
-        foreach (var pid in sceneParticipantIds) w.Put(pid);
+            w.Put(participantSteamIds.Count);
+            foreach (var steamId in participantSteamIds)
+            {
+                w.Put(steamId);
+            }
 
+            Debug.Log($"[SERVER-VOTE-SEND] Steam模式发送投票(v3): target='{sceneTargetId}', participants={participantSteamIds.Count}");
+            foreach (var steamId in participantSteamIds)
+            {
+                Debug.Log($"[SERVER-VOTE-SEND] 参与者SteamID: {steamId}");
+            }
+        }
+        else
+        {
+            w.Put((byte)2);
+            w.Put(sceneTargetId);
 
-        netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
-        Debug.Log($"[SCENE] 投票开始 v2: target='{sceneTargetId}', hostScene='{hostSceneId}', loc='{sceneLocationName}', count={sceneParticipantIds.Count}");
+            var hasCurtain = !string.IsNullOrEmpty(sceneCurtainGuid);
+            var flags = PackFlag.PackFlags(hasCurtain, sceneUseLocation, sceneNotifyEvac, sceneSaveToFile);
+            w.Put(flags);
 
-        // 如需“只发同图”，可以替换为下面这段（二选一）：
+            if (hasCurtain) w.Put(sceneCurtainGuid);
+            w.Put(sceneLocationName);
+            w.Put(hostSceneId);
+
+            w.Put(sceneParticipantIds.Count);
+            foreach (var pid in sceneParticipantIds)
+            {
+                w.Put(pid);
+            }
+
+            Debug.Log($"[SERVER-VOTE-SEND] LAN模式发送投票(v2): target='{sceneTargetId}', participants={sceneParticipantIds.Count}");
+            foreach (var pid in sceneParticipantIds)
+            {
+                Debug.Log($"[SERVER-VOTE-SEND] 参与者EndPoint: {pid}");
+            }
+        }
+        
+        Debug.Log($"[SERVER-VOTE-SEND] ConnectedPeerList count: {netManager.ConnectedPeerList?.Count ?? 0}");
+        if (netManager.ConnectedPeerList != null)
+        {
+            foreach (var peer in netManager.ConnectedPeerList)
+            {
+                Debug.Log($"[SERVER-VOTE-SEND] 已连接peer: {peer?.EndPoint}");
+            }
+        }
+        
+        // 使用RPC模式发送（如果启用）
+        if (voteRPC != null && voteRPC.UseRPCMode)
+        {
+            voteRPC.Server_StartVote(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile, sceneUseLocation, sceneLocationName, participantSteamIds);
+            Debug.Log($"[SERVER-VOTE-SEND] 投票消息已通过RPC发送");
+        }
+        else
+        {
+            // 使用传统方式发送
+            netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            Debug.Log($"[SERVER-VOTE-SEND] 投票消息已发送完成 (SendToAll called - Legacy mode)");
+        }
+
+        // 如需"只发同图"，可以替换为下面这段（二选一）：
         /*
         foreach (var p in netManager.ConnectedPeerList)
         {
@@ -654,6 +994,16 @@ public class SceneNet : MonoBehaviour
     {
         if (!networkStarted || IsServer || connectedPeer == null) return;
 
+        Debug.Log($"[CLIENT-VOTE-REQ] 客户端发起投票请求: target='{targetId}', useLoc={useLocation}, locName='{locationName}'");
+
+        var voteRPC = VoteSystemRPC.Instance;
+        if (voteRPC != null && voteRPC.UseRPCMode)
+        {
+            voteRPC.Client_RequestVote(targetId, curtainGuid, notifyEvac, saveToFile, useLocation, locationName);
+            Debug.Log($"[CLIENT-VOTE-REQ] 投票请求已通过RPC发送");
+            return;
+        }
+
         var w = new NetDataWriter();
         w.Put((byte)Op.SCENE_VOTE_REQ);
         w.Put(targetId);
@@ -662,6 +1012,7 @@ public class SceneNet : MonoBehaviour
         w.Put(locationName ?? string.Empty);
 
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+        Debug.Log($"[CLIENT-VOTE-REQ] 投票请求已发送到服务器 (Legacy mode)");
     }
 
     public UniTask AppendSceneGate(UniTask original)

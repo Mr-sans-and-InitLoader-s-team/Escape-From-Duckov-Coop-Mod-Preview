@@ -23,6 +23,7 @@
     { "key": "ui.playerStatus.toggle", "value": "显示玩家状态窗口 (切换键: {0})" },
     { "key": "ui.playerStatus.id", "value": "ID:" },
     { "key": "ui.playerStatus.name", "value": "名称:" },
+    { "key": "ui.playerStatus.ping", "value": "延迟" },
     { "key": "ui.playerStatus.latency", "value": "延迟:" },
     { "key": "ui.playerStatus.inGame", "value": "游戏中:" },
     { "key": "ui.playerStatus.yes", "value": "是" },

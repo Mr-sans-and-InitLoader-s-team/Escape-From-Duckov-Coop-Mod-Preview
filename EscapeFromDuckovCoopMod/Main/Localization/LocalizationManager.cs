@@ -272,8 +272,12 @@ namespace EscapeFromDuckovCoopMod
             currentTranslations["ui.playerStatus.toggle"] = "Show Player Status Window (Toggle key: {0})";
             currentTranslations["ui.playerStatus.id"] = "ID:";
             currentTranslations["ui.playerStatus.name"] = "Name:";
+            currentTranslations["ui.playerStatus.ping"] = "Ping";
             currentTranslations["ui.playerStatus.latency"] = "Latency:";
             currentTranslations["ui.playerStatus.inGame"] = "In Game:";
+            currentTranslations["ui.playerStatus.inGameStatus"] = "In Game";
+            currentTranslations["ui.playerStatus.idle"] = "Idle";
+            currentTranslations["ui.playerStatus.local"] = "Local";
             currentTranslations["ui.playerStatus.yes"] = "Yes";
             currentTranslations["ui.playerStatus.no"] = "No";
             currentTranslations["ui.debug.printLootBoxes"] = "[Debug] Print all lootboxes in this map";

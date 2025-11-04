@@ -106,6 +106,9 @@ public class ModBehaviourF : MonoBehaviour
     private float _ensureRemoteTick = 0f;
     private bool _envReqOnce = false;
     private string _envReqSid;
+    
+    private int _positionRecvCount = 0;
+    private float _lastPosRecvLogTime = 0;
 
     private float _envSyncTimer;
 
@@ -495,7 +498,66 @@ public class ModBehaviourF : MonoBehaviour
             return;
         }
 
+        // 先查看是否为RPC消息（不消耗reader）
+        byte firstByte = reader.PeekByte();
+        if (firstByte == 255) // RPC_MESSAGE_TYPE
+        {
+            // 处理RPC消息
+            var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+            if (rpcManager != null)
+            {
+                // 使用peer的ID作为senderConnectionId（LAN模式）
+                long connectionId = peer != null ? peer.Id : 0;
+                rpcManager.ProcessLANMessage(connectionId, reader);
+            }
+            reader.Recycle();
+            return;
+        }
+
         var op = (Op)reader.GetByte();
+        
+        if ((byte)op == 19)
+        {
+            Debug.Log($"[VOTE-RECV-ENTRY] 收到投票消息 op=19 (SCENE_VOTE_START), IsServer={IsServer}, peer={peer?.EndPoint}, availableBytes={reader.AvailableBytes}");
+        }
+        
+        if (IsServer && peer != null)
+        {
+            var relay = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridP2PRelay.Instance;
+            if (relay != null)
+            {
+                var endPoint = peer.EndPoint.ToString();
+                if (!relay.ValidateAndRelayPacket(endPoint, reader, (byte)op))
+                {
+                    Debug.LogWarning($"[ModBehaviourF] Packet validation failed from {endPoint}, op={op}");
+                    reader.Recycle();
+                    return;
+                }
+                
+                var latency = relay.GetLatency(endPoint);
+                if (Service.playerStatuses.TryGetValue(peer, out var status))
+                {
+                    status.Latency = (int)latency;
+                    status.NATType = relay.GetConnectionNATType(endPoint);
+                    status.UseRelay = relay.IsUsingRelay(endPoint);
+                }
+            }
+        }
+        else if (!IsServer && peer != null)
+        {
+            var relay = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridP2PRelay.Instance;
+            if (relay != null)
+            {
+                var endPoint = peer.EndPoint.ToString();
+                var latency = relay.GetLatency(endPoint);
+                if (Service.playerStatuses.TryGetValue(peer, out var status))
+                {
+                    status.Latency = (int)latency;
+                    status.NATType = relay.GetConnectionNATType(endPoint);
+                    status.UseRelay = relay.IsUsingRelay(endPoint);
+                }
+            }
+        }
         //  Debug.Log($"[RECV OP] {(byte)op}, avail={reader.AvailableBytes}");
 
         switch (op)
@@ -528,6 +590,14 @@ public class ModBehaviourF : MonoBehaviour
                         var weaponList = new List<WeaponSyncData>();
                         for (var j = 0; j < weaponCount; j++)
                             weaponList.Add(WeaponSyncData.Deserialize(reader));
+                        
+                        var natType = EscapeFromDuckovCoopMod.Net.HybridP2P.NATType.Unknown;
+                        var useRelay = false;
+                        if (reader.AvailableBytes >= 2)
+                        {
+                            natType = (EscapeFromDuckovCoopMod.Net.HybridP2P.NATType)reader.GetByte();
+                            useRelay = reader.GetBool();
+                        }
 
                         if (NetService.Instance.IsSelfId(endPoint)) continue;
 
@@ -540,6 +610,8 @@ public class ModBehaviourF : MonoBehaviour
                         st.IsInGame = isInGame;
                         st.LastIsInGame = isInGame;
                         st.Position = position;
+                        st.NATType = natType;
+                        st.UseRelay = useRelay;
                         st.Rotation = rotation;
                         if (!string.IsNullOrEmpty(customFaceJson))
                             st.CustomFaceJson = customFaceJson;
@@ -604,13 +676,36 @@ public class ModBehaviourF : MonoBehaviour
                     // 防御性：若包损坏，不推进插值也不拉起角色
                     if (float.IsNaN(posS.x) || float.IsNaN(posS.y) || float.IsNaN(posS.z) ||
                         float.IsInfinity(posS.x) || float.IsInfinity(posS.y) || float.IsInfinity(posS.z))
+                    {
+                        Debug.LogWarning($"[POSITION-RECV] 收到损坏的位置数据: endPoint={endPointS}, pos={posS}");
                         break;
+                    }
 
                     if (!clientPlayerStatuses.TryGetValue(endPointS, out var st))
                         st = clientPlayerStatuses[endPointS] = new PlayerStatus { EndPoint = endPointS, IsInGame = true };
 
-                    st.Position = posS;
+                    var compensatedPos = posS;
+                    var relay = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridP2PRelay.Instance;
+                    if (relay != null)
+                    {
+                        compensatedPos = relay.CompensatePosition(endPointS, posS);
+                        
+                        if (Vector3.Distance(compensatedPos, posS) > 0.1f)
+                        {
+                            Debug.Log($"[LATENCY-COMP] 位置补偿: {endPointS}, 原始={posS}, 补偿后={compensatedPos}, 差距={Vector3.Distance(compensatedPos, posS):F2}m, 延迟={relay.GetLatency(endPointS):F0}ms");
+                        }
+                    }
+
+                    st.Position = compensatedPos;
                     st.Rotation = rotS;
+                    
+                    _positionRecvCount++;
+                    if (Time.realtimeSinceStartup - _lastPosRecvLogTime > 5f)
+                    {
+                        Debug.Log($"[POSITION-RECV] 客户端位置接收频率: {_positionRecvCount / 5f} updates/sec");
+                        _positionRecvCount = 0;
+                        _lastPosRecvLogTime = Time.realtimeSinceStartup;
+                    }
 
                     if (clientRemoteCharacters.TryGetValue(endPointS, out var go) && go != null)
                     {
@@ -720,8 +815,28 @@ public class ModBehaviourF : MonoBehaviour
                 break;
 
             default:
-                // 有未知 opcode 时给出警告，便于排查（比如双端没一起更新）
-                Debug.LogWarning($"Unknown opcode: {(byte)op}");
+                if ((byte)op == 200)
+                {
+                    var latencyCalc = EscapeFromDuckovCoopMod.Net.HybridP2P.LatencyCalculator.Instance;
+                    if (latencyCalc != null && peer != null)
+                    {
+                        var endPoint = peer.EndPoint.ToString();
+                        latencyCalc.HandlePingPacket(endPoint, reader);
+                    }
+                }
+                else if ((byte)op == 201)
+                {
+                    var latencyCalc = EscapeFromDuckovCoopMod.Net.HybridP2P.LatencyCalculator.Instance;
+                    if (latencyCalc != null && peer != null)
+                    {
+                        var endPoint = peer.EndPoint.ToString();
+                        latencyCalc.HandlePongPacket(endPoint, reader);
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"Unknown opcode: {(byte)op}");
+                }
                 break;
 
             case Op.GRENADE_THROW_REQUEST:
@@ -956,11 +1071,18 @@ public class ModBehaviourF : MonoBehaviour
 
             case Op.SCENE_VOTE_START:
                 {
+                    Debug.Log($"[CLIENT-VOTE-RECV] 客户端收到投票消息 SCENE_VOTE_START, IsServer={IsServer}, peer={peer?.EndPoint}");
                     if (!IsServer)
                     {
+                        Debug.Log($"[CLIENT-VOTE-RECV] 开始处理投票消息");
                         SceneNet.Instance.Client_OnSceneVoteStart(reader);
-                        // 观战中收到“开始投票”，记一个“投票结束就结算”的意图
+                        Debug.Log($"[CLIENT-VOTE-RECV] 投票消息处理完成");
+                        // 观战中收到"开始投票"，记一个"投票结束就结算"的意图
                         if (Spectator.Instance._spectatorActive) Spectator.Instance._spectatorEndOnVotePending = true;
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[CLIENT-VOTE-RECV] 服务端收到了SCENE_VOTE_START消息，这不应该发生！");
                     }
 
                     break;
@@ -970,6 +1092,8 @@ public class ModBehaviourF : MonoBehaviour
                 {
                     if (IsServer)
                     {
+                        Debug.Log($"[SERVER-VOTE-REQ] 服务器收到投票请求 from={peer?.EndPoint}");
+                        
                         var targetId = reader.GetString();
                         var flags = reader.GetByte();
                         bool hasCurtain, useLoc, notifyEvac, saveToFile;
@@ -979,10 +1103,14 @@ public class ModBehaviourF : MonoBehaviour
                         if (hasCurtain) SceneNet.TryGetString(reader, out curtainGuid);
                         if (!SceneNet.TryGetString(reader, out var locName)) locName = string.Empty;
 
-                        // ★ 主机若正处于观战，记下“投票结束就结算”的意图
+                        Debug.Log($"[SERVER-VOTE-REQ] 解析完成: target='{targetId}', useLoc={useLoc}, locName='{locName}'");
+
+                        // ★ 主机若正处于观战，记下"投票结束就结算"的意图
                         if (Spectator.Instance._spectatorActive) Spectator.Instance._spectatorEndOnVotePending = true;
 
+                        Debug.Log($"[SERVER-VOTE-REQ] 调用Host_BeginSceneVote_Simple");
                         SceneNet.Instance.Host_BeginSceneVote_Simple(targetId, curtainGuid, notifyEvac, saveToFile, useLoc, locName);
+                        Debug.Log($"[SERVER-VOTE-REQ] Host_BeginSceneVote_Simple完成");
                     }
 
                     break;

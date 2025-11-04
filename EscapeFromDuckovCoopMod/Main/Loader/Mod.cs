@@ -926,6 +926,15 @@ public class ModBehaviourF : MonoBehaviour
                     {
                         var max = reader.GetFloat();
                         var cur = reader.GetFloat();
+                        
+                        var endPoint = peer?.EndPoint?.ToString() ?? "unknown";
+                        var validator = Net.HybridP2P.HybridP2PValidator.Instance;
+                        if (validator != null && !validator.ValidateHealthUpdate(endPoint, max, cur))
+                        {
+                            Debug.LogWarning($"[PLAYER_HEALTH_REPORT] Health validation failed for {endPoint}, rejecting update");
+                            break;
+                        }
+                        
                         if (max <= 0f)
                         {
                             HealthTool._srvPendingHp[peer] = (max, cur);
@@ -934,16 +943,23 @@ public class ModBehaviourF : MonoBehaviour
 
                         if (remoteCharacters != null && remoteCharacters.TryGetValue(peer, out var go) && go)
                         {
-                            // 主机本地先写实自己能立刻看到
-                            HealthM.Instance.ApplyHealthAndEnsureBar(go, max, cur);
-
-                            // 再用统一广播流程，发给本人 + 其他客户端
                             var h = go.GetComponentInChildren<Health>(true);
-                            if (h) HealthM.Instance.Server_OnHealthChanged(peer, h);
+                            if (h)
+                            {
+                                HealthM.Instance._srvApplyingHealth.Add(h);
+                                try
+                                {
+                                    HealthM.Instance.ApplyHealthAndEnsureBar(go, max, cur);
+                                }
+                                finally
+                                {
+                                    HealthM.Instance._srvApplyingHealth.Remove(h);
+                                }
+                                HealthM.Instance.Server_OnHealthChanged(peer, h);
+                            }
                         }
                         else
                         {
-                            //远端克隆还没创建缓存起来，等钩到 Health 后应用
                             HealthTool._srvPendingHp[peer] = (max, cur);
                         }
                     }

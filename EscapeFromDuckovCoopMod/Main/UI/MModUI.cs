@@ -24,6 +24,8 @@ using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using LeTai.Asset.TranslucentImage;
 using Steamworks;
+using Duckov.MiniMaps.UI;
+using Duckov.UI;
 using static BakeryLightmapGroup;
 using RenderMode = UnityEngine.RenderMode;
 
@@ -43,9 +45,10 @@ public class MModUI : MonoBehaviour
 
     public bool showUI = true;
     public bool showPlayerStatusWindow;
-    public KeyCode toggleUIKey = KeyCode.Equals;  // = 键
+    public KeyCode toggleUIKey = KeyCode.Equals;
     public KeyCode togglePlayerStatusKey = KeyCode.P;
     public readonly KeyCode readyKey = KeyCode.J;
+    public KeyCode teleportKey = KeyCode.T;
 
     private readonly List<string> _hostList = new();
     private readonly HashSet<string> _hostSet = new();
@@ -212,6 +215,18 @@ public class MModUI : MonoBehaviour
             }
         }
 
+        if (Input.GetKeyDown(teleportKey))
+        {
+            if (IsMapOpen() && TeleportManager.Instance != null)
+            {
+                var mousePos = TeleportManager.Instance.GetMouseWorldPosition();
+                if (mousePos.HasValue)
+                {
+                    TeleportManager.Instance.TeleportFromMap(mousePos.Value);
+                }
+            }
+        }
+
         // 更新模式显示（服务器/客户端状态）
         UpdateModeDisplay();
 
@@ -281,7 +296,7 @@ public class MModUI : MonoBehaviour
     
     private void DrawVersionInfo()
     {
-        var modVersion = "1.5.0";
+        var modVersion = "1.6.0";
         var gitCommit = "dev";
         
         try
@@ -1435,6 +1450,54 @@ public class MModUI : MonoBehaviour
         
         var infoRow2 = CreateHorizontalGroup(entry.transform, "InfoRow2");
         CreateText("ID", infoRow2.transform, CoopLocalization.Get("ui.playerStatus.id") + ": " + displayId, 12, ModernColors.TextSecondary);
+
+        if (!isLocal && status.IsInGame)
+        {
+            GameObject targetGo = null;
+            Health targetHealth = null;
+
+            if (IsServer && Service.remoteCharacters != null)
+            {
+                foreach (var kv in Service.remoteCharacters)
+                {
+                    if (Service.playerStatuses.TryGetValue(kv.Key, out var st) && st.EndPoint == status.EndPoint)
+                    {
+                        targetGo = kv.Value;
+                        break;
+                    }
+                }
+            }
+            else if (Service.clientRemoteCharacters != null)
+            {
+                Service.clientRemoteCharacters.TryGetValue(status.EndPoint, out targetGo);
+            }
+
+            if (targetGo != null)
+            {
+                var cmc = targetGo.GetComponent<CharacterMainControl>();
+                if (cmc != null)
+                {
+                    targetHealth = cmc.Health;
+                }
+            }
+
+            if (targetHealth != null)
+            {
+                var healthRow = CreateHorizontalGroup(entry.transform, "HealthRow");
+                
+                float healthPercent = targetHealth.CurrentHealth / targetHealth.MaxHealth;
+                Color healthColor = Color.Lerp(ModernColors.Error, ModernColors.Success, healthPercent);
+                
+                string healthText = $"HP: {Mathf.RoundToInt(targetHealth.CurrentHealth)}/{Mathf.RoundToInt(targetHealth.MaxHealth)} ({Mathf.RoundToInt(healthPercent * 100)}%)";
+                CreateText("Health", healthRow.transform, healthText, 13, healthColor);
+            }
+
+            var actionRow = CreateHorizontalGroup(entry.transform, "ActionRow");
+            var teleportBtn = CreateModernButton("TeleportBtn", actionRow.transform, CoopLocalization.Get("ui.teleport.toPlayer"), () =>
+            {
+                TeleportManager.Instance?.TeleportToPlayer(status.EndPoint);
+            }, -1, ModernColors.Primary, 35, 14);
+        }
     }
 
     private void UpdateVotePanel()
@@ -1822,6 +1885,12 @@ public class MModUI : MonoBehaviour
                     StartCoroutine(AnimatePanel(_components.SpectatorPanel, false));
             }
         }
+    }
+
+    private bool IsMapOpen()
+    {
+        var instance = MiniMapView.Instance;
+        return instance != null && View.ActiveView == instance;
     }
 
     #endregion
@@ -2965,29 +3034,46 @@ public class MModUI : MonoBehaviour
 
     internal void DebugPrintLootBoxes()
     {
-        if (LevelManager.LootBoxInventories == null)
+        try
         {
-            Debug.LogWarning("LootBoxInventories is null. Make sure you are in a game level.");
-            SetStatusText("[!] " + CoopLocalization.Get("ui.error.mustInLevel"), ModernColors.Warning);
-            return;
-        }
+            var lm = LevelManager.Instance;
+            if (lm == null)
+            {
+                Debug.LogWarning("LevelManager.Instance is null. Make sure you are in a game level.");
+                SetStatusText("[!] " + CoopLocalization.Get("ui.error.mustInLevel"), ModernColors.Warning);
+                return;
+            }
 
-        var count = 0;
-        foreach (var i in LevelManager.LootBoxInventories)
+            var lootBoxes = LevelManager.LootBoxInventories;
+            if (lootBoxes == null)
+            {
+                Debug.LogWarning("LootBoxInventories is null. Make sure you are in a game level.");
+                SetStatusText("[!] " + CoopLocalization.Get("ui.error.mustInLevel"), ModernColors.Warning);
+                return;
+            }
+
+            var count = 0;
+            foreach (var i in lootBoxes)
+            {
+                try
+                {
+                    Debug.Log($"Name {i.Value.name} DisplayNameKey {i.Value.DisplayNameKey} Key {i.Key}");
+                    count++;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"Error printing loot box: {ex.Message}");
+                }
+            }
+
+            Debug.Log($"Total LootBoxes: {count}");
+            SetStatusText($"[OK] " + CoopLocalization.Get("ui.debug.lootBoxCount", count), ModernColors.Success);
+        }
+        catch (Exception ex)
         {
-            try
-            {
-                Debug.Log($"Name {i.Value.name} DisplayNameKey {i.Value.DisplayNameKey} Key {i.Key}");
-                count++;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"Error printing loot box: {ex.Message}");
-            }
+            Debug.LogError($"[DebugPrintLootBoxes] Exception: {ex.Message}");
+            SetStatusText("[!] Error printing loot boxes", ModernColors.Error);
         }
-
-        Debug.Log($"Total LootBoxes: {count}");
-        SetStatusText($"[OK] " + CoopLocalization.Get("ui.debug.lootBoxCount", count), ModernColors.Success);
     }
 
     internal void OnTransportModeChanged(NetworkTransportMode newMode)

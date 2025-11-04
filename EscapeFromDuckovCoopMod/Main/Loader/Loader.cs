@@ -22,6 +22,11 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
 
     public void OnEnable()
     {
+        Debug.Log("========================================");
+        Debug.Log($"[EscapeFromDuckovCoopMod] Version {BuildInfo.ModVersion} Loading...");
+        Debug.Log($"[EscapeFromDuckovCoopMod] Git Commit: {BuildInfo.GitCommit}");
+        Debug.Log("========================================");
+        
         Harmony = new Harmony("DETF_COOP");
         Harmony.PatchAll();
 
@@ -32,11 +37,16 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         COOPManager.InitManager();
         go.AddComponent<ModBehaviourF>();
         Loader();
+        
+        Debug.Log("[EscapeFromDuckovCoopMod] All systems loaded successfully!");
     }
 
     public void Loader()
     {
+        Debug.Log("[Loader] Starting component initialization...");
+        
         CoopLocalization.Initialize();
+        Debug.Log("[Loader] Localization initialized");
 
         var go = new GameObject("COOP_MOD_");
         DontDestroyOnLoad(go);
@@ -49,6 +59,12 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         go.AddComponent<LocalPlayerManager>();
         go.AddComponent<SendLocalPlayerStatus>();
         go.AddComponent<Spectator>();
+        
+        Debug.Log("[Loader] Initializing teleport and player color systems...");
+        go.AddComponent<TeleportManager>();
+        go.AddComponent<PlayerColorManager>();
+        Debug.Log("[Loader] Teleport and player color systems added");
+        
         go.AddComponent<DeadLootBox>();
         go.AddComponent<LootManager>();
         go.AddComponent<SceneNet>();
@@ -56,7 +72,9 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         go.AddComponent<MModUI>();
         CoopTool.Init();
 
+        Debug.Log("[Loader] All components initialized, starting deferred initialization...");
         DeferredInit();
+        Debug.Log("[Loader] Initialization complete!");
     }
 
     private void DeferredInit()

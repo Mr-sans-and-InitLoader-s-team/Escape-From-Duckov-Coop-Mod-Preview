@@ -22,15 +22,10 @@ namespace EscapeFromDuckovCoopMod;
 
 public static class CoopTool
 {
-    // 客户端：本地 SELF 权威包尚未套用时缓存
-    public static bool _cliSelfHpPending;
-
-    public static float _cliSelfHpMax, _cliSelfHpCur;
-
     public static readonly Dictionary<string, List<(int weaponTypeId, int buffId)>> _cliPendingProxyBuffs = new();
 
     // 客户端：远端克隆未生成前收到的远端HP缓存
-    public static readonly Dictionary<string, (float max, float cur)> _cliPendingRemoteHp = new();
+    public static readonly Dictionary<string, (HealthTool.HealthSnapshot snapshot, uint sequence)> _cliPendingRemoteHp = new();
 
     private static NetService Service
     {
@@ -239,37 +234,12 @@ public static class CoopTool
     }
 
 
-    public static void Client_ApplyPendingSelfIfReady()
-    {
-        if (!_cliSelfHpPending) return;
-        var main = CharacterMainControl.Main;
-        if (!main) return;
-
-        var h = main.GetComponentInChildren<Health>(true);
-        var cmc = main.GetComponent<CharacterMainControl>();
-        if (!h) return;
-
-        try
-        {
-            h.autoInit = false;
-        }
-        catch
-        {
-        } // 防止本地也被 Init() 回满
-
-        HealthTool.BindHealthToCharacter(h, cmc);
-        HealthM.Instance.ForceSetHealth(h, _cliSelfHpMax, _cliSelfHpCur);
-
-        // 若现在血量已到 0，补一次死亡事件（只在客户端本地）
-        LocalPlayerManager.Instance.Client_EnsureSelfDeathEvent(h, cmc);
-
-        _cliSelfHpPending = false;
-    }
-
     public static void Client_ApplyPendingRemoteIfAny(string playerId, GameObject go)
     {
         if (string.IsNullOrEmpty(playerId) || !go) return;
-        if (!_cliPendingRemoteHp.TryGetValue(playerId, out var snap)) return;
+        if (HealthM.Instance == null) return;
+
+        if (!_cliPendingRemoteHp.TryGetValue(playerId, out var pending)) return;
 
         var cmc = go.GetComponent<CharacterMainControl>();
         var h = cmc.Health;
@@ -286,10 +256,10 @@ public static class CoopTool
 
         HealthTool.BindHealthToCharacter(h, cmc);
 
-        var applyMax = snap.max > 0f ? snap.max : h.MaxHealth > 0f ? h.MaxHealth : 40f;
-        var applyCur = snap.cur > 0f ? snap.cur : applyMax;
+        var fallbackMax = h.MaxHealth > 0f ? h.MaxHealth : 40f;
+        var toApply = pending.snapshot.WithFallbacks(fallbackMax);
 
-        HealthM.Instance.ForceSetHealth(h, applyMax, applyCur);
+        HealthM.Instance.Client_ApplyRemoteSnapshot(playerId, go, toApply, pending.sequence, true);
         _cliPendingRemoteHp.Remove(playerId);
 
 

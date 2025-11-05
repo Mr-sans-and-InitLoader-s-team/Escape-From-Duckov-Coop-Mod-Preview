@@ -16,6 +16,7 @@
 
 using System.Reflection;
 using Duckov.UI;
+using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
 
@@ -23,20 +24,55 @@ namespace EscapeFromDuckovCoopMod;
 
 public static class HealthTool
 {
+    public readonly struct HealthSnapshot
+    {
+        public readonly float Max;
+        public readonly float Current;
+
+        public static HealthSnapshot Empty => new(0f, 0f);
+
+        public HealthSnapshot(float max, float current)
+        {
+            Max = max;
+            Current = current;
+        }
+
+        public bool HasValues => Max > 0f || Current > 0f;
+
+        public bool IsValid => Max > 0f;
+
+        public bool ApproximatelyEquals(HealthSnapshot other)
+        {
+            return Mathf.Approximately(Max, other.Max) && Mathf.Approximately(Current, other.Current);
+        }
+
+        public HealthSnapshot WithFallbacks(float fallbackMax)
+        {
+            var max = Max > 0f ? Max : fallbackMax;
+            if (max <= 0f) max = fallbackMax;
+
+            var cur = Current > 0f ? Current : max;
+            return new HealthSnapshot(max, cur);
+        }
+    }
+
     public static bool _cliHookedSelf;
     public static UnityAction<Health> _cbSelfHpChanged, _cbSelfMaxChanged;
     public static UnityAction<DamageInfo> _cbSelfHurt, _cbSelfDead;
     public static float _cliNextSendHp = 0f;
-    public static (float max, float cur) _cliLastSentHp = (0f, 0f);
+    public static HealthSnapshot _cliLastSentHp = HealthSnapshot.Empty;
 
     // 主机端：Health -> 所属 Peer 的映射（host 自己用 null）
     public static readonly Dictionary<Health, NetPeer> _srvHealthOwner = new();
     public static readonly HashSet<Health> _srvHooked = new();
-    public static float _cliLastSelfHurtAt = -999f; // 最后本地受击时间
-    public static float _cliLastSelfHpLocal = -1f; // 受击后本地血量（用于对比回显）
     public static bool _cliInitHpReported = false;
 
-    public static readonly Dictionary<NetPeer, (float max, float cur)> _srvPendingHp = new();
+    public static readonly Dictionary<NetPeer, (HealthSnapshot snapshot, uint sequence)> _srvPendingHp = new();
+
+    public static bool IsSequenceNewer(uint current, uint previous)
+    {
+        return unchecked((int)(current - previous)) > 0;
+    }
 
 
     // 反射字段（Health 反编译字段）研究了20年研究出来的
@@ -164,20 +200,16 @@ public static class HealthTool
         }
 
         // 1) 若服务器已缓存了该客户端"自报"的权威血量，先套用并广给其他客户端
-        if (peer != null && _srvPendingHp.TryGetValue(peer, out var snap))
+        if (peer != null && _srvPendingHp.TryGetValue(peer, out var pending))
         {
-            // 使用防回环标志避免循环广播
-            HealthM.Instance._srvApplyingHealth.Add(h);
-            try
-            {
-                HealthM.Instance.ApplyHealthAndEnsureBar(instance, snap.max, snap.cur);
-            }
-            finally
-            {
-                HealthM.Instance._srvApplyingHealth.Remove(h);
-            }
+            var snap = pending.snapshot;
+            var seq = pending.sequence;
+            var toApply = snap.IsValid ? snap : snap.WithFallbacks(40f);
+            HealthM.Instance.ApplyHealthAndEnsureBar(instance, toApply.Max, toApply.Current);
             _srvPendingHp.Remove(peer);
-            HealthM.Instance.Server_OnHealthChanged(peer, h);
+
+            if (snap.IsValid)
+                HealthM.Instance.Server_BroadcastClientHealth(peer, snap, true, seq);
             return;
         }
 
@@ -206,7 +238,10 @@ public static class HealthTool
         }
 
         HealthM.Instance.ApplyHealthAndEnsureBar(instance, max, cur); // 会确保 showHealthBar + RequestHealthBar + 多帧重试
-        HealthM.Instance.Server_OnHealthChanged(peer, h); // 立刻推一帧给“其他玩家”
+        if (peer == null)
+            HealthM.Instance.Server_OnHealthChanged(null, h, true);
+        else
+            HealthM.Instance.Server_BroadcastClientHealth(peer, new HealthSnapshot(max, cur), true);
     }
 
 
@@ -221,15 +256,6 @@ public static class HealthTool
         _cbSelfMaxChanged = _ => HealthM.Instance.Client_SendSelfHealth(h, true);
         _cbSelfHurt = di =>
         {
-            _cliLastSelfHurtAt = Time.time; // 记录受击时间
-            try
-            {
-                _cliLastSelfHpLocal = h.CurrentHealth;
-            }
-            catch
-            {
-            }
-
             HealthM.Instance.Client_SendSelfHealth(h, true); // 受击当帧强制上报，跳过 20Hz 节流
         };
         _cbSelfDead = _ => HealthM.Instance.Client_SendSelfHealth(h, true);

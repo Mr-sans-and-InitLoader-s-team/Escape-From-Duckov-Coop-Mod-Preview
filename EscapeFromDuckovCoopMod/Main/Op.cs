@@ -33,9 +33,9 @@ public enum Op : byte
     ITEM_SPAWN = 13,
     ITEM_PICKUP_REQUEST = 14,
     ITEM_DESPAWN = 15,
-    PLAYER_HEALTH_REPORT = 16, // 客户端 -> 主机：上传自己当前(max,curr)                  
-    AUTH_HEALTH_SELF = 17, // 主机 -> 某个客户端：把“你自己本地人物”的(max,cur)设为权威值
-    AUTH_HEALTH_REMOTE = 18, // 主机 -> 所有客户端：某位玩家的(max,cur)用于远端展示（带 playerId）
+    PLAYER_HEALTH_REPORT = 16, // 客户端 -> 主机：上传自己当前(max,curr,seq)
+    AUTH_HEALTH_SELF = 17, // （保留，不再使用）
+    AUTH_HEALTH_REMOTE = 18, // 主机 -> 所有客户端：某位玩家的(max,cur,seq)用于远端展示（带 playerId）
     SCENE_VOTE_START = 19, // 主机 -> 全体：开始投票（下发目标 SceneID、Curtain GUID 等）
     SCENE_READY_SET = 20, // 客户端 -> 主机：我切换准备；主机 -> 全体：某人准备状态改变
     SCENE_BEGIN_LOAD = 21, // 主机 -> 全体：统一开始加载

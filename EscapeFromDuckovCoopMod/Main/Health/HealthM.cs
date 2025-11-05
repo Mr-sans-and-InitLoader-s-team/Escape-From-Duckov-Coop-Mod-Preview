@@ -14,29 +14,30 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System;
 using System.Collections;
+using System.Collections.Generic;
 using LiteNetLib;
 using LiteNetLib.Utils;
+using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
 
 public class HealthM : MonoBehaviour
 {
-    private const float SRV_HP_SEND_COOLDOWN = 0.5f; // 降低频率到每0.5秒一次
-    private const float HP_CHANGE_THRESHOLD = 0.5f; // 血量变化阈值：至少变化0.5才同步
+    private const float CLIENT_SEND_COOLDOWN = 0.05f;
     public static HealthM Instance;
-    private static (float max, float cur) _cliLastSentHp = HealthTool._cliLastSentHp;
+    private static HealthTool.HealthSnapshot _cliLastSentHp = HealthTool._cliLastSentHp;
     private static float _cliNextSendHp = HealthTool._cliNextSendHp;
+    private static uint _cliLastSequence = 0;
 
-    public bool _cliApplyingSelfSnap;
-    public float _cliEchoMuteUntil;
     private readonly Dictionary<Health, NetPeer> _srvHealthOwner = HealthTool._srvHealthOwner;
+    private readonly Dictionary<string, (HealthTool.HealthSnapshot snapshot, uint sequence)> _srvLastBroadcastByPlayerId = new();
+    private readonly Dictionary<NetPeer, uint> _srvLastClientSequence = new();
+    private readonly Dictionary<string, uint> _cliLastRemoteSequence = new();
+    private readonly Dictionary<Health, Coroutine> _ensureBarCoroutines = new();
+    private readonly HashSet<Health> _appliedOnce = new();
 
-    private readonly Dictionary<Health, (float max, float cur)> _srvLastSent = new();
-    private readonly Dictionary<Health, float> _srvNextSend = new();
-    
-    public readonly HashSet<Health> _srvApplyingHealth = new HashSet<Health>();
-    
     private bool _rpcRegistered = false;
 
     private NetService Service => NetService.Instance;
@@ -54,6 +55,18 @@ public class HealthM : MonoBehaviour
     public void Init()
     {
         Instance = this;
+        _srvLastBroadcastByPlayerId.Clear();
+        _srvLastClientSequence.Clear();
+        _cliLastRemoteSequence.Clear();
+        foreach (var kv in _ensureBarCoroutines)
+        {
+            if (kv.Value != null) StopCoroutine(kv.Value);
+        }
+        _ensureBarCoroutines.Clear();
+        _appliedOnce.Clear();
+        _cliLastSequence = 0;
+        UpdateClientSnapshotState(HealthTool.HealthSnapshot.Empty);
+        UpdateClientCooldown(0f);
         RegisterRPCs();
     }
     
@@ -67,7 +80,6 @@ public class HealthM : MonoBehaviour
         }
 
         rpcManager.RegisterRPC("PlayerHealthReport", OnRPC_PlayerHealthReport);
-        rpcManager.RegisterRPC("AuthHealthSelf", OnRPC_AuthHealthSelf);
         rpcManager.RegisterRPC("AuthHealthRemote", OnRPC_AuthHealthRemote);
         
         _rpcRegistered = true;
@@ -79,12 +91,9 @@ public class HealthM : MonoBehaviour
         return COOPManager.AIHandle._cliAiMaxOverride.TryGetValue(h, out v);
     }
 
-
-    public void Client_SendSelfHealth(Health h, bool force)
+    private static HealthTool.HealthSnapshot CaptureSnapshot(Health h)
     {
-        if (_cliApplyingSelfSnap || Time.time < _cliEchoMuteUntil) return;
-
-        if (!networkStarted || IsServer || h == null) return;
+        if (!h) return HealthTool.HealthSnapshot.Empty;
 
         float max = 0f, cur = 0f;
         try
@@ -103,35 +112,116 @@ public class HealthM : MonoBehaviour
         {
         }
 
-        if (!force && Mathf.Approximately(max, _cliLastSentHp.max) && Mathf.Approximately(cur, _cliLastSentHp.cur))
-            return;
+        return new HealthTool.HealthSnapshot(max, cur);
+    }
 
-        if (!force && Time.time < _cliNextSendHp) return;
+    private static void UpdateClientSnapshotState(HealthTool.HealthSnapshot snapshot)
+    {
+        _cliLastSentHp = snapshot;
+        HealthTool._cliLastSentHp = snapshot;
+    }
+
+    private static void UpdateClientCooldown(float nextSendTime)
+    {
+        _cliNextSendHp = nextSendTime;
+        HealthTool._cliNextSendHp = nextSendTime;
+    }
+
+    private bool Client_SendSnapshotToServer(HealthTool.HealthSnapshot snapshot, uint sequence)
+    {
+        var sent = false;
 
         if (connectedPeer != null)
         {
-            var w = new NetDataWriter();
-            w.Put((byte)Op.PLAYER_HEALTH_REPORT);
-            w.Put(max);
-            w.Put(cur);
-            connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
-
-            _cliLastSentHp = (max, cur);
-            _cliNextSendHp = Time.time + 0.05f;
+            var reportWriter = new NetDataWriter();
+            reportWriter.Put((byte)Op.PLAYER_HEALTH_REPORT);
+            reportWriter.Put(snapshot.Max);
+            reportWriter.Put(snapshot.Current);
+            reportWriter.Put(sequence);
+            connectedPeer.Send(reportWriter, DeliveryMethod.ReliableOrdered);
+            sent = true;
         }
-        
-        if (_rpcRegistered && connectedPeer != null)
+
+        if (!_rpcRegistered || connectedPeer == null) return sent;
+
+        var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager == null) return sent;
+
+        rpcManager.CallRPC("PlayerHealthReport", Net.HybridP2P.RPCTarget.Server, 0, writer =>
         {
-            var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
-            if (rpcManager != null)
+            writer.Put(snapshot.Max);
+            writer.Put(snapshot.Current);
+            writer.Put(sequence);
+        }, DeliveryMethod.ReliableOrdered);
+
+        return true;
+    }
+
+
+    public void Client_SendSelfHealth(Health h, bool force)
+    {
+        if (!networkStarted || IsServer || h == null) return;
+
+        var snapshot = CaptureSnapshot(h);
+
+        if (!force && snapshot.ApproximatelyEquals(_cliLastSentHp))
+            return;
+
+        var now = Time.time;
+        if (!force && now < _cliNextSendHp) return;
+
+        var nextSequence = unchecked(_cliLastSequence + 1);
+        if (Client_SendSnapshotToServer(snapshot, nextSequence))
+        {
+            _cliLastSequence = nextSequence;
+            UpdateClientSnapshotState(snapshot);
+            UpdateClientCooldown(now + CLIENT_SEND_COOLDOWN);
+        }
+    }
+
+    internal void Client_ApplyRemoteSnapshot(string playerId, GameObject go, HealthTool.HealthSnapshot snapshot, uint sequence, bool force = false)
+    {
+        if (string.IsNullOrEmpty(playerId) || !go) return;
+
+        if (!force && sequence != 0 &&
+            _cliLastRemoteSequence.TryGetValue(playerId, out var lastSeq) &&
+            !HealthTool.IsSequenceNewer(sequence, lastSeq))
+            return;
+
+        var h = go.GetComponentInChildren<Health>(true);
+        float fallbackMax = 40f;
+        if (h)
+        {
+            try
             {
-                rpcManager.CallRPC("PlayerHealthReport", Net.HybridP2P.RPCTarget.Server, 0, (writer) =>
-                {
-                    writer.Put(max);
-                    writer.Put(cur);
-                }, DeliveryMethod.ReliableOrdered);
+                var candidate = h.MaxHealth;
+                if (candidate > 0f) fallbackMax = candidate;
+            }
+            catch
+            {
             }
         }
+
+        var toApply = snapshot.WithFallbacks(fallbackMax);
+
+        ApplyHealthAndEnsureBar(go, toApply.Max, toApply.Current);
+
+        if (sequence != 0)
+            _cliLastRemoteSequence[playerId] = sequence;
+    }
+
+    internal void Client_StorePendingRemoteSnapshot(string playerId, HealthTool.HealthSnapshot snapshot, uint sequence)
+    {
+        if (string.IsNullOrEmpty(playerId)) return;
+
+        if (CoopTool._cliPendingRemoteHp.TryGetValue(playerId, out var existing))
+        {
+            var existingSeq = existing.sequence;
+            if (sequence != 0 && existingSeq != 0 && !HealthTool.IsSequenceNewer(sequence, existingSeq))
+                return;
+        }
+
+        CoopTool._cliPendingRemoteHp[playerId] = (snapshot, sequence);
     }
 
 
@@ -140,23 +230,8 @@ public class HealthM : MonoBehaviour
         if (!networkStarted || !IsServer || h == null) return;
         if (!_srvHealthOwner.TryGetValue(h, out var ownerPeer) || ownerPeer == null) return;
 
-        var w = writer;
-        if (w == null) return;
-        w.Reset();
-        w.Put((byte)Op.AUTH_HEALTH_SELF);
-        float max = 0f, cur = 0f;
-        try
-        {
-            max = h.MaxHealth;
-            cur = h.CurrentHealth;
-        }
-        catch
-        {
-        }
-
-        w.Put(max);
-        w.Put(cur);
-        ownerPeer.Send(w, DeliveryMethod.ReliableOrdered);
+        var snapshot = CaptureSnapshot(h);
+        Server_BroadcastClientHealth(ownerPeer, snapshot, true);
     }
 
     public void Server_ForwardHurtToOwner(NetPeer owner, DamageInfo di)
@@ -199,6 +274,8 @@ public class HealthM : MonoBehaviour
             var main = LevelManager.Instance ? LevelManager.Instance.MainCharacter : null;
             if (!main || main.Health == null) return;
 
+            var health = main.Health;
+
             // 构造 DamageInfo（攻击者此处可不给/或给 main，自身并不影响结算核心）
             var di = new DamageInfo(main)
             {
@@ -214,12 +291,9 @@ public class HealthM : MonoBehaviour
                 isExplosion = boom
             };
 
-            // 记录“最近一次本地受击时间”，便于已有的 echo 抑制逻辑
-            HealthTool._cliLastSelfHurtAt = Time.time;
+            health.Hurt(di);
 
-            main.Health.Hurt(di);
-
-            Client_ReportSelfHealth_IfReadyOnce();
+            Client_SendSelfHealth(health, true);
         }
         catch (Exception e)
         {
@@ -229,7 +303,6 @@ public class HealthM : MonoBehaviour
 
     public void Client_ReportSelfHealth_IfReadyOnce()
     {
-        if (_cliApplyingSelfSnap || Time.time < _cliEchoMuteUntil) return;
         if (IsServer || HealthTool._cliInitHpReported) return;
         if (connectedPeer == null || connectedPeer.ConnectionState != ConnectionState.Connected) return;
 
@@ -237,165 +310,131 @@ public class HealthM : MonoBehaviour
         var h = main ? main.GetComponentInChildren<Health>(true) : null;
         if (!h) return;
 
-        float max = 0f, cur = 0f;
-        try
+        var snapshot = CaptureSnapshot(h);
+        var now = Time.time;
+        var nextSequence = unchecked(_cliLastSequence + 1);
+        if (Client_SendSnapshotToServer(snapshot, nextSequence))
         {
-            max = h.MaxHealth;
+            _cliLastSequence = nextSequence;
+            UpdateClientSnapshotState(snapshot);
+            UpdateClientCooldown(now + CLIENT_SEND_COOLDOWN);
+            HealthTool._cliInitHpReported = true;
         }
-        catch
-        {
-        }
-
-        try
-        {
-            cur = h.CurrentHealth;
-        }
-        catch
-        {
-        }
-
-        var w = new NetDataWriter();
-        w.Put((byte)Op.PLAYER_HEALTH_REPORT);
-        w.Put(max);
-        w.Put(cur);
-        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
-
-        HealthTool._cliInitHpReported = true;
     }
 
-    public void Server_OnHealthChanged(NetPeer ownerPeer, Health h)
+    public void Server_OnHealthChanged(NetPeer ownerPeer, Health h, bool force = false)
     {
         if (!IsServer || !h) return;
-        
-        // 如果正在应用血量，阻止回环
-        if (_srvApplyingHealth.Contains(h)) return;
+        if (ownerPeer != null) return;
 
-        float max = 0f, cur = 0f;
-        try
-        {
-            max = h.MaxHealth;
-        }
-        catch
-        {
-        }
+        var snapshot = CaptureSnapshot(h);
+        if (!snapshot.IsValid) return;
 
-        try
-        {
-            cur = h.CurrentHealth;
-        }
-        catch
-        {
-        }
+        Server_BroadcastClientHealth(null, snapshot, force);
+    }
 
-        if (max <= 0f) return;
-        
-        var now = Time.time;
-        
-        // 检查是否有显著变化或冷却时间已到
-        bool hasSignificantChange = false;
-        if (_srvLastSent.TryGetValue(h, out var last))
+    public void Server_ProcessClientHealthReport(NetPeer peer, float max, float cur, uint sequence)
+    {
+        if (!IsServer || peer == null) return;
+
+        var snapshot = new HealthTool.HealthSnapshot(max, cur);
+
+        if (sequence == 0)
         {
-            float maxDiff = Mathf.Abs(max - last.max);
-            float curDiff = Mathf.Abs(cur - last.cur);
-            hasSignificantChange = (maxDiff >= HP_CHANGE_THRESHOLD) || (curDiff >= HP_CHANGE_THRESHOLD);
-            
-            // 如果变化不显著且值相同，直接返回
-            if (!hasSignificantChange && Mathf.Approximately(max, last.max) && Mathf.Approximately(cur, last.cur))
-                return;
-        }
-        else
-        {
-            hasSignificantChange = true; // 首次发送
+            sequence = _srvLastClientSequence.TryGetValue(peer, out var last)
+                ? unchecked(last + 1)
+                : 1u;
         }
 
-        // 如果有显著变化，立即发送；否则检查冷却时间
-        if (!hasSignificantChange)
+        if (_srvLastClientSequence.TryGetValue(peer, out var prevSeq) &&
+            !HealthTool.IsSequenceNewer(sequence, prevSeq))
         {
-            if (_srvNextSend.TryGetValue(h, out var tNext) && now < tNext)
-                return;
-        }
-
-        _srvLastSent[h] = (max, cur);
-        _srvNextSend[h] = now + SRV_HP_SEND_COOLDOWN;
-
-        var pid = NetService.Instance.GetPlayerId(ownerPeer);
-
-        if (ownerPeer == null)
-        {
-            try
-            {
-                h.OnMaxHealthChange?.Invoke(h);
-                h.OnHealthChange?.Invoke(h);
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[HealthM] Failed to invoke host health change events: {e.Message}");
-            }
-            
-            var wHost = new NetDataWriter();
-            wHost.Put((byte)Op.AUTH_HEALTH_REMOTE);
-            wHost.Put(pid);
-            wHost.Put(max);
-            wHost.Put(cur);
-
-            foreach (var p in netManager.ConnectedPeerList)
-            {
-                p.Send(wHost, DeliveryMethod.ReliableOrdered);
-            }
-            
-            if (_rpcRegistered)
-            {
-                var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
-                if (rpcManager != null)
-                {
-                    rpcManager.CallRPC("AuthHealthRemote", Net.HybridP2P.RPCTarget.AllClients, 0, (writer) =>
-                    {
-                        writer.Put(pid);
-                        writer.Put(max);
-                        writer.Put(cur);
-                    }, DeliveryMethod.ReliableOrdered);
-                }
-            }
+            if (!snapshot.IsValid)
+                HealthTool._srvPendingHp[peer] = (snapshot, prevSeq);
             return;
         }
 
-        if (ownerPeer.ConnectionState == ConnectionState.Connected)
+        _srvLastClientSequence[peer] = sequence;
+
+        if (!snapshot.IsValid)
         {
-            var w1 = new NetDataWriter();
-            w1.Put((byte)Op.AUTH_HEALTH_SELF);
-            w1.Put(max);
-            w1.Put(cur);
-            ownerPeer.Send(w1, DeliveryMethod.ReliableOrdered);
+            HealthTool._srvPendingHp[peer] = (snapshot, sequence);
+            return;
         }
 
-        var w2 = new NetDataWriter();
-        w2.Put((byte)Op.AUTH_HEALTH_REMOTE);
-        w2.Put(pid);
-        w2.Put(max);
-        w2.Put(cur);
-
-        foreach (var p in netManager.ConnectedPeerList)
+        if (remoteCharacters != null && remoteCharacters.TryGetValue(peer, out var go) && go)
         {
-            if (p == ownerPeer) continue;
-            p.Send(w2, DeliveryMethod.ReliableOrdered);
+            var h = go.GetComponentInChildren<Health>(true);
+            if (!h) return;
+
+            ApplyHealthAndEnsureBar(go, snapshot.Max, snapshot.Current);
+            HealthTool._srvPendingHp.Remove(peer);
+            Server_BroadcastClientHealth(peer, snapshot, false, sequence);
         }
-        
-        if (_rpcRegistered && ownerPeer.ConnectionState == ConnectionState.Connected)
+        else
+        {
+            HealthTool._srvPendingHp[peer] = (snapshot, sequence);
+        }
+    }
+
+    internal void Server_BroadcastClientHealth(NetPeer ownerPeer, HealthTool.HealthSnapshot snapshot, bool force = false, uint sequence = 0)
+    {
+        if (!IsServer || !snapshot.IsValid) return;
+
+        var pid = NetService.Instance.GetPlayerId(ownerPeer);
+        if (string.IsNullOrEmpty(pid)) return;
+
+        if (_srvLastBroadcastByPlayerId.TryGetValue(pid, out var last) &&
+            (!HealthTool.IsSequenceNewer(sequence, last.sequence) || force))
+        {
+            if (!HealthTool.IsSequenceNewer(sequence, last.sequence))
+            {
+                if (!force && last.snapshot.ApproximatelyEquals(snapshot))
+                    return;
+                sequence = unchecked(last.sequence + 1);
+            }
+            else if (force && sequence <= last.sequence)
+            {
+                sequence = unchecked(last.sequence + 1);
+            }
+        }
+
+        if (sequence == 0)
+        {
+            sequence = _srvLastBroadcastByPlayerId.TryGetValue(pid, out var prev)
+                ? unchecked(prev.sequence + 1)
+                : 1u;
+        }
+
+        _srvLastBroadcastByPlayerId[pid] = (snapshot, sequence);
+
+        if (netManager != null)
+        {
+            foreach (var peer in netManager.ConnectedPeerList)
+            {
+                if (ownerPeer != null && peer == ownerPeer) continue;
+
+                var remoteWriter = new NetDataWriter();
+                remoteWriter.Put((byte)Op.AUTH_HEALTH_REMOTE);
+                remoteWriter.Put(pid);
+                remoteWriter.Put(snapshot.Max);
+                remoteWriter.Put(snapshot.Current);
+                remoteWriter.Put(sequence);
+                peer.Send(remoteWriter, DeliveryMethod.ReliableOrdered);
+            }
+        }
+
+        if (_rpcRegistered)
         {
             var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
             if (rpcManager != null)
             {
-                rpcManager.CallRPC("AuthHealthSelf", Net.HybridP2P.RPCTarget.TargetClient, ownerPeer.Id, (writer) =>
-                {
-                    writer.Put(max);
-                    writer.Put(cur);
-                }, DeliveryMethod.ReliableOrdered);
-                
-                rpcManager.CallRPC("AuthHealthRemote", Net.HybridP2P.RPCTarget.AllClients, 0, (writer) =>
+                rpcManager.CallRPC("AuthHealthRemote", Net.HybridP2P.RPCTarget.AllClients, 0, writer =>
                 {
                     writer.Put(pid);
-                    writer.Put(max);
-                    writer.Put(cur);
+                    writer.Put(snapshot.Max);
+                    writer.Put(snapshot.Current);
+                    writer.Put(sequence);
                 }, DeliveryMethod.ReliableOrdered);
             }
         }
@@ -421,49 +460,53 @@ public class HealthM : MonoBehaviour
 
 
     // 起条兜底：多帧重复请求血条，避免 UI 初始化竞态
-    private static IEnumerator EnsureBarRoutine(Health h, int attempts, float interval)
+    private void EnsureBarLater(Health h, int attempts, float interval)
     {
-        for (var i = 0; i < attempts; i++)
+        if (!h) return;
+
+        if (_ensureBarCoroutines.TryGetValue(h, out var running) && running != null)
+            return;
+
+        var routine = StartCoroutine(EnsureBarRoutine(h, attempts, interval));
+        if (routine != null)
+            _ensureBarCoroutines[h] = routine;
+    }
+
+    private IEnumerator EnsureBarRoutine(Health h, int attempts, float interval)
+    {
+        try
         {
-            if (h == null) yield break;
-            try
+            for (var i = 0; i < attempts; i++)
             {
-                h.showHealthBar = true;
-            }
-            catch
-            {
-            }
+                if (!h) break;
 
-            try
-            {
-                h.RequestHealthBar();
-            }
-            catch
-            {
-            }
+                try
+                {
+                    h.showHealthBar = true;
+                }
+                catch
+                {
+                }
 
-            try
-            {
-                h.OnMaxHealthChange?.Invoke(h);
-            }
-            catch
-            {
-            }
+                try
+                {
+                    h.RequestHealthBar();
+                }
+                catch
+                {
+                }
 
-            try
-            {
-                h.OnHealthChange?.Invoke(h);
+                yield return new WaitForSeconds(interval);
             }
-            catch
-            {
-            }
-
-            yield return new WaitForSeconds(interval);
+        }
+        finally
+        {
+            _ensureBarCoroutines.Remove(h);
         }
     }
 
     // 把 (max,cur) 灌到 Health，并确保血条显示（修正 defaultMax=0）
-    public void ForceSetHealth(Health h, float max, float cur, bool ensureBar = true)
+    public void ForceSetHealth(Health h, float max, float cur, bool ensureBar = true, bool forceEvent = false)
     {
         if (!h) return;
 
@@ -485,13 +528,15 @@ public class HealthM : MonoBehaviour
         {
         }
 
-        // ★ 只要传入的 max 更大，就把 defaultMaxHealth 调到更大，并触发一次 Max 变更事件
+        var maxChanged = false;
+
+        // ★ 只要传入的 max 更大，就把 defaultMaxHealth 调到更大
         if (max > 0f && (nowMax <= 0f || max > nowMax + 0.0001f || defMax <= 0))
             try
             {
                 HealthTool.FI_defaultMax?.SetValue(h, Mathf.RoundToInt(max));
                 HealthTool.FI_lastMax?.SetValue(h, -12345f);
-                h.OnMaxHealthChange?.Invoke(h);
+                maxChanged = true;
             }
             catch
             {
@@ -507,47 +552,58 @@ public class HealthM : MonoBehaviour
         {
         }
 
+        var prevCur = 0f;
+        try
+        {
+            prevCur = h.CurrentHealth;
+        }
+        catch
+        {
+        }
+
+        var usedSetter = false;
+        var healthChanged = false;
+
         if (effMax > 0f && cur > effMax + 0.0001f)
         {
             try
             {
                 HealthTool.FI__current?.SetValue(h, cur);
+                healthChanged = !Mathf.Approximately(prevCur, cur);
             }
             catch
             {
             }
 
-            try
-            {
-                h.OnHealthChange?.Invoke(h);
-            }
-            catch
-            {
-            }
         }
         else
         {
             try
             {
                 h.SetHealth(cur);
+                usedSetter = true;
+                float actual;
+                try
+                {
+                    actual = h.CurrentHealth;
+                }
+                catch
+                {
+                    actual = cur;
+                }
+
+                healthChanged = !Mathf.Approximately(prevCur, actual);
             }
             catch
             {
                 try
                 {
                     HealthTool.FI__current?.SetValue(h, cur);
+                    healthChanged = !Mathf.Approximately(prevCur, cur);
                 }
                 catch
                 {
                 }
-            }
-
-            try
-            {
-                h.OnHealthChange?.Invoke(h);
-            }
-            catch
-            {
             }
         }
 
@@ -569,7 +625,29 @@ public class HealthM : MonoBehaviour
             {
             }
 
-            StartCoroutine(EnsureBarRoutine(h, 30, 0.1f));
+            EnsureBarLater(h, 30, 0.1f);
+        }
+
+        if (forceEvent || maxChanged)
+        {
+            try
+            {
+                h.OnMaxHealthChange?.Invoke(h);
+            }
+            catch
+            {
+            }
+        }
+
+        if (forceEvent || (!usedSetter && healthChanged))
+        {
+            try
+            {
+                h.OnHealthChange?.Invoke(h);
+            }
+            catch
+            {
+            }
         }
     }
 
@@ -594,10 +672,14 @@ public class HealthM : MonoBehaviour
         // 绑定 Health ⇄ Character（否则 UI/Hidden 判断拿不到角色）
         HealthTool.BindHealthToCharacter(h, cmc);
 
-        // 先把数值灌进去（内部会触发 OnMax/OnHealth）
-        ForceSetHealth(h, max > 0 ? max : 40f, cur > 0 ? cur : max > 0 ? max : 40f, false);
+        var resolvedMax = max > 0f ? max : 40f;
+        if (resolvedMax <= 0f) resolvedMax = 40f;
+        var resolvedCur = cur > 0f ? cur : resolvedMax;
 
-        // 立刻起条 + 多帧兜底（UI 还没起来时反复 Request）
+        var firstApply = _appliedOnce.Add(h);
+
+        ForceSetHealth(h, resolvedMax, resolvedCur, firstApply, firstApply);
+
         try
         {
             h.showHealthBar = true;
@@ -606,33 +688,18 @@ public class HealthM : MonoBehaviour
         {
         }
 
-        try
+        if (firstApply)
         {
-            h.RequestHealthBar();
-        }
-        catch
-        {
-        }
+            try
+            {
+                h.RequestHealthBar();
+            }
+            catch
+            {
+            }
 
-        // 触发一轮事件，部分 UI 需要
-        try
-        {
-            h.OnMaxHealthChange?.Invoke(h);
+            EnsureBarLater(h, 8, 0.25f);
         }
-        catch
-        {
-        }
-
-        try
-        {
-            h.OnHealthChange?.Invoke(h);
-        }
-        catch
-        {
-        }
-
-        // 多帧重试：8 次、每 0.25s 一次（你已有 EnsureBarRoutine(h, attempts, interval)）
-        StartCoroutine(EnsureBarRoutine(h, 8, 0.25f));
     }
     
     private void OnRPC_PlayerHealthReport(long senderConnectionId, NetDataReader reader)
@@ -641,6 +708,7 @@ public class HealthM : MonoBehaviour
 
         float max = reader.GetFloat();
         float cur = reader.GetFloat();
+        uint sequence = reader.GetUInt();
 
         NetPeer senderPeer = null;
         if (netManager != null)
@@ -660,54 +728,7 @@ public class HealthM : MonoBehaviour
             Debug.LogWarning($"[HealthM] OnRPC_PlayerHealthReport: Cannot find peer for connection {senderConnectionId}");
             return;
         }
-
-        var endPoint = senderPeer.EndPoint?.ToString() ?? "unknown";
-        var validator = Net.HybridP2P.HybridP2PValidator.Instance;
-        if (validator != null && !validator.ValidateHealthUpdate(endPoint, max, cur))
-        {
-            Debug.LogWarning($"[HealthM] Health validation failed for {endPoint}, rejecting update");
-            return;
-        }
-
-        if (!remoteCharacters.TryGetValue(senderPeer, out var go) || !go)
-        {
-            HealthTool._srvPendingHp[senderPeer] = (max, cur);
-            return;
-        }
-
-        var h = go.GetComponentInChildren<Health>(true);
-        if (!h) return;
-
-        if (max <= 0f) return;
-        
-        _srvApplyingHealth.Add(h);
-        try
-        {
-            ApplyHealthAndEnsureBar(go, max, cur);
-        }
-        finally
-        {
-            _srvApplyingHealth.Remove(h);
-        }
-    }
-
-    private void OnRPC_AuthHealthSelf(long senderConnectionId, NetDataReader reader)
-    {
-        if (IsServer) return;
-
-        float max = reader.GetFloat();
-        float cur = reader.GetFloat();
-
-        var main = CharacterMainControl.Main;
-        if (!main) return;
-
-        var go = main.gameObject;
-        if (!go) return;
-
-        _cliApplyingSelfSnap = true;
-        ApplyHealthAndEnsureBar(go, max, cur);
-        _cliApplyingSelfSnap = false;
-        _cliEchoMuteUntil = Time.time + 0.15f;
+        Server_ProcessClientHealthReport(senderPeer, max, cur, sequence);
     }
 
     private void OnRPC_AuthHealthRemote(long senderConnectionId, NetDataReader reader)
@@ -717,18 +738,21 @@ public class HealthM : MonoBehaviour
         string playerId = reader.GetString();
         float max = reader.GetFloat();
         float cur = reader.GetFloat();
+        uint sequence = reader.GetUInt();
 
         if (string.IsNullOrEmpty(playerId)) return;
 
         if (Service.IsSelfId(playerId)) return;
 
+        var snapshot = new HealthTool.HealthSnapshot(max, cur);
+
         if (clientRemoteCharacters.TryGetValue(playerId, out var go) && go)
         {
-            ApplyHealthAndEnsureBar(go, max, cur);
+            Client_ApplyRemoteSnapshot(playerId, go, snapshot, sequence);
         }
         else
         {
-            CoopTool._cliPendingRemoteHp[playerId] = (max, cur);
+            Client_StorePendingRemoteSnapshot(playerId, snapshot, sequence);
         }
     }
 }

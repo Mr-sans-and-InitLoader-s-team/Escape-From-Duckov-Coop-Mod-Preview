@@ -17,6 +17,7 @@
 using Duckov.UI;
 using ItemStatsSystem;
 using ItemStatsSystem.Items;
+using UnityEngine;
 using UnityEngine.SceneManagement;
 using static EscapeFromDuckovCoopMod.LootNet;
 
@@ -35,14 +36,11 @@ internal static class ServerTuning
 // ===== 本人无意在此堆，只是开始想要管理好的，后来懒的开新的类了导致这个类不堪重负维护有一点点小复杂 2025/10/27 =====
 public class ModBehaviourF : MonoBehaviour
 {
-    private const float SELF_ACCEPT_WINDOW = 0.30f;
     private const float EnsureRemoteInterval = 1.0f; // 每秒兜底一次，够用又不吵
     private const float ENV_SYNC_INTERVAL = 1.0f; // 每 1 秒广播一次；可按需 0.5~2 调
     private const float AI_TF_INTERVAL = 0.05f;
     private const float AI_ANIM_INTERVAL = 0.10f; // 10Hz 动画参数广播
     private const float AI_NAMEICON_INTERVAL = 10f;
-
-    private const float SELF_MUTE_SEC = 0.10f;
     public static ModBehaviourF Instance; //一切的开始 Hello World!
 
     public static CustomFaceSettingData localPlayerCustomFace;
@@ -328,16 +326,7 @@ public class ModBehaviourF : MonoBehaviour
 
         COOPManager.GrenadeM.ProcessPendingGrenades();
 
-        if (!IsServer)
-            if (CoopTool._cliSelfHpPending && CharacterMainControl.Main != null)
-            {
-                HealthM.Instance.ApplyHealthAndEnsureBar(CharacterMainControl.Main.gameObject, CoopTool._cliSelfHpMax, CoopTool._cliSelfHpCur);
-                CoopTool._cliSelfHpPending = false;
-            }
-
-
         if (IsServer) HealthM.Instance.Server_EnsureAllHealthHooks();
-        if (!IsServer) CoopTool.Client_ApplyPendingSelfIfReady();
         if (!IsServer) HealthM.Instance.Client_ReportSelfHealth_IfReadyOnce();
 
         // 投票期间按 J 切换准备
@@ -926,132 +915,13 @@ public class ModBehaviourF : MonoBehaviour
                     {
                         var max = reader.GetFloat();
                         var cur = reader.GetFloat();
-                        
-                        var endPoint = peer?.EndPoint?.ToString() ?? "unknown";
-                        var validator = Net.HybridP2P.HybridP2PValidator.Instance;
-                        if (validator != null && !validator.ValidateHealthUpdate(endPoint, max, cur))
-                        {
-                            Debug.LogWarning($"[PLAYER_HEALTH_REPORT] Health validation failed for {endPoint}, rejecting update");
-                            break;
-                        }
-                        
-                        if (max <= 0f)
-                        {
-                            HealthTool._srvPendingHp[peer] = (max, cur);
-                            break;
-                        }
-
-                        if (remoteCharacters != null && remoteCharacters.TryGetValue(peer, out var go) && go)
-                        {
-                            var h = go.GetComponentInChildren<Health>(true);
-                            if (h)
-                            {
-                                HealthM.Instance._srvApplyingHealth.Add(h);
-                                try
-                                {
-                                    HealthM.Instance.ApplyHealthAndEnsureBar(go, max, cur);
-                                }
-                                finally
-                                {
-                                    HealthM.Instance._srvApplyingHealth.Remove(h);
-                                }
-                                HealthM.Instance.Server_OnHealthChanged(peer, h);
-                            }
-                        }
-                        else
-                        {
-                            HealthTool._srvPendingHp[peer] = (max, cur);
-                        }
+                        var sequence = reader.GetUInt();
+                        HealthM.Instance.Server_ProcessClientHealthReport(peer, max, cur, sequence);
                     }
 
                     break;
                 }
 
-
-            case Op.AUTH_HEALTH_SELF:
-                {
-                    var max = reader.GetFloat();
-                    var cur = reader.GetFloat();
-
-                    if (max <= 0f)
-                    {
-                        CoopTool._cliSelfHpMax = max;
-                        CoopTool._cliSelfHpCur = cur;
-                        CoopTool._cliSelfHpPending = true;
-                        break;
-                    }
-
-                    // --- 防回弹：受击窗口内不接受“比本地更高”的回显 ---
-                    var shouldApply = true;
-                    try
-                    {
-                        var main = CharacterMainControl.Main;
-                        var selfH = main ? main.Health : null;
-                        if (selfH)
-                        {
-                            var localCur = selfH.CurrentHealth;
-                            // 仅在“刚受击的短时间窗”里做保护；平时允许正常回显（例如治疗）
-                            if (Time.time - HealthTool._cliLastSelfHurtAt <= SELF_ACCEPT_WINDOW)
-                                // 如果回显值会让血量“变多”（典型回弹），判定为陈旧 echo 丢弃
-                                if (cur > localCur + 0.0001f)
-                                {
-                                    Debug.Log($"[HP][SelfEcho] drop stale echo in window: local={localCur:F3} srv={cur:F3}");
-
-                                    shouldApply = false;
-                                }
-                        }
-                    }
-                    catch
-                    {
-                    }
-
-                    HealthM.Instance._cliApplyingSelfSnap = true;
-                    HealthM.Instance._cliEchoMuteUntil = Time.time + SELF_MUTE_SEC;
-                    try
-                    {
-                        if (shouldApply)
-                        {
-                            if (CoopTool._cliSelfHpPending)
-                            {
-                                CoopTool._cliSelfHpMax = max;
-                                CoopTool._cliSelfHpCur = cur;
-                                CoopTool.Client_ApplyPendingSelfIfReady();
-                            }
-                            else
-                            {
-                                var main = CharacterMainControl.Main;
-                                var go = main ? main.gameObject : null;
-                                if (go)
-                                {
-                                    var h = main.Health;
-                                    var cmc = main;
-                                    if (h)
-                                    {
-                                        try
-                                        {
-                                            h.autoInit = false;
-                                        }
-                                        catch
-                                        {
-                                        }
-
-                                        HealthTool.BindHealthToCharacter(h, cmc);
-                                        HealthM.Instance.ForceSetHealth(h, max, cur);
-                                    }
-                                }
-
-                                CoopTool._cliSelfHpPending = false;
-                            }
-                        }
-                        // 丢弃这帧自回显，不改本地血量
-                    }
-                    finally
-                    {
-                        HealthM.Instance._cliApplyingSelfSnap = false;
-                    }
-
-                    break;
-                }
 
             case Op.AUTH_HEALTH_REMOTE:
                 {
@@ -1060,18 +930,34 @@ public class ModBehaviourF : MonoBehaviour
                         var playerId = reader.GetString();
                         var max = reader.GetFloat();
                         var cur = reader.GetFloat();
+                        var sequence = reader.GetUInt();
+
+                        if (string.IsNullOrEmpty(playerId))
+                            break;
+
+                        if (NetService.Instance.IsSelfId(playerId))
+                            break;
+
+                        var snapshot = new HealthTool.HealthSnapshot(max, cur);
+                        var healthM = HealthM.Instance;
 
                         // 无效快照直接挂起，避免把 0/0 覆盖到血条
-                        if (max <= 0f)
+                        if (healthM == null)
                         {
-                            CoopTool._cliPendingRemoteHp[playerId] = (max, cur);
+                            CoopTool._cliPendingRemoteHp[playerId] = (snapshot, sequence);
+                            break;
+                        }
+
+                        if (snapshot.Max <= 0f)
+                        {
+                            healthM.Client_StorePendingRemoteSnapshot(playerId, snapshot, sequence);
                             break;
                         }
 
                         if (clientRemoteCharacters != null && clientRemoteCharacters.TryGetValue(playerId, out var go) && go)
-                            HealthM.Instance.ApplyHealthAndEnsureBar(go, max, cur);
+                            healthM.Client_ApplyRemoteSnapshot(playerId, go, snapshot, sequence);
                         else
-                            CoopTool._cliPendingRemoteHp[playerId] = (max, cur);
+                            healthM.Client_StorePendingRemoteSnapshot(playerId, snapshot, sequence);
                     }
 
                     break;

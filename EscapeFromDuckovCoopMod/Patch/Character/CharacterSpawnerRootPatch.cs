@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -37,6 +37,9 @@ internal static class Patch_Root_StartSpawn
         {
             var mod = ModBehaviourF.Instance;
             var rootId = AITool.StableRootId(__instance);
+
+            if (mod == null || !mod.networkStarted)
+                return true;
 
             // 核心科技:) 种子未到 → 阻止原版生成，并排队等待；到种子后再反射调用 StartSpawn()
             if (!mod.IsServer && !COOPManager.AIHandle.aiRootSeeds.ContainsKey(rootId))
@@ -88,6 +91,12 @@ internal static class Patch_Root_StartSpawn
     {
         try
         {
+
+            var mod = ModBehaviourF.Instance;
+
+            if (mod == null || !mod.networkStarted)
+                return;
+
             if (_rngStack.Count > 0) Random.state = _rngStack.Pop();
 
             // 你原有的“给 AI 打标签 / 注册 / 主机广播负载”逻辑保留
@@ -101,7 +110,6 @@ internal static class Patch_Root_StartSpawn
 
             if (list != null)
             {
-                var mod = ModBehaviourF.Instance;
                 var rootId = AITool.StableRootId(__instance);
 
                 // 按“名称 + 量化坐标 + InstanceID”稳定排序，避免回调时序导致乱序
@@ -156,6 +164,12 @@ internal static class Patch_Root_Init_FixContain
     {
         try
         {
+
+            var mod = ModBehaviourF.Instance;
+
+            if (mod == null || !mod.networkStarted)
+                return true;
+
             var msc = MultiSceneCore.Instance;
 
             // 仅在 SpawnerGuid != 0 时才做“重复过滤”
@@ -181,7 +195,6 @@ internal static class Patch_Root_Init_FixContain
                     msc.usedCreatorIds.Add(__instance.SpawnerGuid);
             }
 
-            var mod = ModBehaviourF.Instance;
             if (mod != null && mod.IsServer) AIRequest.Instance.Server_SendRootSeedDelta(__instance);
 
 
@@ -267,6 +280,9 @@ internal static class Patch_Group_Awake
         try
         {
             var mod = ModBehaviourF.Instance;
+
+            if (mod == null || !mod.networkStarted)
+                return;
 
             // 用“场景种子 + 该 Group 的 Transform 路径哈希”派生随机
             var gid = AITool.StableHash(AITool.TransformPath(__instance.transform));

@@ -14,16 +14,16 @@ namespace EscapeFromDuckovCoopMod
             {
                 Debug.Log($"[SteamLobbyHelper] ========== 开始连接流程 ==========");
                 Debug.Log($"[SteamLobbyHelper] 主机Steam ID: {hostSteamID}");
-                if (SteamEndPointMapper.Instance == null)
+                if (VirtualEndpointManager.Instance == null)
                 {
-                    Debug.LogError("[SteamLobbyHelper] ❌ SteamEndPointMapper未初始化");
+                    Debug.LogError("[SteamLobbyHelper]  VirtualEndpointManager未初始化");
                     return;
                 }
-                var virtualEndPoint = SteamEndPointMapper.Instance.RegisterSteamID(hostSteamID, 27015);
+                var virtualEndPoint = VirtualEndpointManager.Instance.RegisterOrUpdateSteamID(hostSteamID, 27015);
                 Debug.Log($"[SteamLobbyHelper] ✓ 虚拟端点: {virtualEndPoint}");
                 Debug.Log($"[SteamLobbyHelper] ⏳ 等待P2P会话建立...");
-                SteamEndPointMapper.Instance.StartCoroutine(
-                    SteamEndPointMapper.Instance.WaitForP2PSessionEstablished(hostSteamID, (success) =>
+                VirtualEndpointManager.Instance.StartCoroutine(
+                    VirtualEndpointManager.Instance.WaitForSessionEstablished(hostSteamID, (success) =>
                     {
                         if (success)
                         {

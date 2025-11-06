@@ -107,12 +107,19 @@ internal static class Patch_Buff_Setup_Safe
 
             if (peer == null) return; // 非玩家，或者就是主机本地角色
 
-            // 发一条“自加 Buff”消息（只给这名玩家）
-            var w = new NetDataWriter();
-            w.Put((byte)Op.PLAYER_BUFF_SELF_APPLY); // 新 opcode（见 Mod.cs）
-            w.Put(overrideWeaponID); // weaponTypeId：客户端可用它解析出正确的 buff prefab
-            w.Put(buffPrefab.ID); // 兜底：buffId（若武器没法解析，就用 id 回退）
-            peer.Send(w, DeliveryMethod.ReliableOrdered);
+            var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+            if (rpcManager != null)
+            {
+                var connectionId = rpcManager.GetConnectionIdByPeer(peer);
+                if (connectionId != 0)
+                {
+                    rpcManager.CallRPC("PlayerBuffSelfApply", EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.TargetClient, connectionId, w =>
+                    {
+                        w.Put(overrideWeaponID);
+                        w.Put(buffPrefab.ID);
+                    }, DeliveryMethod.ReliableOrdered);
+                }
+            }
         }
     }
 
@@ -141,25 +148,29 @@ internal static class Patch_Buff_Setup_Safe
                 }
             }
 
-            if (ownerPeer != null)
+            var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+            if (ownerPeer != null && rpcManager != null)
             {
-                var w = new NetDataWriter();
-                w.Put((byte)Op.PLAYER_BUFF_SELF_APPLY);
-                w.Put(overrideWeaponID);
-                w.Put(buffPrefab.ID);
-                ownerPeer.Send(w, DeliveryMethod.ReliableOrdered);
+                var connectionId = rpcManager.GetConnectionIdByPeer(ownerPeer);
+                if (connectionId != 0)
+                {
+                    rpcManager.CallRPC("PlayerBuffSelfApply", EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.TargetClient, connectionId, w =>
+                    {
+                        w.Put(overrideWeaponID);
+                        w.Put(buffPrefab.ID);
+                    }, DeliveryMethod.ReliableOrdered);
+                }
             }
 
-            // ② 如果“被命中者是主机本体”，就广播给所有客户端，让他们在“主机的代理对象”上也加 Buff（用于可见 FX）
-            if (target.IsMainCharacter)
+            // ② 如果"被命中者是主机本体"，就广播给所有客户端，让他们在"主机的代理对象"上也加 Buff（用于可见 FX）
+            if (target.IsMainCharacter && rpcManager != null)
             {
-                var w2 = new NetDataWriter();
-                w2.Put((byte)Op.HOST_BUFF_PROXY_APPLY);
-                // 用你们现有的玩家标识：Host 的 endPoint 已在 InitializeLocalPlayer 里设为 "Host:端口"
-                w2.Put(mod.localPlayerStatus?.EndPoint ?? $"Host:{mod.port}");
-                w2.Put(overrideWeaponID);
-                w2.Put(buffPrefab.ID);
-                mod.netManager.SendToAll(w2, DeliveryMethod.ReliableOrdered);
+                rpcManager.CallRPC("HostBuffProxyApply", EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.AllClients, 0, w =>
+                {
+                    w.Put(mod.localPlayerStatus?.EndPoint ?? $"Host:{mod.port}");
+                    w.Put(overrideWeaponID);
+                    w.Put(buffPrefab.ID);
+                }, DeliveryMethod.ReliableOrdered);
             }
         }
     }

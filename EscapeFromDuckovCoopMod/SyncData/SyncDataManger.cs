@@ -27,7 +27,7 @@ public class EquipmentSyncData
         writer.Put(ItemId ?? "");
     }
 
-    public static EquipmentSyncData Deserialize(NetPacketReader reader)
+    public static EquipmentSyncData Deserialize(NetDataReader reader)
     {
         return new EquipmentSyncData
         {
@@ -48,7 +48,7 @@ public class WeaponSyncData
         writer.Put(ItemId ?? "");
     }
 
-    public static WeaponSyncData Deserialize(NetPacketReader reader)
+    public static WeaponSyncData Deserialize(NetDataReader reader)
     {
         return new WeaponSyncData
         {

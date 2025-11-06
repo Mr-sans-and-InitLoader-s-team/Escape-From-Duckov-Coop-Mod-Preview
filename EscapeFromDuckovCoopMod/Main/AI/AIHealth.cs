@@ -110,7 +110,7 @@ public class AIHealth
             Debug.Log($"[AI-HP][CLIENT-REPORT] aiId={aiId} max={max:F1} cur={cur:F1} isDead={isDead}");
     }
 
-    public void HandleAiHealthReport(NetPeer sender, NetPacketReader r)
+    public void HandleAiHealthReport(NetPeer sender, NetDataReader r)
     {
         if (!networkStarted || !IsServer) return;
 

@@ -26,6 +26,7 @@ namespace EscapeFromDuckovCoopMod;
 public class HealthM : MonoBehaviour
 {
     private const float CLIENT_SEND_COOLDOWN = 0.05f;
+    private const float HEALTH_CHANGE_THRESHOLD = 0.5f;
     public static HealthM Instance;
     private static HealthTool.HealthSnapshot _cliLastSentHp = HealthTool._cliLastSentHp;
     private static float _cliNextSendHp = HealthTool._cliNextSendHp;
@@ -75,7 +76,8 @@ public class HealthM : MonoBehaviour
         var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
         if (rpcManager == null)
         {
-            Debug.LogWarning("[HealthM] HybridRPCManager not found, RPC will not be used");
+            Debug.LogWarning("[HealthM] HybridRPCManager not found, fallback to legacy Op mode");
+            _rpcRegistered = false;
             return;
         }
 
@@ -83,7 +85,7 @@ public class HealthM : MonoBehaviour
         rpcManager.RegisterRPC("AuthHealthRemote", OnRPC_AuthHealthRemote);
         
         _rpcRegistered = true;
-        Debug.Log("[HealthM] Health RPCs registered");
+        Debug.Log("[HealthM] Health sync optimized: RPC mode enabled, legacy Op as fallback");
     }
 
     internal bool TryGetClientMaxOverride(Health h, out float v)
@@ -129,23 +131,12 @@ public class HealthM : MonoBehaviour
 
     private bool Client_SendSnapshotToServer(HealthTool.HealthSnapshot snapshot, uint sequence)
     {
-        var sent = false;
-
-        if (connectedPeer != null)
-        {
-            var reportWriter = new NetDataWriter();
-            reportWriter.Put((byte)Op.PLAYER_HEALTH_REPORT);
-            reportWriter.Put(snapshot.Max);
-            reportWriter.Put(snapshot.Current);
-            reportWriter.Put(sequence);
-            connectedPeer.Send(reportWriter, DeliveryMethod.ReliableOrdered);
-            sent = true;
-        }
-
-        if (!_rpcRegistered || connectedPeer == null) return sent;
-
         var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
-        if (rpcManager == null) return sent;
+        if (rpcManager == null)
+        {
+            Debug.LogError("[HealthM] HybridRPCManager not available, cannot send health data");
+            return false;
+        }
 
         rpcManager.CallRPC("PlayerHealthReport", Net.HybridP2P.RPCTarget.Server, 0, writer =>
         {
@@ -153,7 +144,7 @@ public class HealthM : MonoBehaviour
             writer.Put(snapshot.Current);
             writer.Put(sequence);
         }, DeliveryMethod.ReliableOrdered);
-
+        
         return true;
     }
 
@@ -164,18 +155,26 @@ public class HealthM : MonoBehaviour
 
         var snapshot = CaptureSnapshot(h);
 
-        if (!force && snapshot.ApproximatelyEquals(_cliLastSentHp))
-            return;
+        if (!force)
+        {
+            if (snapshot.ApproximatelyEquals(_cliLastSentHp))
+                return;
 
-        var now = Time.time;
-        if (!force && now < _cliNextSendHp) return;
+            var maxDiff = Mathf.Abs(snapshot.Max - _cliLastSentHp.Max);
+            var curDiff = Mathf.Abs(snapshot.Current - _cliLastSentHp.Current);
+            if (maxDiff < HEALTH_CHANGE_THRESHOLD && curDiff < HEALTH_CHANGE_THRESHOLD)
+                return;
+
+            var now = Time.time;
+            if (now < _cliNextSendHp) return;
+        }
 
         var nextSequence = unchecked(_cliLastSequence + 1);
         if (Client_SendSnapshotToServer(snapshot, nextSequence))
         {
             _cliLastSequence = nextSequence;
             UpdateClientSnapshotState(snapshot);
-            UpdateClientCooldown(now + CLIENT_SEND_COOLDOWN);
+            UpdateClientCooldown(Time.time + CLIENT_SEND_COOLDOWN);
         }
     }
 
@@ -238,20 +237,31 @@ public class HealthM : MonoBehaviour
     {
         if (!IsServer || owner == null) return;
 
-        var w = new NetDataWriter();
-        w.Put((byte)Op.PLAYER_HURT_EVENT);
-        w.Put(di.damageValue);
-        w.Put(di.armorPiercing);
-        w.Put(di.critDamageFactor);
-        w.Put(di.critRate);
-        w.Put(di.crit);
-        w.PutV3cm(di.damagePoint);
-        w.PutDir(di.damageNormal.sqrMagnitude < 1e-6f ? Vector3.up : di.damageNormal.normalized);
-        w.Put(di.fromWeaponItemID);
-        w.Put(di.bleedChance);
-        w.Put(di.isExplosion);
+        var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager == null) return;
 
-        owner.Send(w, DeliveryMethod.ReliableOrdered);
+        var connectionId = rpcManager.GetConnectionIdByPeer(owner);
+        if (connectionId == 0) return;
+
+        var dmgNormal = di.damageNormal.sqrMagnitude < 1e-6f ? Vector3.up : di.damageNormal.normalized;
+
+        rpcManager.CallRPC("PlayerHurtEvent", EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.TargetClient, connectionId, w =>
+        {
+            w.Put(di.damageValue);
+            w.Put(di.armorPiercing);
+            w.Put(di.critDamageFactor);
+            w.Put(di.critRate);
+            w.Put(di.crit);
+            w.Put(di.damagePoint.x);
+            w.Put(di.damagePoint.y);
+            w.Put(di.damagePoint.z);
+            w.Put(dmgNormal.x);
+            w.Put(dmgNormal.y);
+            w.Put(dmgNormal.z);
+            w.Put(di.fromWeaponItemID);
+            w.Put(di.bleedChance);
+            w.Put(di.isExplosion);
+        }, DeliveryMethod.ReliableOrdered);
     }
 
 
@@ -384,18 +394,17 @@ public class HealthM : MonoBehaviour
         var pid = NetService.Instance.GetPlayerId(ownerPeer);
         if (string.IsNullOrEmpty(pid)) return;
 
-        if (_srvLastBroadcastByPlayerId.TryGetValue(pid, out var last) &&
-            (!HealthTool.IsSequenceNewer(sequence, last.sequence) || force))
+        if (!force && _srvLastBroadcastByPlayerId.TryGetValue(pid, out var last))
         {
-            if (!HealthTool.IsSequenceNewer(sequence, last.sequence))
+            if (!HealthTool.IsSequenceNewer(sequence, last.sequence) && sequence != 0)
+                return;
+
+            if (last.snapshot.ApproximatelyEquals(snapshot))
             {
-                if (!force && last.snapshot.ApproximatelyEquals(snapshot))
+                var maxDiff = Mathf.Abs(snapshot.Max - last.snapshot.Max);
+                var curDiff = Mathf.Abs(snapshot.Current - last.snapshot.Current);
+                if (maxDiff < HEALTH_CHANGE_THRESHOLD && curDiff < HEALTH_CHANGE_THRESHOLD)
                     return;
-                sequence = unchecked(last.sequence + 1);
-            }
-            else if (force && sequence <= last.sequence)
-            {
-                sequence = unchecked(last.sequence + 1);
             }
         }
 
@@ -405,38 +414,35 @@ public class HealthM : MonoBehaviour
                 ? unchecked(prev.sequence + 1)
                 : 1u;
         }
+        else if (_srvLastBroadcastByPlayerId.TryGetValue(pid, out var existing) && sequence <= existing.sequence)
+        {
+            sequence = unchecked(existing.sequence + 1);
+        }
 
         _srvLastBroadcastByPlayerId[pid] = (snapshot, sequence);
 
-        if (netManager != null)
+        var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager == null)
         {
-            foreach (var peer in netManager.ConnectedPeerList)
-            {
-                if (ownerPeer != null && peer == ownerPeer) continue;
-
-                var remoteWriter = new NetDataWriter();
-                remoteWriter.Put((byte)Op.AUTH_HEALTH_REMOTE);
-                remoteWriter.Put(pid);
-                remoteWriter.Put(snapshot.Max);
-                remoteWriter.Put(snapshot.Current);
-                remoteWriter.Put(sequence);
-                peer.Send(remoteWriter, DeliveryMethod.ReliableOrdered);
-            }
+            return;
         }
 
-        if (_rpcRegistered)
+        try
         {
-            var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
-            if (rpcManager != null)
+            rpcManager.CallRPC("PlayerHealthBroadcast", Net.HybridP2P.RPCTarget.AllClients, 0, writer =>
             {
-                rpcManager.CallRPC("AuthHealthRemote", Net.HybridP2P.RPCTarget.AllClients, 0, writer =>
-                {
-                    writer.Put(pid);
-                    writer.Put(snapshot.Max);
-                    writer.Put(snapshot.Current);
-                    writer.Put(sequence);
-                }, DeliveryMethod.ReliableOrdered);
-            }
+                int beforePos = writer.Length;
+                writer.Put(pid);
+                writer.Put(snapshot.Max);
+                writer.Put(snapshot.Current);
+                writer.Put(sequence);
+                int afterPos = writer.Length;
+                int dataSize = afterPos - beforePos;
+            }, DeliveryMethod.ReliableOrdered);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[HealthM] Failed to broadcast health for {pid}: {ex.Message}");
         }
     }
 
@@ -625,7 +631,7 @@ public class HealthM : MonoBehaviour
             {
             }
 
-            EnsureBarLater(h, 30, 0.1f);
+            EnsureBarLater(h, 10, 0.2f);
         }
 
         if (forceEvent || maxChanged)
@@ -710,12 +716,38 @@ public class HealthM : MonoBehaviour
         float cur = reader.GetFloat();
         uint sequence = reader.GetUInt();
 
-        NetPeer senderPeer = null;
-        if (netManager != null)
+        var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
+        NetPeer senderPeer = rpcManager?.GetPeerByConnectionId(senderConnectionId);
+
+        if (senderPeer == null && netManager != null)
         {
+            var mapper = EscapeFromDuckovCoopMod.VirtualEndpointManager.Instance;
+            
             foreach (var p in netManager.ConnectedPeerList)
             {
-                if (p.Id == senderConnectionId)
+                bool matched = false;
+                
+                // 方式1: 直接匹配peer.Id
+                if (p.Id > 0 && p.Id == senderConnectionId)
+                {
+                    matched = true;
+                }
+                // 方式2: 匹配peer.EndPoint.GetHashCode()
+                else if (p.EndPoint != null && p.EndPoint.GetHashCode() == senderConnectionId)
+                {
+                    matched = true;
+                }
+                // 方式3: 匹配SteamID（Steam P2P模式）
+                else if (mapper != null && p.EndPoint != null && 
+                         mapper.TryGetSteamID(p.EndPoint as System.Net.IPEndPoint, out var steamId))
+                {
+                    if ((long)steamId.m_SteamID == senderConnectionId)
+                    {
+                        matched = true;
+                    }
+                }
+                
+                if (matched)
                 {
                     senderPeer = p;
                     break;
@@ -728,6 +760,15 @@ public class HealthM : MonoBehaviour
             Debug.LogWarning($"[HealthM] OnRPC_PlayerHealthReport: Cannot find peer for connection {senderConnectionId}");
             return;
         }
+
+        var endPoint = senderPeer.EndPoint?.ToString() ?? "unknown";
+        var validator = Net.HybridP2P.HybridP2PValidator.Instance;
+        if (validator != null && !validator.ValidateHealthUpdate(endPoint, max, cur))
+        {
+            Debug.LogWarning($"[HealthM] Health validation failed for {endPoint}, rejecting RPC update");
+            return;
+        }
+
         Server_ProcessClientHealthReport(senderPeer, max, cur, sequence);
     }
 

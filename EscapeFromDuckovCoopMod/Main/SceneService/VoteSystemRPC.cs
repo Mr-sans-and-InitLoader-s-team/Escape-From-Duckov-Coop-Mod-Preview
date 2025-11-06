@@ -47,7 +47,9 @@ namespace EscapeFromDuckovCoopMod
                 return;
             }
 
-            rpcManager.RegisterRPC("VoteStart", OnRPC_VoteStart);
+            rpcManager.RegisterRPC("VoteStart", OnRPC_VoteStart); // Legacy
+            rpcManager.RegisterRPC("VoteStartP2P", OnRPC_VoteStartP2P);
+            rpcManager.RegisterRPC("VoteStartLAN", OnRPC_VoteStartLAN);
             rpcManager.RegisterRPC("VoteRequest", OnRPC_VoteRequest);
             rpcManager.RegisterRPC("VoteCast", OnRPC_VoteCast);
             rpcManager.RegisterRPC("VoteReadySet", OnRPC_VoteReadySet);
@@ -56,33 +58,39 @@ namespace EscapeFromDuckovCoopMod
 
             _rpcRegistered = true;
             UseRPCMode = true;
-            Debug.Log("[VoteSystemRPC] All RPCs registered, UseRPCMode enabled");
+            Debug.Log("[VoteSystemRPC] All RPCs registered (P2P + LAN modes), UseRPCMode enabled");
         }
 
         #region Server -> Client RPCs
 
         public void Server_StartVote(string targetSceneId, string curtainGuid, bool notifyEvac, bool saveToFile, bool useLocation, string locationName, List<ulong> participantSteamIds)
         {
+            Debug.LogWarning("[VoteSystemRPC] Server_StartVote(legacy) called - this should not be used, use Server_StartVoteP2P or Server_StartVoteLAN directly");
+            Server_StartVoteP2P(targetSceneId, curtainGuid, notifyEvac, saveToFile, useLocation, locationName, participantSteamIds);
+        }
+
+        public void Server_StartVoteP2P(string targetSceneId, string curtainGuid, bool notifyEvac, bool saveToFile, bool useLocation, string locationName, List<ulong> participantSteamIds)
+        {
             if (!UseRPCMode || !_rpcRegistered)
             {
-                Debug.Log("[VoteSystemRPC] RPC mode disabled, using legacy method");
+                Debug.Log("[VoteSystemRPC] P2P RPC mode disabled, using legacy method");
                 return;
             }
 
             var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
             if (rpcManager == null || !rpcManager.IsServer)
             {
-                Debug.LogWarning("[VoteSystemRPC] Server_StartVote: rpcManager null or not server");
+                Debug.LogWarning("[VoteSystemRPC] Server_StartVoteP2P: rpcManager null or not server");
                 return;
             }
 
             string hostSceneId = "";
-            LocalPlayerManager.Instance.ComputeIsInGame(out hostSceneId);
-            hostSceneId = hostSceneId ?? string.Empty;
+            LocalPlayerManager.Instance?.ComputeIsInGame(out hostSceneId);
+            hostSceneId = hostSceneId ?? "";
 
-            Debug.Log($"[VoteSystemRPC] Server sending vote start RPC: target={targetSceneId}, hostScene={hostSceneId}, participants={participantSteamIds.Count}");
+            Debug.Log($"[VoteSystemRPC-P2P] Server sending vote start: target={targetSceneId}, hostScene={hostSceneId}, participants={participantSteamIds.Count}");
 
-            rpcManager.CallRPC("VoteStart", Net.HybridP2P.RPCTarget.AllClients, 0, (writer) =>
+            rpcManager.CallReliableRPC("VoteStartP2P", Net.HybridP2P.RPCTarget.AllClients, 0, (writer) =>
             {
                 writer.Put(targetSceneId ?? "");
                 writer.Put(curtainGuid ?? "");
@@ -99,7 +107,48 @@ namespace EscapeFromDuckovCoopMod
                 }
             }, DeliveryMethod.ReliableOrdered);
 
-            Debug.Log($"[VoteSystemRPC] Server vote start RPC sent successfully");
+            Debug.Log($"[VoteSystemRPC-P2P] Server vote start RPC sent");
+        }
+
+        public void Server_StartVoteLAN(string targetSceneId, string curtainGuid, bool notifyEvac, bool saveToFile, bool useLocation, string locationName, List<string> participantEndPoints)
+        {
+            if (!UseRPCMode || !_rpcRegistered)
+            {
+                Debug.Log("[VoteSystemRPC] LAN RPC mode disabled, using legacy method");
+                return;
+            }
+
+            var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
+            if (rpcManager == null || !rpcManager.IsServer)
+            {
+                Debug.LogWarning("[VoteSystemRPC] Server_StartVoteLAN: rpcManager null or not server");
+                return;
+            }
+
+            string hostSceneId = "";
+            LocalPlayerManager.Instance?.ComputeIsInGame(out hostSceneId);
+            hostSceneId = hostSceneId ?? "";
+
+            Debug.Log($"[VoteSystemRPC-LAN] Server sending vote start: target={targetSceneId}, hostScene={hostSceneId}, participants={participantEndPoints.Count}");
+
+            rpcManager.CallReliableRPC("VoteStartLAN", Net.HybridP2P.RPCTarget.AllClients, 0, (writer) =>
+            {
+                writer.Put(targetSceneId ?? "");
+                writer.Put(curtainGuid ?? "");
+                writer.Put(notifyEvac);
+                writer.Put(saveToFile);
+                writer.Put(useLocation);
+                writer.Put(locationName ?? "");
+                writer.Put(hostSceneId);
+
+                writer.Put(participantEndPoints.Count);
+                foreach (var ep in participantEndPoints)
+                {
+                    writer.Put(ep ?? "");
+                }
+            }, DeliveryMethod.ReliableOrdered);
+
+            Debug.Log($"[VoteSystemRPC-LAN] Server vote start RPC sent");
         }
 
         public void Server_BroadcastReadySet(string pid, bool ready)
@@ -111,7 +160,7 @@ namespace EscapeFromDuckovCoopMod
             if (rpcManager == null || !rpcManager.IsServer)
                 return;
 
-            rpcManager.CallRPC("VoteReadySet", Net.HybridP2P.RPCTarget.AllClients, 0, (writer) =>
+            rpcManager.CallReliableRPC("VoteReadySet", Net.HybridP2P.RPCTarget.AllClients, 0, (writer) =>
             {
                 writer.Put(pid);
                 writer.Put(ready);
@@ -129,7 +178,7 @@ namespace EscapeFromDuckovCoopMod
             if (rpcManager == null || !rpcManager.IsServer)
                 return;
 
-            rpcManager.CallRPC("VoteBeginLoad", Net.HybridP2P.RPCTarget.AllClients, 0, (writer) =>
+            rpcManager.CallReliableRPC("VoteBeginLoad", Net.HybridP2P.RPCTarget.AllClients, 0, (writer) =>
             {
                 writer.Put(_sceneNet.sceneTargetId ?? "");
                 writer.Put(_sceneNet.sceneCurtainGuid ?? "");
@@ -151,7 +200,7 @@ namespace EscapeFromDuckovCoopMod
             if (rpcManager == null || !rpcManager.IsServer)
                 return;
 
-            rpcManager.CallRPC("VoteCancel", Net.HybridP2P.RPCTarget.AllClients, 0, (writer) =>
+            rpcManager.CallReliableRPC("VoteCancel", Net.HybridP2P.RPCTarget.AllClients, 0, (writer) =>
             {
                 // No additional data needed
             }, DeliveryMethod.ReliableOrdered);
@@ -208,11 +257,16 @@ namespace EscapeFromDuckovCoopMod
 
         private void OnRPC_VoteStart(long senderConnectionId, NetDataReader reader)
         {
-            Debug.Log($"[VoteSystemRPC] OnRPC_VoteStart called from sender {senderConnectionId}");
+            OnRPC_VoteStartP2P(senderConnectionId, reader);
+        }
+
+        private void OnRPC_VoteStartP2P(long senderConnectionId, NetDataReader reader)
+        {
+            Debug.Log($"[VoteSystemRPC-P2P] OnRPC_VoteStartP2P called from sender {senderConnectionId}");
             
             if (_sceneNet == null)
             {
-                Debug.LogWarning("[VoteSystemRPC] OnRPC_VoteStart: _sceneNet is null");
+                Debug.LogWarning("[VoteSystemRPC-P2P] _sceneNet is null");
                 return;
             }
 
@@ -231,7 +285,7 @@ namespace EscapeFromDuckovCoopMod
                 participantSteamIds.Add(reader.GetULong());
             }
 
-            Debug.Log($"[VoteSystemRPC] Received vote start: target={targetSceneId}, hostScene={hostSceneId}, participants={participantCount}");
+            Debug.Log($"[VoteSystemRPC-P2P] Received vote start: target={targetSceneId}, hostScene={hostSceneId}, participants={participantCount}");
 
             _sceneNet.sceneTargetId = targetSceneId;
             _sceneNet.sceneCurtainGuid = string.IsNullOrEmpty(curtainGuid) ? null : curtainGuid;
@@ -245,32 +299,32 @@ namespace EscapeFromDuckovCoopMod
             {
                 var pid = $"steam_{steamId}";
                 _sceneNet.sceneParticipantIds.Add(pid);
-                Debug.Log($"[VoteSystemRPC] Added participant: steam_{steamId}");
+                Debug.Log($"[VoteSystemRPC-P2P] Added participant: steam_{steamId}");
             }
 
             var mySteamId = SteamUser.GetSteamID().m_SteamID;
             var myPid = $"steam_{mySteamId}";
-            Debug.Log($"[VoteSystemRPC] My SteamID: {mySteamId}, myPid: {myPid}");
+            Debug.Log($"[VoteSystemRPC-P2P] My SteamID: {mySteamId}, myPid: {myPid}");
 
             if (!string.IsNullOrEmpty(hostSceneId))
             {
-                string mySceneId = null;
-                LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
-                mySceneId = mySceneId ?? string.Empty;
+                string mySceneId = "";
+                LocalPlayerManager.Instance?.ComputeIsInGame(out mySceneId);
+                mySceneId = mySceneId ?? "";
 
                 bool isSameScene = Spectator.AreSameMap(hostSceneId, mySceneId);
-                Debug.Log($"[VoteSystemRPC] Scene check: host={hostSceneId}, me={mySceneId}, isSame={isSameScene}");
+                Debug.Log($"[VoteSystemRPC-P2P] Scene check: host={hostSceneId}, me={mySceneId}, isSame={isSameScene}");
                 
                 if (!isSameScene)
                 {
-                    Debug.Log($"[VoteSystemRPC] Different scene, ignoring vote");
+                    Debug.Log($"[VoteSystemRPC-P2P] Different scene, ignoring vote");
                     return;
                 }
             }
 
             if (_sceneNet.sceneParticipantIds.Count > 0 && !_sceneNet.sceneParticipantIds.Contains(myPid))
             {
-                Debug.LogWarning($"[VoteSystemRPC] Not in participants: me={myPid}");
+                Debug.LogWarning($"[VoteSystemRPC-P2P] Not in participants: me={myPid}");
                 return;
             }
 
@@ -282,7 +336,84 @@ namespace EscapeFromDuckovCoopMod
                 _sceneNet.sceneReady[pid] = false;
             }
 
-            Debug.Log($"[VoteSystemRPC] Vote started successfully: participants={_sceneNet.sceneParticipantIds.Count}");
+            Debug.Log($"[VoteSystemRPC-P2P] Vote started successfully: participants={_sceneNet.sceneParticipantIds.Count}");
+        }
+
+        private void OnRPC_VoteStartLAN(long senderConnectionId, NetDataReader reader)
+        {
+            Debug.Log($"[VoteSystemRPC-LAN] OnRPC_VoteStartLAN called from sender {senderConnectionId}");
+            
+            if (_sceneNet == null)
+            {
+                Debug.LogWarning("[VoteSystemRPC-LAN] _sceneNet is null");
+                return;
+            }
+
+            string targetSceneId = reader.GetString();
+            string curtainGuid = reader.GetString();
+            bool notifyEvac = reader.GetBool();
+            bool saveToFile = reader.GetBool();
+            bool useLocation = reader.GetBool();
+            string locationName = reader.GetString();
+            string hostSceneId = reader.GetString();
+
+            int participantCount = reader.GetInt();
+            var participantEndPoints = new List<string>();
+            for (int i = 0; i < participantCount; i++)
+            {
+                participantEndPoints.Add(reader.GetString());
+            }
+
+            Debug.Log($"[VoteSystemRPC-LAN] Received vote start: target={targetSceneId}, hostScene={hostSceneId}, participants={participantCount}");
+
+            _sceneNet.sceneTargetId = targetSceneId;
+            _sceneNet.sceneCurtainGuid = string.IsNullOrEmpty(curtainGuid) ? null : curtainGuid;
+            _sceneNet.sceneNotifyEvac = notifyEvac;
+            _sceneNet.sceneSaveToFile = saveToFile;
+            _sceneNet.sceneUseLocation = useLocation;
+            _sceneNet.sceneLocationName = locationName;
+
+            _sceneNet.sceneParticipantIds.Clear();
+            foreach (var ep in participantEndPoints)
+            {
+                _sceneNet.sceneParticipantIds.Add(ep);
+                Debug.Log($"[VoteSystemRPC-LAN] Added participant: {ep}");
+            }
+
+            var myPid = NetService.Instance?.localPlayerStatus?.EndPoint ?? "unknown";
+            Debug.Log($"[VoteSystemRPC-LAN] My EndPoint: {myPid}");
+
+            if (!string.IsNullOrEmpty(hostSceneId))
+            {
+                string mySceneId = "";
+                LocalPlayerManager.Instance?.ComputeIsInGame(out mySceneId);
+                mySceneId = mySceneId ?? "";
+
+                bool isSameScene = Spectator.AreSameMap(hostSceneId, mySceneId);
+                Debug.Log($"[VoteSystemRPC-LAN] Scene check: host={hostSceneId}, me={mySceneId}, isSame={isSameScene}");
+                
+                if (!isSameScene)
+                {
+                    Debug.Log($"[VoteSystemRPC-LAN] Different scene, ignoring vote");
+                    return;
+                }
+            }
+
+            if (_sceneNet.sceneParticipantIds.Count > 0 && !_sceneNet.sceneParticipantIds.Contains(myPid))
+            {
+                Debug.LogWarning($"[VoteSystemRPC-LAN] Not in participants: me={myPid}, list={string.Join(",", _sceneNet.sceneParticipantIds)}");
+                return;
+            }
+
+            _sceneNet.sceneVoteActive = true;
+            _sceneNet.localReady = false;
+            _sceneNet.sceneReady.Clear();
+            foreach (var pid in _sceneNet.sceneParticipantIds)
+            {
+                _sceneNet.sceneReady[pid] = false;
+            }
+
+            Debug.Log($"[VoteSystemRPC-LAN] Vote started successfully: participants={_sceneNet.sceneParticipantIds.Count}");
         }
 
         private void OnRPC_VoteRequest(long senderConnectionId, NetDataReader reader)
@@ -309,35 +440,43 @@ namespace EscapeFromDuckovCoopMod
 
             Debug.Log($"[VoteSystemRPC] Received vote cast from {senderConnectionId}: ready={ready}");
 
-            if (!SteamManager.Initialized || SteamEndPointMapper.Instance == null)
-                return;
-
-            string pid = null;
+            NetPeer senderPeer = null;
             foreach (var kv in NetService.Instance.playerStatuses)
             {
                 var peer = kv.Key;
-                if (peer == null) continue;
-
-                var endPoint = peer.EndPoint as System.Net.IPEndPoint;
-                if (endPoint != null && SteamEndPointMapper.Instance.TryGetSteamID(endPoint, out var steamId))
+                if (peer != null && peer.Id == senderConnectionId)
                 {
-                    if ((long)steamId.m_SteamID == senderConnectionId)
-                    {
-                        pid = $"steam_{steamId.m_SteamID}";
-                        break;
-                    }
+                    senderPeer = peer;
+                    break;
+                }
+            }
+
+            if (senderPeer == null)
+            {
+                Debug.LogWarning($"[VoteSystemRPC] Could not find peer for connection {senderConnectionId}");
+                return;
+            }
+
+            string pid = null;
+            if (SteamManager.Initialized && VirtualEndpointManager.Instance != null)
+            {
+                var endPoint = senderPeer.EndPoint as System.Net.IPEndPoint;
+                if (endPoint != null && VirtualEndpointManager.Instance.TryGetSteamID(endPoint, out var steamId))
+                {
+                    pid = $"steam_{steamId.m_SteamID}";
                 }
             }
 
             if (string.IsNullOrEmpty(pid))
             {
-                Debug.LogWarning($"[VoteSystemRPC] Could not find SteamID for connection {senderConnectionId}");
-                return;
+                pid = senderPeer.EndPoint?.ToString() ?? $"peer_{senderConnectionId}";
             }
+
+            Debug.Log($"[VoteSystemRPC] Resolved pid={pid} for connection {senderConnectionId}");
 
             if (!_sceneNet.sceneVoteActive || !_sceneNet.sceneReady.ContainsKey(pid))
             {
-                Debug.LogWarning($"[VoteSystemRPC] Invalid vote state for {pid}");
+                Debug.LogWarning($"[VoteSystemRPC] Invalid vote state for {pid}, voteActive={_sceneNet.sceneVoteActive}, hasKey={_sceneNet.sceneReady.ContainsKey(pid)}");
                 return;
             }
 

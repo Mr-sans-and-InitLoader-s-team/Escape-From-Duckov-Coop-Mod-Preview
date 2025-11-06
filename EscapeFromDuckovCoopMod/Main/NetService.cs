@@ -61,6 +61,12 @@ public class NetService : MonoBehaviour, INetEventListener
     public bool IsServer { get; private set; }
     public NetworkTransportMode TransportMode { get; private set; } = NetworkTransportMode.Direct;
     public SteamLobbyOptions LobbyOptions { get; private set; } = SteamLobbyOptions.CreateDefault();
+    
+    private Net.Core.HybridTransport _hybridTransport;
+    public Net.Core.HybridTransport HybridTransport => _hybridTransport;
+    
+    public delegate bool PacketFilterDelegate(NetPeer peer, NetDataReader reader, DeliveryMethod deliveryMethod);
+    public event PacketFilterDelegate OnPacketFilter;
 
     public void OnEnable()
     {
@@ -68,6 +74,12 @@ public class NetService : MonoBehaviour, INetEventListener
         if (SteamP2PLoader.Instance != null)
         {
             SteamP2PLoader.Instance.UseSteamP2P = TransportMode == NetworkTransportMode.SteamP2P;
+        }
+        
+        _hybridTransport = Net.Core.HybridTransport.Instance;
+        if (_hybridTransport == null)
+        {
+            Debug.LogWarning("[NetService] HybridTransport not found, some features may be unavailable");
         }
     }
 
@@ -127,9 +139,9 @@ public class NetService : MonoBehaviour, INetEventListener
                     if (IsServer)
                     {
                         var endPoint = peer.EndPoint as System.Net.IPEndPoint;
-                        if (endPoint != null && SteamEndPointMapper.Instance != null)
+                        if (endPoint != null && VirtualEndpointManager.Instance != null)
                         {
-                            if (SteamEndPointMapper.Instance.TryGetSteamID(endPoint, out Steamworks.CSteamID steamID))
+                            if (VirtualEndpointManager.Instance.TryGetSteamID(endPoint, out Steamworks.CSteamID steamID))
                             {
                                 playerName = Steamworks.SteamFriends.GetFriendPersonaName(steamID);
                                 if (string.IsNullOrEmpty(playerName) || playerName == "[unknown]")
@@ -186,11 +198,11 @@ public class NetService : MonoBehaviour, INetEventListener
             if (relay != null)
             {
                 var endPoint = peer.EndPoint as System.Net.IPEndPoint;
-                Debug.Log($"[NetService] OnPeerConnected - relay={relay != null}, endPoint={endPoint}, mapper={SteamEndPointMapper.Instance != null}");
+                Debug.Log($"[NetService] OnPeerConnected - relay={relay != null}, endPoint={endPoint}, mapper={VirtualEndpointManager.Instance != null}");
                 
-                if (endPoint != null && SteamEndPointMapper.Instance != null)
+                if (endPoint != null && VirtualEndpointManager.Instance != null)
                 {
-                    if (SteamEndPointMapper.Instance.TryGetSteamID(endPoint, out Steamworks.CSteamID steamID))
+                    if (VirtualEndpointManager.Instance.TryGetSteamID(endPoint, out Steamworks.CSteamID steamID))
                     {
                         var natType = EscapeFromDuckovCoopMod.Net.HybridP2P.NATType.Moderate;
                         relay.RegisterConnection(peer.EndPoint.ToString(), steamID, natType);
@@ -210,7 +222,7 @@ public class NetService : MonoBehaviour, INetEventListener
                 }
                 else
                 {
-                    Debug.LogWarning($"[NetService] Cannot register: endPoint={endPoint}, mapper={SteamEndPointMapper.Instance != null}");
+                    Debug.LogWarning($"[NetService] Cannot register: endPoint={endPoint}, mapper={VirtualEndpointManager.Instance != null}");
                 }
             }
             else
@@ -290,7 +302,11 @@ public class NetService : MonoBehaviour, INetEventListener
 
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
-        Debug.Log(CoopLocalization.Get("net.disconnected", peer.EndPoint.ToString(), disconnectInfo.Reason.ToString()));
+        string endPoint = peer.EndPoint.ToString();
+        string reason = disconnectInfo.Reason.ToString();
+        
+        Debug.Log($"[OnPeerDisconnected] 端点: {endPoint}, 原因: {reason}, IsServer: {IsServer}");
+        
         if (!IsServer)
         {
             status = CoopLocalization.Get("net.connectionLost");
@@ -299,12 +315,18 @@ public class NetService : MonoBehaviour, INetEventListener
             var ui = MModUI.Instance;
             if (ui != null)
             {
-                string reason = $"{CoopLocalization.Get("net.disconnected", peer.EndPoint.ToString(), disconnectInfo.Reason.ToString())}";
+                ui.SetLastDisconnectInfo(endPoint, reason);
                 ui.ShowDisconnectDialog(reason);
             }
         }
 
         if (connectedPeer == peer) connectedPeer = null;
+        
+        var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager != null)
+        {
+            rpcManager.UnregisterPeerByReference(peer);
+        }
 
         if (playerStatuses.ContainsKey(peer))
         {
@@ -332,15 +354,15 @@ public class NetService : MonoBehaviour, INetEventListener
         try
         {
             Debug.Log($"[Patch_OnPeerDisconnected] LiteNetLib断开: {peer.EndPoint}, 原因: {disconnectInfo.Reason}");
-            if (SteamEndPointMapper.Instance != null &&
-                SteamEndPointMapper.Instance.TryGetSteamID(peer.EndPoint, out CSteamID remoteSteamID))
+            if (VirtualEndpointManager.Instance != null &&
+                VirtualEndpointManager.Instance.TryGetSteamID(peer.EndPoint, out CSteamID remoteSteamID))
             {
                 Debug.Log($"[Patch_OnPeerDisconnected] 关闭Steam P2P会话: {remoteSteamID}");
                 if (SteamNetworking.CloseP2PSessionWithUser(remoteSteamID))
                 {
                     Debug.Log($"[Patch_OnPeerDisconnected] ✓ 成功关闭P2P会话");
                 }
-                SteamEndPointMapper.Instance.UnregisterSteamID(remoteSteamID);
+                VirtualEndpointManager.Instance.UnregisterSteamID(remoteSteamID);
                 Debug.Log($"[Patch_OnPeerDisconnected] ✓ 已清理映射");
                 if (SteamP2PManager.Instance != null)
                 {
@@ -366,13 +388,22 @@ public class NetService : MonoBehaviour, INetEventListener
         // ConnectionAborted: 连接被中止
         // InvalidArgument (10014): 通常是底层网络库的临时错误，可以忽略
         // MessageSize: UDP包大小问题，可以忽略
+        // Fault: P2P模式下的底层socket错误，通常因为LiteNetLib试图直接UDP发送而不是通过Steam P2P
         if (socketError == SocketError.ConnectionReset || 
             socketError == SocketError.ConnectionAborted ||
             socketError == SocketError.InvalidArgument ||
-            socketError == SocketError.MessageSize)
+            socketError == SocketError.MessageSize ||
+            socketError == SocketError.Fault)
         {
             // 静默处理这些常见且不影响功能的错误
-            Debug.Log($"[NetService] 网络事件: {socketError} from {endPointStr} (正常，已处理)");
+            if (socketError == SocketError.Fault && TransportMode == NetworkTransportMode.SteamP2P)
+            {
+                Debug.Log($"[NetService-P2P] Socket.Fault from {endPointStr} (P2P模式正常，数据通过Steam路由)");
+            }
+            else
+            {
+                Debug.Log($"[NetService] 网络事件: {socketError} from {endPointStr} (正常，已处理)");
+            }
         }
         else
         {
@@ -382,11 +413,20 @@ public class NetService : MonoBehaviour, INetEventListener
 
     public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
     {
+        if (OnPacketFilter != null && OnPacketFilter.Invoke(peer, reader, deliveryMethod))
+        {
+            return;
+        }
         ModBehaviourF.Instance.OnNetworkReceive(peer, reader, channelNumber, deliveryMethod);
     }
 
     public void OnNetworkReceiveUnconnected(IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType)
     {
+        if (TransportMode == NetworkTransportMode.SteamP2P)
+        {
+            return;
+        }
+
         var msg = reader.GetString();
 
         if (IsServer && msg == "DISCOVER_REQUEST")
@@ -437,6 +477,13 @@ public class NetService : MonoBehaviour, INetEventListener
             BroadcastReceiveEnabled = true
         };
 
+        bool wantsP2P = TransportMode == NetworkTransportMode.SteamP2P;
+        
+        if (wantsP2P)
+        {
+            netManager.UseNativeSockets = false;
+            Debug.Log("[StartNetwork] Pre-setting UseNativeSockets=false for P2P mode");
+        }
 
         if (IsServer)
         {
@@ -486,9 +533,9 @@ public class NetService : MonoBehaviour, INetEventListener
             ItemAgent_Gun.OnMainCharacterShootEvent += COOPManager.WeaponHandle.Host_OnMainCharacterShoot;
         }
 
+        InitializeHybridTransport(isServer);
 
         // ===== 正确的 Steam P2P 初始化路径：在 P2P 可用时执行 =====
-        bool wantsP2P = TransportMode == NetworkTransportMode.SteamP2P;
         bool p2pAvailable =
             wantsP2P &&
             SteamP2PLoader.Instance != null &&
@@ -501,18 +548,11 @@ public class NetService : MonoBehaviour, INetEventListener
 
         if (p2pAvailable)
         {
-            Debug.Log("[StartNetwork] 联机Mod已启动，初始化Steam P2P组件"); // ← 现在会正常打印
-
-            if (netManager != null)
-            {
-                // 使用 Steam P2P 时让 LiteNetLib 不去占 UDP socket
-                netManager.UseNativeSockets = false;
-                Debug.Log("[StartNetwork] ✓ UseNativeSockets=false（P2P 模式）");
-            }
+            Debug.Log("[StartNetwork] 联机Mod已启动，初始化Steam P2P组件");
 
             // 保险：确保必要组件存在（Loader.Init 一般已创建）
-            if (SteamEndPointMapper.Instance == null)
-                DontDestroyOnLoad(new GameObject("SteamEndPointMapper").AddComponent<SteamEndPointMapper>());
+            if (VirtualEndpointManager.Instance == null)
+                DontDestroyOnLoad(new GameObject("VirtualEndpointManager").AddComponent<VirtualEndpointManager>());
             if (SteamLobbyManager.Instance == null)
                 DontDestroyOnLoad(new GameObject("SteamLobbyManager").AddComponent<SteamLobbyManager>());
 
@@ -543,6 +583,55 @@ public class NetService : MonoBehaviour, INetEventListener
 
     }
 
+    private void InitializeHybridTransport(bool isServer)
+    {
+        if (_hybridTransport == null)
+        {
+            _hybridTransport = Net.Core.HybridTransport.Instance;
+        }
+        
+        if (_hybridTransport == null)
+        {
+            Debug.LogWarning("[NetService] HybridTransport is null, cannot initialize");
+            return;
+        }
+        
+        var transportType = TransportMode == NetworkTransportMode.SteamP2P 
+            ? Net.Core.TransportType.SteamP2P 
+            : Net.Core.TransportType.Direct;
+            
+        Debug.Log($"[NetService-InitHybrid] Before Initialize, _hybridTransport={(_hybridTransport != null ? "OK" : "NULL")}");
+        
+        _hybridTransport.Initialize(transportType, port, enableRESTful: true);
+        
+        Debug.Log($"[NetService-InitHybrid] After Initialize, RESTful={(_hybridTransport.RESTfulTransport != null ? "OK" : "NULL")}");
+        
+        if (isServer)
+        {
+            _hybridTransport.StartServer(port, port + 1000);
+            Debug.Log($"[NetService-InitHybrid] After StartServer, RESTful.IsInitialized={_hybridTransport.RESTfulTransport?.IsInitialized}");
+        }
+        
+        var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager != null && _hybridTransport.UDPTransport != null)
+        {
+            rpcManager.SetCoreTransport(_hybridTransport.UDPTransport);
+        }
+        
+        var restVoteSystem = Net.Core.RESTfulVoteSystem.Instance;
+        if (restVoteSystem != null && _hybridTransport.RESTfulTransport != null)
+        {
+            Debug.Log("[NetService-InitHybrid] Registering RESTful routes");
+            restVoteSystem.RegisterRESTfulRoutes();
+        }
+        else
+        {
+            Debug.LogWarning($"[NetService-InitHybrid] Cannot register routes: restVoteSystem={restVoteSystem != null}, RESTfulTransport={_hybridTransport.RESTfulTransport != null}");
+        }
+        
+        Debug.Log($"[NetService] HybridTransport initialized: {transportType}, RESTful enabled");
+    }
+    
     public void StopNetwork(bool leaveSteamLobby = true)
     {
         if (netManager != null && netManager.IsRunning)
@@ -550,6 +639,8 @@ public class NetService : MonoBehaviour, INetEventListener
             netManager.Stop();
             Debug.Log(CoopLocalization.Get("net.networkStopped"));
         }
+        
+        _hybridTransport?.Stop();
 
         IsServer = false;
         networkStarted = false;
@@ -580,7 +671,6 @@ public class NetService : MonoBehaviour, INetEventListener
 
     public void ConnectToHost(string ip, int port)
     {
-        // 基础校验
         if (string.IsNullOrWhiteSpace(ip))
         {
             status = CoopLocalization.Get("net.ipEmpty");
@@ -649,7 +739,40 @@ public class NetService : MonoBehaviour, INetEventListener
 
             writer.Reset();
             writer.Put("gameKey");
+            
+            bool isP2PMode = TransportMode == NetworkTransportMode.SteamP2P;
+            
+            // LiteNetLib连接握手（P2P和直连都需要）
             netManager.Connect(ip, port, writer);
+            Debug.Log($"[NetService] LiteNetLib connection initiated to {ip}:{port} (mode: {(isP2PMode ? "SteamP2P" : "Direct")})");
+            
+            // 初始化混合传输层
+            if (_hybridTransport != null && !IsServer)
+            {
+                if (!isP2PMode)
+                {
+                    // 直连模式：完整初始化（UDP + RESTful）
+                    _hybridTransport.StartClient(ip, port, port + 1000);
+                    Debug.Log($"[NetService] Direct mode - HybridTransport fully initialized");
+                }
+                else
+                {
+                    // Steam P2P模式：只初始化RESTful传输层
+                    // UDP传输已通过netManager.Connect建立，数据会通过Steam P2P传输
+                    if (_hybridTransport.UDPTransport != null)
+                    {
+                        _hybridTransport.UDPTransport.StartClient();
+                        Debug.Log($"[NetService] Steam P2P - UDP transport started for data routing");
+                    }
+                    
+                    if (_hybridTransport.RESTfulTransport != null)
+                    {
+                        int restPort = port + 1000;
+                        _hybridTransport.RESTfulTransport.InitializeClient(ip, restPort);
+                        Debug.Log($"[NetService] Steam P2P - RESTful transport initialized: {ip}:{restPort}");
+                    }
+                }
+            }
         }
         catch (Exception ex)
         {

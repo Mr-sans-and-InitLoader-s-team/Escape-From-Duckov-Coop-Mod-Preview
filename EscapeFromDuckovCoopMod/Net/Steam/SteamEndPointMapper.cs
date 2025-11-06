@@ -66,32 +66,62 @@ namespace EscapeFromDuckovCoopMod
         {
             if (!SteamManager.Initialized)
             {
-                Debug.LogError($"[SteamEndPointMapper] Steam未初始化");
+                Debug.LogError($"[P2P-Wait] ❌ Steam未初始化");
                 callback?.Invoke(false);
                 yield break;
             }
+            
+            Debug.Log($"[P2P-Wait] 开始等待P2P会话: {steamID}, 超时: {timeoutSeconds}秒");
             float startTime = Time.time;
             bool sessionEstablished = false;
+            bool lastCheckResult = false;
+            int checkCount = 0;
+            
             while (Time.time - startTime < timeoutSeconds)
             {
                 Steamworks.P2PSessionState_t state;
-                if (Steamworks.SteamNetworking.GetP2PSessionState(steamID, out state))
+                bool stateAvailable = Steamworks.SteamNetworking.GetP2PSessionState(steamID, out state);
+                checkCount++;
+                
+                if (stateAvailable)
                 {
-                    if (state.m_bConnectionActive == 1)
+                    bool isActive = state.m_bConnectionActive == 1;
+                    if (isActive != lastCheckResult)
+                    {
+                        Debug.Log($"[P2P-Wait] 会话状态变化 ({checkCount}): Active={isActive}, UsingRelay={state.m_bUsingRelay}, BytesQueuedForSend={state.m_nBytesQueuedForSend}");
+                        lastCheckResult = isActive;
+                    }
+                    
+                    if (isActive)
                     {
                         sessionEstablished = true;
+                        Debug.Log($"[P2P-Wait] ✓ P2P会话建立成功");
+                        Debug.Log($"[P2P-Wait] 详细信息: UsingRelay={state.m_bUsingRelay}, RemoteIP={state.m_nRemoteIP}, RemotePort={state.m_nRemotePort}");
                         break;
                     }
                 }
+                else
+                {
+                    if (checkCount == 1)
+                    {
+                        Debug.LogWarning($"[P2P-Wait] ⚠️ 无法获取P2P会话状态");
+                    }
+                }
+                
                 yield return null;
             }
+            
             if (!sessionEstablished)
             {
-                Debug.LogError($"[SteamEndPointMapper] ❌ P2P会话建立超时（{timeoutSeconds}秒）");
+                float elapsed = Time.time - startTime;
+                Debug.LogError($"[P2P-Wait] ❌ P2P会话建立超时: {steamID}");
+                Debug.LogError($"[P2P-Wait] 等待时间: {elapsed:F2}秒 / {timeoutSeconds}秒, 检查次数: {checkCount}");
                 callback?.Invoke(false);
             }
             else
             {
+                float elapsed = Time.time - startTime;
+                Debug.Log($"[P2P-Wait] ✓ 会话建立耗时: {elapsed:F2}秒");
                 callback?.Invoke(true);
             }
         }

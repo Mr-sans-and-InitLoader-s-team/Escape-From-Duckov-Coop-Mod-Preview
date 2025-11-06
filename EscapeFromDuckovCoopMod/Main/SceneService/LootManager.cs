@@ -495,7 +495,7 @@ public class LootManager : MonoBehaviour
         return true;
     }
 
-    public void Server_HandleLootOpenRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootOpenRequest(NetPeer peer, NetDataReader r)
     {
         if (!IsServer) return;
 
@@ -621,7 +621,7 @@ public class LootManager : MonoBehaviour
 
 
     // 接收端：用“路径”从 inv 找回 item
-    public Item ReadItemRef(NetPacketReader r, Inventory inv)
+    public Item ReadItemRef(NetDataReader r, Inventory inv)
     {
         var rootIndex = r.GetInt();
         var keyCount = r.GetInt();

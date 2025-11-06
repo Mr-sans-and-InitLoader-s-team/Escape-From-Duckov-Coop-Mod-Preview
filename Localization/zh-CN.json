@@ -126,6 +126,26 @@
     { "key": "ui.hint.toggleUI", "value": "{0} 显示/隐藏" },
     { "key": "ui.teleport.toPlayer", "value": "传送到玩家" },
     { "key": "ui.teleport.fromMap", "value": "从地图传送 ({0})" },
-    { "key": "ui.teleport.noGround", "value": "未找到落脚点" }
+    { "key": "ui.teleport.noGround", "value": "未找到落脚点" },
+    
+    { "key": "ui.disconnect.title", "value": "连接已断开" },
+    { "key": "ui.disconnect.confirm", "value": "确定" },
+    { "key": "ui.disconnect.retry", "value": "重试连接" },
+    { "key": "ui.disconnect.reason.unknown", "value": "连接断开（未知原因）" },
+    { "key": "ui.disconnect.reason.timeout", "value": "连接超时 - 请检查您的网络连接" },
+    { "key": "ui.disconnect.reason.remote", "value": "主机已断开连接" },
+    { "key": "ui.disconnect.reason.failed", "value": "连接建立失败 - P2P会话可能未就绪、NAT类型不兼容或防火墙阻止连接" },
+    { "key": "ui.disconnect.reason.unreachable", "value": "无法连接到主机 - 请确认主机在线且可访问" },
+    { "key": "ui.disconnect.reason.p2p_failed", "value": "P2P连接失败（NAT: {0}）- 请检查Steam P2P中继和网络防火墙设置" },
+    { "key": "ui.disconnect.reason.peer_not_found", "value": "与主机的连接丢失 - P2P会话可能中断，请重试" },
+    { "key": "ui.disconnect.reason.generic", "value": "断开原因: {0}" },
+    { "key": "ui.disconnect.diagnostics", "value": "诊断信息" },
+    { "key": "ui.disconnect.diagnostics.nat", "value": "NAT类型: {0}" },
+    { "key": "ui.disconnect.diagnostics.endpoint", "value": "端点: {0}" },
+    { "key": "ui.disconnect.diagnostics.p2p_session", "value": "P2P会话: {0}" },
+    { "key": "ui.disconnect.diagnostics.yes", "value": "是" },
+    { "key": "ui.disconnect.diagnostics.no", "value": "否" },
+    { "key": "ui.connection.retry", "value": "重试连接中... (尝试 {0}/{1})" },
+    { "key": "ui.connection.retry.failed", "value": "连接重试失败\n已尝试 {0} 次" }
   ]
 }

@@ -23,7 +23,7 @@ public class WeaponTool
         if (!gun) return;
         try
         {
-            Traverse.Create(gun).Method("StartVisualRecoil").GetValue();
+            Utils.ReflectionCache.InvokeMethod(gun, "StartVisualRecoil");
             return;
         }
         catch
@@ -32,8 +32,7 @@ public class WeaponTool
 
         try
         {
-            // 兜底：等价于 StartVisualRecoil() 内部把 _recoilBack=true
-            Traverse.Create(gun).Field<bool>("_recoilBack").Value = true;
+            Utils.ReflectionCache.SetFieldValue(gun, "_recoilBack", true);
         }
         catch
         {

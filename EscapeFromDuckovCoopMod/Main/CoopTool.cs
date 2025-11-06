@@ -139,6 +139,8 @@ public static class CoopTool
         var service = Service;
         if (service == null) return;
 
+        if (service.TransportMode == NetworkTransportMode.SteamP2P) return;
+
         var manager = service.netManager;
         if (manager == null || !manager.IsRunning) return;
 

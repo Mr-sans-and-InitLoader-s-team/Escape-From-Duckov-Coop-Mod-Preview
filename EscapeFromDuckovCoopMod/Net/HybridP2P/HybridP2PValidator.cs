@@ -17,6 +17,8 @@ public class HybridP2PValidator
         public float LastFireTime;
         public int FireCount;
         public float FireWindowStart;
+        public float LastSuspiciousTime;
+        public int HealthChangeExtremeCount;
     }
     
     private readonly Dictionary<string, ClientValidationData> _clientData = new();
@@ -25,7 +27,7 @@ public class HybridP2PValidator
     private const float MAX_FIRE_RATE = 20f;
     private const float FIRE_RATE_WINDOW = 1f;
     private const int MAX_SUSPICIOUS_COUNT = 10;
-    private const float MAX_HEALTH_CHANGE_RATE = 500f;
+    private const float MAX_HEALTH_CHANGE_RATE = 10000f;
     
     public HybridP2PValidator()
     {
@@ -143,8 +145,17 @@ public class HybridP2PValidator
     
     public bool ValidateHealthUpdate(string endPoint, float maxHealth, float currentHealth)
     {
-        if (maxHealth < 0 || currentHealth < 0 || currentHealth > maxHealth + 1f)
+        bool isLocalhost = endPoint != null && endPoint.StartsWith("127.0.0.1");
+        
+        if (maxHealth < 0 || currentHealth < 0 || currentHealth > maxHealth + 50f)
         {
+            if (isLocalhost)
+            {
+                Debug.Log($"[HybridP2PValidator] Local connection {endPoint} health bounds warning (ignored): {currentHealth}/{maxHealth}");
+                _lastHealthData[endPoint] = (maxHealth, currentHealth, Time.realtimeSinceStartup);
+                return true;
+            }
+            
             if (!_clientData.TryGetValue(endPoint, out var data))
             {
                 data = new ClientValidationData();
@@ -152,7 +163,7 @@ public class HybridP2PValidator
             }
             
             data.SuspiciousCount++;
-            Debug.LogWarning($"[HybridP2PValidator] Invalid health values from {endPoint}: {currentHealth}/{maxHealth}");
+            Debug.LogWarning($"[HybridP2PValidator] Invalid health values from {endPoint}: {currentHealth}/{maxHealth}, count={data.SuspiciousCount}");
             
             if (data.SuspiciousCount >= MAX_SUSPICIOUS_COUNT)
             {
@@ -160,7 +171,8 @@ public class HybridP2PValidator
                 return false;
             }
             
-            return false;
+            _lastHealthData[endPoint] = (maxHealth, currentHealth, Time.realtimeSinceStartup);
+            return true;
         }
         
         if (_lastHealthData.TryGetValue(endPoint, out var lastData))
@@ -171,20 +183,43 @@ public class HybridP2PValidator
                 float healthChange = Mathf.Abs(currentHealth - lastData.cur);
                 float changeRate = healthChange / deltaTime;
                 
-                if (changeRate > MAX_HEALTH_CHANGE_RATE)
+                float threshold = isLocalhost ? (MAX_HEALTH_CHANGE_RATE * 10f) : MAX_HEALTH_CHANGE_RATE;
+                float extremeThreshold = threshold * 5f;
+                
+                if (changeRate > extremeThreshold)
                 {
-                    if (!_clientData.TryGetValue(endPoint, out var data))
+                    if (isLocalhost)
                     {
-                        data = new ClientValidationData();
-                        _clientData[endPoint] = data;
+                        // Debug.Log($"[HybridP2PValidator] Local connection {endPoint} high health change rate (ignored): {changeRate:F1}/s");
                     }
-                    
-                    data.SuspiciousCount++;
-                    Debug.LogWarning($"[HybridP2PValidator] Suspicious health change rate from {endPoint}: {changeRate:F1}/s");
-                    
-                    if (data.SuspiciousCount >= MAX_SUSPICIOUS_COUNT)
+                    else
                     {
-                        return false;
+                        if (!_clientData.TryGetValue(endPoint, out var data))
+                        {
+                            data = new ClientValidationData();
+                            _clientData[endPoint] = data;
+                        }
+                        
+                        float timeSinceLastSuspicious = Time.realtimeSinceStartup - data.LastSuspiciousTime;
+                        if (timeSinceLastSuspicious > 5f)
+                        {
+                            data.HealthChangeExtremeCount = 0;
+                        }
+                        
+                        data.HealthChangeExtremeCount++;
+                        data.LastSuspiciousTime = Time.realtimeSinceStartup;
+                        
+                        if (data.HealthChangeExtremeCount >= 3)
+                        {
+                            data.SuspiciousCount++;
+                            Debug.LogWarning($"[HybridP2PValidator] Suspicious health change rate from {endPoint}: {changeRate:F1}/s, count={data.SuspiciousCount}");
+                            
+                            if (data.SuspiciousCount >= MAX_SUSPICIOUS_COUNT)
+                            {
+                                Debug.LogError($"[HybridP2PValidator] Client {endPoint} exceeded suspicious threshold");
+                                return false;
+                            }
+                        }
                     }
                 }
             }

@@ -107,7 +107,7 @@ public class Door
     }
 
     // 主机：处理客户端的设门请求
-    public void Server_HandleDoorSetRequest(NetPeer peer, NetPacketReader reader)
+    public void Server_HandleDoorSetRequest(NetPeer peer, NetDataReader reader)
     {
         if (!IsServer) return;
         var key = reader.GetInt();

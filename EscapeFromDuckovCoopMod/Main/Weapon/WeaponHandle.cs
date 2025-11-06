@@ -293,7 +293,7 @@ public class WeaponHandle
         FxManager.PlayMuzzleFxAndShell(localPlayerStatus.EndPoint, gun.Item.TypeID, muzzleWorld, finalDir);
     }
 
-    public void HandleFireEvent(NetPacketReader r)
+    public void HandleFireEvent(NetDataReader r)
     {
         // —— 主机广播的“射击视觉事件”的基础参数 —— 
         var shooterId = r.GetString();
@@ -499,7 +499,7 @@ public class WeaponHandle
         CoopTool.TryPlayShootAnim(shooterId);
     }
 
-    public void HandleFireRequest(NetPeer peer, NetPacketReader r)
+    public void HandleFireRequest(NetPeer peer, NetDataReader r)
     {
         var shooterId = r.GetString();
         var weaponType = r.GetInt();
@@ -684,7 +684,7 @@ public class WeaponHandle
     }
 
     // 主机：收到客户端“近战起手”，播动作 + 强制挥空 FX（避免动画事件缺失）
-    public void HandleMeleeAttackRequest(NetPeer sender, NetPacketReader reader)
+    public void HandleMeleeAttackRequest(NetPeer sender, NetDataReader reader)
     {
         var delay = reader.GetFloat();
         var pos = reader.GetV3cm();
@@ -713,7 +713,7 @@ public class WeaponHandle
         }
     }
 
-    public void HandleMeleeHitReport(NetPeer sender, NetPacketReader reader)
+    public void HandleMeleeHitReport(NetPeer sender, NetDataReader reader)
     {
         Debug.Log($"[SERVER] HandleMeleeHitReport begin, from={sender?.EndPoint}, bytes={reader.AvailableBytes}");
 

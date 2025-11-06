@@ -25,17 +25,30 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
 
     public class HybridRPCManager : MonoBehaviour
     {
-        private const byte RPC_MESSAGE_TYPE = 255;
+        public const byte RPC_MESSAGE_TYPE = 255;
 
         private readonly Dictionary<ushort, RPCHandler> _rpcHandlers = new Dictionary<ushort, RPCHandler>();
         private readonly Dictionary<string, ushort> _rpcNameToId = new Dictionary<string, ushort>();
         private readonly Dictionary<ushort, string> _rpcIdToName = new Dictionary<ushort, string>();
+        private Dictionary<long, NetPeer> _connectionIdToPeer = new Dictionary<long, NetPeer>();
         
         private SteamNetworkingTransport _steamTransport;
         private ushort _nextRpcId = 1;
+        private ReliabilityManager _reliabilityManager;
+        private Core.INetworkTransport _coreTransport;
 
         public static HybridRPCManager Instance { get; private set; }
         public TransportMode Mode { get; set; } = TransportMode.Auto;
+        
+        public void SetCoreTransport(Core.INetworkTransport transport)
+        {
+            _coreTransport = transport;
+            
+            if (_coreTransport != null)
+            {
+                Debug.Log($"[HybridRPCManager] Core transport set: {_coreTransport.Type}");
+            }
+        }
         
         public bool IsServer
         {
@@ -82,7 +95,22 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
             Instance = this;
             DontDestroyOnLoad(gameObject);
             
+            _reliabilityManager = new ReliabilityManager();
+            RegisterRPC("__MessageAck", OnMessageAck);
+            
             Debug.Log("[HybridRPCManager] 初始化完成");
+        }
+
+        private void Update()
+        {
+            _reliabilityManager?.Update();
+            ProcessMessages();
+        }
+
+        private void OnMessageAck(long senderConnectionId, NetDataReader reader)
+        {
+            uint messageId = reader.GetUInt();
+            _reliabilityManager?.OnMessageAck(messageId, senderConnectionId);
         }
 
         public void Initialize(SteamNetworkingTransport transport)
@@ -91,6 +119,44 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
             Debug.Log("[HybridRPCManager] 已绑定Steam传输层");
         }
 
+        public NetPeer GetPeerByConnectionId(long connectionId)
+        {
+            return _connectionIdToPeer.TryGetValue(connectionId, out var peer) ? peer : null;
+        }
+        
+        public long GetConnectionIdByPeer(NetPeer peer)
+        {
+            if (peer == null) return 0;
+            foreach (var kvp in _connectionIdToPeer)
+            {
+                if (kvp.Value == peer)
+                    return kvp.Key;
+            }
+            return 0;
+        }
+        
+        public void UnregisterPeer(long connectionId)
+        {
+            _connectionIdToPeer.Remove(connectionId);
+        }
+        
+        public void UnregisterPeerByReference(NetPeer peer)
+        {
+            if (peer == null) return;
+            var toRemove = new List<long>();
+            foreach (var kvp in _connectionIdToPeer)
+            {
+                if (kvp.Value == peer)
+                {
+                    toRemove.Add(kvp.Key);
+                }
+            }
+            foreach (var id in toRemove)
+            {
+                _connectionIdToPeer.Remove(id);
+            }
+        }
+        
         public ushort RegisterRPC(string rpcName, RPCHandler handler)
         {
             if (_rpcNameToId.TryGetValue(rpcName, out ushort existingId))
@@ -121,6 +187,19 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
 
         public void CallRPC(string rpcName, RPCTarget target, long targetConnectionId, Action<NetDataWriter> writeData, DeliveryMethod deliveryMethod = DeliveryMethod.ReliableOrdered)
         {
+            CallRPCInternal(rpcName, target, targetConnectionId, writeData, deliveryMethod, false, 0);
+        }
+
+        public uint CallReliableRPC(string rpcName, RPCTarget target, long targetConnectionId, Action<NetDataWriter> writeData, DeliveryMethod deliveryMethod = DeliveryMethod.ReliableOrdered)
+        {
+            uint messageId = _reliabilityManager.SendReliableMessage(rpcName, targetConnectionId, writeData);
+            Debug.Log($"[HybridRPCManager] CallReliableRPC: {rpcName}, target={target}, msgId={messageId}, useSteam={UseSteamTransport}");
+            CallRPCInternal(rpcName, target, targetConnectionId, writeData, deliveryMethod, true, messageId);
+            return messageId;
+        }
+
+        private void CallRPCInternal(string rpcName, RPCTarget target, long targetConnectionId, Action<NetDataWriter> writeData, DeliveryMethod deliveryMethod, bool withMessageId, uint messageId)
+        {
             if (!_rpcNameToId.TryGetValue(rpcName, out ushort rpcId))
             {
                 Debug.LogError($"[HybridRPCManager] RPC '{rpcName}' not registered");
@@ -130,11 +209,22 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
             NetDataWriter writer = new NetDataWriter();
             writer.Put(RPC_MESSAGE_TYPE);
             writer.Put(rpcId);
-            writer.Put((byte)target);
+            
+            byte flags = (byte)target;
+            if (withMessageId)
+            {
+                flags |= 0x80; // 设置最高位表示包含messageId
+            }
+            writer.Put(flags);
             
             if (target == RPCTarget.TargetClient)
             {
                 writer.Put(targetConnectionId);
+            }
+
+            if (withMessageId)
+            {
+                writer.Put(messageId);
             }
 
             writeData?.Invoke(writer);
@@ -175,9 +265,8 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
         private void SendViaLAN(RPCTarget target, long targetConnectionId, NetDataWriter writer, DeliveryMethod deliveryMethod)
         {
             var netService = NetService.Instance;
-            if (netService == null || netService.netManager == null)
+            if (netService == null || netService.netManager == null || !netService.networkStarted)
             {
-                Debug.LogError("[HybridRPCManager] NetService not available");
                 return;
             }
 
@@ -256,8 +345,8 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
                     break;
 
                 case RPCTarget.AllClients:
+                    int peerCount = netService.netManager.ConnectedPeersCount;
                     netService.netManager.SendToAll(writer, deliveryMethod);
-                    // Debug.Log($"[HybridRPCManager] Sent LAN RPC to all {netService.netManager.ConnectedPeersCount} clients");
                     break;
 
                 case RPCTarget.TargetClient:
@@ -310,40 +399,61 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
         }
         
         // 供Mod.OnNetworkReceive调用，处理LAN模式的RPC消息
-        public void ProcessLANMessage(long senderConnectionId, NetPacketReader reader)
+        public void ProcessLANMessage(long senderConnectionId, NetPacketReader reader, NetPeer senderPeer = null)
         {
             if (reader == null || reader.AvailableBytes < 3)
                 return;
+
+            if (senderPeer != null)
+            {
+                _connectionIdToPeer[senderConnectionId] = senderPeer;
+            }
 
             byte messageType = reader.GetByte();
             if (messageType != RPC_MESSAGE_TYPE)
                 return;
 
             ushort rpcId = reader.GetUShort();
-            RPCTarget target = (RPCTarget)reader.GetByte();
+            byte flags = reader.GetByte();
+            RPCTarget target = (RPCTarget)(flags & 0x7F);
+            bool hasMessageId = (flags & 0x80) != 0;
+            
+            string rpcName = _rpcIdToName.TryGetValue(rpcId, out string name) ? name : $"RPC_{rpcId}";
+            // Debug.Log($"[HybridRPCManager-LAN] ProcessLANMessage: rpc={rpcName}, sender={senderConnectionId}, target={target}, hasMsg={hasMessageId}");
 
-            NetDataReader dataReader = new NetDataReader(reader.RawData, reader.Position, reader.AvailableBytes);
+            uint messageId = 0;
+            if (hasMessageId)
+            {
+                messageId = reader.GetUInt();
+                
+                if (!_reliabilityManager.ShouldProcessMessage(messageId, senderConnectionId))
+                {
+                    Debug.Log($"[HybridRPCManager-LAN] Duplicate message {messageId} from {senderConnectionId}, skipping");
+                    return;
+                }
+                
+                _reliabilityManager.SendAck(messageId, senderConnectionId);
+            }
 
             if (IsServer && target != RPCTarget.Server)
             {
-                // 服务器转发消息
-                ForwardLANMessage(target, senderConnectionId, rpcId, dataReader);
+                NetDataReader dataReader = new NetDataReader(reader.RawData, reader.Position, reader.AvailableBytes);
+                ForwardLANMessage(target, senderConnectionId, rpcId, flags, messageId, dataReader);
                 return;
             }
 
             if (_rpcHandlers.TryGetValue(rpcId, out RPCHandler handler))
             {
-                string rpcName = _rpcIdToName.TryGetValue(rpcId, out string name) ? name : $"RPC_{rpcId}";
-                // Debug.Log($"[HybridRPCManager] Invoking LAN RPC '{rpcName}' from {senderConnectionId}");
-                handler?.Invoke(senderConnectionId, dataReader);
+                // Debug.Log($"[HybridRPCManager-LAN] Invoking handler for '{rpcName}' from {senderConnectionId}");
+                handler?.Invoke(senderConnectionId, reader);
             }
             else
             {
-                Debug.LogWarning($"[HybridRPCManager] No handler for LAN RPC ID {rpcId}");
+                Debug.LogWarning($"[HybridRPCManager-LAN] No handler for RPC '{rpcName}' (ID {rpcId})");
             }
         }
         
-        private void ForwardLANMessage(RPCTarget target, long senderConnectionId, ushort rpcId, NetDataReader dataReader)
+        private void ForwardLANMessage(RPCTarget target, long senderConnectionId, ushort rpcId, byte flags, uint messageId, NetDataReader dataReader)
         {
             var netService = NetService.Instance;
             if (netService == null || netService.netManager == null)
@@ -352,9 +462,14 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
             NetDataWriter writer = new NetDataWriter();
             writer.Put(RPC_MESSAGE_TYPE);
             writer.Put(rpcId);
-            writer.Put((byte)target);
+            writer.Put(flags);
             
-            // 复制剩余数据
+            bool hasMessageId = (flags & 0x80) != 0;
+            if (hasMessageId)
+            {
+                writer.Put(messageId);
+            }
+            
             int remainingBytes = dataReader.AvailableBytes;
             if (remainingBytes > 0)
             {
@@ -364,7 +479,7 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
             }
 
             netService.netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
-            Debug.Log($"[HybridRPCManager] Forwarded LAN RPC {rpcId} from {senderConnectionId}");
+            Debug.Log($"[HybridRPCManager-LAN] Forwarded RPC {rpcId} from {senderConnectionId} to all clients");
         }
 
         private void ProcessServerMessages()
@@ -437,7 +552,9 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
                 }
 
                 ushort rpcId = reader.GetUShort();
-                RPCTarget target = (RPCTarget)reader.GetByte();
+                byte flags = reader.GetByte();
+                RPCTarget target = (RPCTarget)(flags & 0x7F); // 低7位是target
+                bool hasMessageId = (flags & 0x80) != 0; // 最高位是messageId标志
 
                 if (IsServer && target != RPCTarget.Server)
                 {
@@ -450,7 +567,7 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
                     NetDataWriter writer = new NetDataWriter();
                     writer.Put(RPC_MESSAGE_TYPE);
                     writer.Put(rpcId);
-                    writer.Put((byte)target);
+                    writer.Put(flags);
                     
                     int remainingBytes = reader.AvailableBytes;
                     if (remainingBytes > 0)
@@ -465,10 +582,23 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
                     return;
                 }
 
+                uint messageId = 0;
+                if (hasMessageId)
+                {
+                    messageId = reader.GetUInt();
+                    
+                    if (!_reliabilityManager.ShouldProcessMessage(messageId, senderConnectionId))
+                    {
+                        return; // 重复消息，跳过
+                    }
+                    
+                    _reliabilityManager.SendAck(messageId, senderConnectionId);
+                }
+
                 if (_rpcHandlers.TryGetValue(rpcId, out RPCHandler handler))
                 {
                     string rpcName = _rpcIdToName.TryGetValue(rpcId, out string name) ? name : $"RPC_{rpcId}";
-                    Debug.Log($"[HybridRPCManager] Invoking RPC '{rpcName}' from {senderConnectionId}");
+                    // Debug.Log($"[HybridRPCManager] Invoking RPC '{rpcName}' from {senderConnectionId}" + (hasMessageId ? $" (msgId={messageId})" : ""));
                     handler?.Invoke(senderConnectionId, reader);
                 }
                 else
@@ -495,11 +625,6 @@ namespace EscapeFromDuckovCoopMod.Net.HybridP2P
             }
 
             return connections;
-        }
-
-        private void Update()
-        {
-            ProcessMessages();
         }
 
         private void OnDestroy()

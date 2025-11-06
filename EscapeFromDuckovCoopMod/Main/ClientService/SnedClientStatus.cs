@@ -41,24 +41,33 @@ public class Send_ClientStatus : MonoBehaviour
         var equipmentList = LocalPlayerManager.Instance.GetLocalEquipment();
         var weaponList = LocalPlayerManager.Instance.GetLocalWeapons();
 
-        writer.Reset();
-        writer.Put((byte)Op.CLIENT_STATUS_UPDATE); // opcode
-        writer.Put(localPlayerStatus.EndPoint);
-        writer.Put(localPlayerStatus.PlayerName);
-        writer.Put(localPlayerStatus.IsInGame);
-        writer.PutVector3(localPlayerStatus.Position);
-        writer.PutQuaternion(localPlayerStatus.Rotation);
+        var rpcManager = Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager == null)
+        {
+            Debug.LogWarning("[ClientStatus] HybridRPCManager not available");
+            return;
+        }
 
-        writer.Put(localPlayerStatus?.SceneId ?? string.Empty);
-
-        writer.Put(localPlayerStatus.CustomFaceJson ?? "");
-
-        writer.Put(equipmentList.Count);
-        foreach (var e in equipmentList) e.Serialize(writer);
-
-        writer.Put(weaponList.Count);
-        foreach (var w in weaponList) w.Serialize(writer);
-
-        connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+        rpcManager.CallRPC("ClientStatusReport", Net.HybridP2P.RPCTarget.Server, 0, w =>
+        {
+            w.Put(localPlayerStatus.EndPoint);
+            w.Put(localPlayerStatus.PlayerName);
+            w.Put(localPlayerStatus.IsInGame);
+            w.Put(localPlayerStatus.Position.x);
+            w.Put(localPlayerStatus.Position.y);
+            w.Put(localPlayerStatus.Position.z);
+            w.Put(localPlayerStatus.Rotation.x);
+            w.Put(localPlayerStatus.Rotation.y);
+            w.Put(localPlayerStatus.Rotation.z);
+            w.Put(localPlayerStatus.Rotation.w);
+            w.Put(localPlayerStatus?.SceneId ?? string.Empty);
+            w.Put(localPlayerStatus.CustomFaceJson ?? "");
+            
+            w.Put(equipmentList.Count);
+            foreach (var e in equipmentList) e.Serialize(w);
+            
+            w.Put(weaponList.Count);
+            foreach (var w2 in weaponList) w2.Serialize(w);
+        });
     }
 }

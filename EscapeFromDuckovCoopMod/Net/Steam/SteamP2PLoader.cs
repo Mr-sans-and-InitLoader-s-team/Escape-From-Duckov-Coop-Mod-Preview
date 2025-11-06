@@ -36,7 +36,7 @@ namespace EscapeFromDuckovCoopMod
                 if (UseSteamP2P && SteamManager.Initialized)
                 {
                     gameObject.AddComponent<SteamP2PManager>();
-                    gameObject.AddComponent<SteamEndPointMapper>();
+                    gameObject.AddComponent<VirtualEndpointManager>();
                     gameObject.AddComponent<SteamLobbyManager>();
                     Debug.Log("[SteamP2P扩展] Steam P2P组件已启动");
                 }

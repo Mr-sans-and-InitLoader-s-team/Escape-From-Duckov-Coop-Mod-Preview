@@ -29,7 +29,7 @@ public class HurtM
     private static bool networkStarted => Service != null && Service.networkStarted;
 
     // 主机：收到客户端请求，按本地规则结算，再广播受击，这是个建筑物的伤害处理
-    public void Server_HandleEnvHurtRequest(NetPeer sender, NetPacketReader r)
+    public void Server_HandleEnvHurtRequest(NetPeer sender, NetDataReader r)
     {
         var id = r.GetUInt();
         var payload = r.GetDamagePayload(); // (dmg, ap, cdf, cr, crit, point, normal, wid, bleed, boom, range)

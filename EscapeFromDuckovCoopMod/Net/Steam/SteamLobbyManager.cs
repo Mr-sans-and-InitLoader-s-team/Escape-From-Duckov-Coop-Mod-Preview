@@ -372,32 +372,45 @@ namespace EscapeFromDuckovCoopMod
                 // 初始化缓存：加载所有已存在的成员
                 _lobbyMembersCache.Clear();
                 int memberCount = SteamMatchmaking.GetNumLobbyMembers(_currentLobbyId);
+                Debug.Log($"[SteamLobby] Lobby当前成员数: {memberCount}");
+                
                 for (int i = 0; i < memberCount; i++)
                 {
                     CSteamID memberId = SteamMatchmaking.GetLobbyMemberByIndex(_currentLobbyId, i);
                     string memberName = SteamFriends.GetFriendPersonaName(memberId);
                     _lobbyMembersCache[memberId] = memberName;
-                    Debug.Log($"[SteamLobby] 缓存成员: {memberName} (SteamID: {memberId.m_SteamID})");
+                    
+                    if (memberId != myId && VirtualEndpointManager.Instance != null)
+                    {
+                        var endpoint = VirtualEndpointManager.Instance.RegisterOrUpdateSteamID(memberId);
+                        Debug.Log($"[SteamLobby] 预注册成员端点: {memberName} ({memberId.m_SteamID}) -> {endpoint}");
+                    }
+                    else
+                    {
+                        Debug.Log($"[SteamLobby] 缓存成员: {memberName} (SteamID: {memberId.m_SteamID})");
+                    }
                 }
 
                 if (hostId == myId)
                 {
-                    Debug.Log("[SteamLobby] ✓ 我是主机，启动联机服务器");
                     _isHost = true;
-                    SteamLobbyHelper.TriggerMultiplayerHost();
+                    
+                    if (NetService.Instance != null && NetService.Instance.IsServer && NetService.Instance.networkStarted)
+                    {
+                        Debug.Log("[SteamLobby] ✓ 我是主机，网络已启动，跳过重启");
+                    }
+                    else
+                    {
+                        Debug.Log("[SteamLobby] ✓ 我是主机，启动联机服务器");
+                        SteamLobbyHelper.TriggerMultiplayerHost();
+                    }
                 }
                 else
                 {
-                    Debug.Log("[SteamLobby] ✓ 我是客户端，准备连接到主机");
+                    Debug.Log("[SteamLobby] 我是客户端，准备连接到主机");
                     _isHost = false;
 
-                    if (SteamEndPointMapper.Instance != null)
-                    {
-                        var hostEndPoint = SteamEndPointMapper.Instance.RegisterSteamID(hostId, 27015);
-                        Debug.Log($"[SteamLobby] 主机映射到: {hostEndPoint}");
-                    }
-
-                    Debug.Log("[SteamLobby] Lobby加入成功，自动连接到主机");
+                    Debug.Log("[SteamLobby] Lobby加入成功，触发连接流程");
                     SteamLobbyHelper.TriggerMultiplayerConnect(hostId);
                 }
 
@@ -423,18 +436,18 @@ namespace EscapeFromDuckovCoopMod
                     Debug.Log($"[SteamLobby] {userName} (SteamID: {userId.m_SteamID}) 加入了Lobby");
                     // 缓存成员信息
                     _lobbyMembersCache[userId] = userName;
-                    if (SteamEndPointMapper.Instance != null)
+                    if (VirtualEndpointManager.Instance != null)
                     {
-                        SteamEndPointMapper.Instance.RegisterSteamID(userId);
+                        VirtualEndpointManager.Instance.RegisterOrUpdateSteamID(userId);
                     }
                     break;
                 case EChatMemberStateChange.k_EChatMemberStateChangeLeft:
                     Debug.Log($"[SteamLobby] {userName} 离开了Lobby");
                     // 移除缓存
                     _lobbyMembersCache.Remove(userId);
-                    if (SteamEndPointMapper.Instance != null)
+                    if (VirtualEndpointManager.Instance != null)
                     {
-                        SteamEndPointMapper.Instance.UnregisterSteamID(userId);
+                        VirtualEndpointManager.Instance.UnregisterSteamID(userId);
                     }
                     break;
                 case EChatMemberStateChange.k_EChatMemberStateChangeDisconnected:

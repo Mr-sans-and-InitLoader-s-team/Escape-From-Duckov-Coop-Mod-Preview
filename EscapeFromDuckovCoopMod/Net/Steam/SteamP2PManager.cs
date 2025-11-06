@@ -34,6 +34,7 @@ public class SteamP2PManager : MonoBehaviour
     private int _packetsReceived;
     private long _bytesSent;
     private long _bytesReceived;
+    private static volatile bool _steamInitialized = false;
     public int PacketsSent => _packetsSent;
     public int PacketsReceived => _packetsReceived;
     public long BytesSent => _bytesSent;
@@ -56,17 +57,21 @@ public class SteamP2PManager : MonoBehaviour
         }
         Instance = this;
         DontDestroyOnLoad(gameObject);
+        
+        _steamInitialized = SteamManager.Initialized;
+        Debug.Log($"[SteamP2P] Awake完成，Steam状态: {_steamInitialized}");
+        
         InitializeSteamCallbacks();
     }
     private void InitializeSteamCallbacks()
     {
-        if (!SteamManager.Initialized)
+        if (!_steamInitialized)
         {
             Debug.LogError("[SteamP2P] Steam未初始化，无法设置回调");
             return;
         }
         SteamNetworking.AllowP2PPacketRelay(true);
-        Debug.Log("[SteamP2P] ✓ 已启用中继服务器（用于NAT穿透）");
+        Debug.Log("[SteamP2P] 已启用中继服务器（用于NAT穿透）");
         _p2pSessionRequestCallback = Callback<P2PSessionRequest_t>.Create(OnP2PSessionRequest);
         _p2pSessionConnectFailCallback = Callback<P2PSessionConnectFail_t>.Create(OnP2PSessionConnectFail);
         Debug.Log("[SteamP2P] Steam回调已设置");
@@ -75,7 +80,7 @@ public class SteamP2PManager : MonoBehaviour
     private int _directReadCount = 0;
     private void Update()
     {
-        if (!SteamManager.Initialized || !SteamP2PLoader.Instance.UseSteamP2P)
+        if (!_steamInitialized || !SteamP2PLoader.Instance.UseSteamP2P)
             return;
         _updateCount++;
         if (_updateCount % 1800 == 0)
@@ -88,45 +93,13 @@ public class SteamP2PManager : MonoBehaviour
     }
     private void DiagnoseP2PQuality()
     {
-        if (SteamEndPointMapper.Instance == null)
-            return;
-        var allSteamIDs = SteamEndPointMapper.Instance.GetAllSteamIDs();
-        foreach (var steamID in allSteamIDs)
+        if (VirtualEndpointManager.Instance == null)
         {
-            if (SteamNetworking.GetP2PSessionState(steamID, out P2PSessionState_t state))
-            {
-                bool usingRelay = state.m_bUsingRelay == 1;
-                string quality = "未知";
-                if (state.m_nBytesQueuedForSend == 0)
-                    quality = "优秀（无积压）";
-                else if (state.m_nBytesQueuedForSend < 10000)
-                    quality = "良好";
-                else if (state.m_nBytesQueuedForSend < 50000)
-                    quality = "一般（可能卡顿）";
-                else
-                    quality = "差（严重卡顿）";
-                Debug.Log($"[SteamP2P] 📊 连接质量报告 - {steamID}");
-                Debug.Log($"  - 连接状态: {(state.m_bConnectionActive == 1 ? "✓ 已连接" : "⚠️ 未连接")}");
-                Debug.Log($"  - 连接方式: {(usingRelay ? "⚠️ 中继服务器（延迟较高）" : "✓ 直连（延迟最低）")}");
-                Debug.Log($"  - 发送队列: {state.m_nBytesQueuedForSend} 字节");
-                Debug.Log($"  - 质量评估: {quality}");
-                if (usingRelay)
-                {
-                    Debug.LogWarning($"[SteamP2P] ⚠️ 正在使用中继服务器，这会增加50-200ms延迟");
-                    Debug.LogWarning($"[SteamP2P] 💡 优化建议：");
-                    Debug.LogWarning($"  1. 检查路由器UPnP是否启用");
-                    Debug.LogWarning($"  2. 配置端口转发：UDP 27015-27020");
-                    Debug.LogWarning($"  3. 或接受中继延迟（可玩但不如直连流畅）");
-                }
-                if (state.m_nBytesQueuedForSend > 50000)
-                {
-                    Debug.LogError($"[SteamP2P] ❌ 发送队列积压严重！可能原因：");
-                    Debug.LogError($"  1. 网络带宽不足");
-                    Debug.LogError($"  2. 对方接收速度慢");
-                    Debug.LogError($"  3. 中继服务器拥堵");
-                }
-            }
+            Debug.LogWarning("[SteamP2P] VirtualEndpointManager未初始化");
+            return;
         }
+        
+        Debug.Log(VirtualEndpointManager.Instance.GetDiagnosticInfo());
     }
     private void ReceiveSteamPackets()
     {
@@ -279,11 +252,11 @@ public class SteamP2PManager : MonoBehaviour
                     int copySize = (int)Math.Min(bytesRead, maxSize);
                     Array.Copy(tempBuffer, 0, buffer, offset, copySize);
                     length = copySize;
-                    if (SteamEndPointMapper.Instance != null)
+                    if (VirtualEndpointManager.Instance != null)
                     {
-                        if (!SteamEndPointMapper.Instance.TryGetEndPoint(remoteSteamID, out endPoint))
+                        if (!VirtualEndpointManager.Instance.TryGetEndpoint(remoteSteamID, out endPoint))
                         {
-                            endPoint = SteamEndPointMapper.Instance.RegisterSteamID(remoteSteamID);
+                            endPoint = VirtualEndpointManager.Instance.RegisterOrUpdateSteamID(remoteSteamID);
                         }
                     }
                     System.Threading.Interlocked.Increment(ref _packetsReceived);
@@ -340,7 +313,6 @@ public class SteamP2PManager : MonoBehaviour
             bool sent = SteamNetworking.SendP2PPacket(request.m_steamIDRemote, handshake, (uint)handshake.Length,
                 EP2PSend.k_EP2PSendReliable, 0);
             Debug.Log($"[SteamP2P] NAT穿透握手完成: {(sent ? "成功" : "失败")}");
-            SteamEndPointMapper.Instance?.OnP2PSessionEstablished(request.m_steamIDRemote);
         }
         else
         {
@@ -371,24 +343,23 @@ public class SteamP2PManager : MonoBehaviour
                 errorMsg = $"Unknown({failure.m_eP2PSessionError})";
                 break;
         }
-        Debug.LogError($"[SteamP2P] ❌ P2P连接失败: {failure.m_steamIDRemote}");
+        Debug.LogError($"[SteamP2P] P2P连接失败: {failure.m_steamIDRemote}");
         Debug.LogError($"[SteamP2P] 错误原因: {errorMsg}");
-        SteamEndPointMapper.Instance?.OnP2PSessionFailed(failure.m_steamIDRemote);
     }
     #endregion
     private void OnDestroy()
     {
-        if (SteamManager.Initialized)
+        Debug.Log("[SteamP2P] OnDestroy开始");
+        
+        if (_steamInitialized)
         {
-            var activeSessions = SteamEndPointMapper.Instance?.GetAllSteamIDs();
-            if (activeSessions != null)
+            if (VirtualEndpointManager.Instance != null)
             {
-                foreach (var steamID in activeSessions)
-                {
-                    SteamNetworking.CloseP2PSessionWithUser(steamID);
-                }
+                Debug.Log("[SteamP2P] 清理VirtualEndpointManager会话");
+                VirtualEndpointManager.Instance.ClearAll();
             }
         }
+        
         Debug.Log($"[SteamP2P] ========== 会话统计 ==========");
         Debug.Log($"[SteamP2P] 发送: {PacketsSent}包 ({BytesSent:N0}字节) | 失败: {SendFailures}");
         Debug.Log($"[SteamP2P] 接收: {PacketsReceived}包 ({BytesReceived:N0}字节) | 丢包: {PacketsDropped}");

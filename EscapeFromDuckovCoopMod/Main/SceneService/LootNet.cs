@@ -125,7 +125,7 @@ public class LootNet
     }
 
 
-    public void Client_ApplyLootboxState(NetPacketReader r)
+    public void Client_ApplyLootboxState(NetDataReader r)
     {
         var scene = r.GetInt();
         var posKey = r.GetInt();
@@ -292,7 +292,7 @@ public class LootNet
 
 
     // 主机：处理 PUT（客户端 -> 主机）
-    public void Server_HandleLootPutRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootPutRequest(NetPeer peer, NetDataReader r)
     {
         var scene = r.GetInt();
         var posKey = r.GetInt();
@@ -376,7 +376,7 @@ public class LootNet
     }
 
 
-    public void Server_HandleLootTakeRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootTakeRequest(NetPeer peer, NetDataReader r)
     {
         var scene = r.GetInt();
         var posKey = r.GetInt();
@@ -454,7 +454,7 @@ public class LootNet
     }
 
     // 客户端：收到 PUT_OK -> 把“本地发起的那件物品”从自己背包删掉
-    public void Client_OnLootPutOk(NetPacketReader r)
+    public void Client_OnLootPutOk(NetDataReader r)
     {
         var token = r.GetUInt();
 
@@ -565,7 +565,7 @@ public class LootNet
     }
 
 
-    public void Client_OnLootTakeOk(NetPacketReader r)
+    public void Client_OnLootTakeOk(NetDataReader r)
     {
         var token = r.GetUInt();
 
@@ -783,7 +783,7 @@ public class LootNet
         }
     }
 
-    public void Server_HandleLootSlotPlugRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootSlotPlugRequest(NetPeer peer, NetDataReader r)
     {
         // 1) 容器定位
         var scene = r.GetInt();
@@ -1029,7 +1029,7 @@ public class LootNet
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
     }
 
-    public void Server_HandleLootSlotUnplugRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootSlotUnplugRequest(NetPeer peer, NetDataReader r)
     {
         // 1) 容器定位
         var scene = r.GetInt();
@@ -1157,7 +1157,7 @@ public class LootNet
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
     }
 
-    public void Server_HandleLootSplitRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootSplitRequest(NetPeer peer, NetDataReader r)
     {
         var scene = r.GetInt();
         var posKey = r.GetInt();

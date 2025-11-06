@@ -215,7 +215,7 @@ public static class ItemTool
     }
 
     // 读快照
-    public static ItemSnapshot ReadItemSnapshot(NetPacketReader r)
+    public static ItemSnapshot ReadItemSnapshot(NetDataReader r)
     {
         ItemSnapshot s;
         s.typeId = r.GetInt();

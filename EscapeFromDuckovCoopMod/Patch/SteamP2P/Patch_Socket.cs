@@ -12,17 +12,33 @@ namespace EscapeFromDuckovCoopMod
     [HarmonyPatch(typeof(Socket), "get_Available")]
     public class Patch_Socket_Available
     {
+        private static volatile bool _steamInitialized = false;
+        private static int _logCount = 0;
+        
         static void Postfix(Socket __instance, ref int __result)
         {
-            if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
+            if (!SteamP2PLoader.Instance.UseSteamP2P)
                 return;
+            
+            if (!_steamInitialized)
+            {
+                _steamInitialized = SteamManager.Initialized;
+                if (!_steamInitialized) return;
+                Debug.Log("[Patch_Available] Steam已初始化");
+            }
+            
             try
             {
                 if (__result > 0)
                     return;
-                if (SteamManager.Initialized && Steamworks.SteamNetworking.IsP2PPacketAvailable(out uint packetSize, 0))
+                
+                if (SteamNetworking.IsP2PPacketAvailable(out uint packetSize, 0))
                 {
                     __result = (int)packetSize;
+                    if (_logCount++ % 100 == 0)
+                    {
+                        Debug.Log($"[Patch_Available] P2P包可用: {packetSize} bytes");
+                    }
                 }
                 else if (SteamP2PManager.Instance != null)
                 {
@@ -45,18 +61,28 @@ namespace EscapeFromDuckovCoopMod
     {
         [ThreadStatic]
         private static bool _inPatch = false;
+        private static volatile bool _steamInitialized = false;
+        
         static bool Prefix(Socket __instance, ref int microSeconds, SelectMode mode, ref bool __result)
         {
             if (_inPatch)
                 return true;
-            if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
+            
+            if (!SteamP2PLoader.Instance.UseSteamP2P)
                 return true;
+            
+            if (!_steamInitialized)
+            {
+                _steamInitialized = SteamManager.Initialized;
+                if (!_steamInitialized)
+                    return true;
+            }
             try
             {
                 _inPatch = true;
                 if (mode != SelectMode.SelectRead)
                     return true;
-                if (SteamManager.Initialized && Steamworks.SteamNetworking.IsP2PPacketAvailable(out uint packetSize, 0))
+                if (_steamInitialized && Steamworks.SteamNetworking.IsP2PPacketAvailable(out uint packetSize, 0))
                 {
                     __result = true;
                     return false;
@@ -102,10 +128,21 @@ namespace EscapeFromDuckovCoopMod
                 typeof(EndPoint).MakeByRefType()
             });
         }
+        private static volatile bool _steamInitialized = false;
+        private static int _recvCount = 0;
+        
         static bool Prefix(Socket __instance, byte[] buffer, int offset, int size, SocketFlags socketFlags, ref EndPoint remoteEP, ref int __result)
         {
-            if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
+            if (!SteamP2PLoader.Instance.UseSteamP2P)
                 return true;
+            
+            if (!_steamInitialized)
+            {
+                _steamInitialized = SteamManager.Initialized;
+                if (!_steamInitialized)
+                    return true;
+                Debug.Log("[Patch_ReceiveFrom] Steam已初始化");
+            }
             
             try
             {
@@ -160,6 +197,7 @@ namespace EscapeFromDuckovCoopMod
                     }
                     if (SteamP2PManager.Instance.TryGetReceivedPacket(out byte[] data, out int length, out CSteamID remoteSteamID))
                     {
+                        _recvCount++;
                         if (length > size)
                         {
                             Debug.LogWarning($"[Patch_ReceiveFrom] 接收的数据({length} bytes)超过缓冲区大小({size} bytes)");
@@ -167,13 +205,32 @@ namespace EscapeFromDuckovCoopMod
                         }
                         Array.Copy(data, 0, buffer, offset, length);
                         IPEndPoint virtualEndPoint = null;
-                        if (SteamEndPointMapper.Instance != null)
+                        
+                        if (VirtualEndpointManager.Instance != null)
                         {
-                            if (!SteamEndPointMapper.Instance.TryGetEndPoint(remoteSteamID, out virtualEndPoint))
+                            if (!VirtualEndpointManager.Instance.TryGetEndpoint(remoteSteamID, out virtualEndPoint))
                             {
-                                virtualEndPoint = SteamEndPointMapper.Instance.RegisterSteamID(remoteSteamID);
+                                Debug.Log($"[Patch_ReceiveFrom] 新Steam ID {remoteSteamID.m_SteamID}，创建虚拟端点");
+                                virtualEndPoint = VirtualEndpointManager.Instance.RegisterOrUpdateSteamID(remoteSteamID);
+                            }
+                            
+                            if (virtualEndPoint != null)
+                            {
+                                if (_recvCount % 50 == 1)
+                                {
+                                    Debug.Log($"[Patch_ReceiveFrom] 接收包 #{_recvCount}: {length}字节 from {remoteSteamID.m_SteamID} -> {virtualEndPoint}");
+                                }
+                            }
+                            else
+                            {
+                                Debug.LogError($"[Patch_ReceiveFrom] 无法为{remoteSteamID.m_SteamID}创建虚拟端点");
                             }
                         }
+                        else
+                        {
+                            Debug.LogError("[Patch_ReceiveFrom] VirtualEndpointManager.Instance为null");
+                        }
+                        
                         if (virtualEndPoint != null)
                         {
                             remoteEP = virtualEndPoint;
@@ -195,12 +252,24 @@ namespace EscapeFromDuckovCoopMod
     [HarmonyPatch(typeof(Socket), nameof(Socket.Select))]
     public static class Patch_Socket_Select
     {
+        private static volatile bool _steamInitialized = false;
+        
         static bool Prefix(IList checkRead, IList checkWrite, IList checkError, int microSeconds)
         {
-            if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
+            if (!SteamP2PLoader.Instance.UseSteamP2P)
             {
                 return true;
             }
+            
+            if (!_steamInitialized)
+            {
+                _steamInitialized = SteamManager.Initialized;
+                if (!_steamInitialized)
+                {
+                    return true;
+                }
+            }
+            
             try
             {
                 if (Steamworks.SteamNetworking.IsP2PPacketAvailable(out _, 0))
@@ -225,6 +294,9 @@ namespace EscapeFromDuckovCoopMod
     public class Patch_Socket_SendTo
     {
         private static int _diagCount = 0;
+        private static int _sendCount = 0;
+        private static volatile bool _steamInitialized = false;
+        
         static MethodBase TargetMethod()
         {
             return AccessTools.Method(typeof(Socket), "SendTo", new Type[]
@@ -238,8 +310,16 @@ namespace EscapeFromDuckovCoopMod
         }
         static bool Prefix(Socket __instance, byte[] buffer, int offset, int size, SocketFlags socketFlags, EndPoint remoteEP, ref int __result)
         {
-            if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
+            if (!SteamP2PLoader.Instance.UseSteamP2P)
                 return true;
+            
+            if (!_steamInitialized)
+            {
+                _steamInitialized = SteamManager.Initialized;
+                if (!_steamInitialized)
+                    return true;
+                Debug.Log("[Patch_SendTo] Steam已初始化");
+            }
             try
             {
                 IPEndPoint ipEndPoint = remoteEP as IPEndPoint;
@@ -248,10 +328,10 @@ namespace EscapeFromDuckovCoopMod
                     Debug.LogWarning("[Patch_SendTo] remoteEP不是IPEndPoint类型，使用原始方法");
                     return true;
                 }
-                if (SteamEndPointMapper.Instance != null &&
-                    SteamEndPointMapper.Instance.IsVirtualEndPoint(ipEndPoint))
+                if (VirtualEndpointManager.Instance != null &&
+                    VirtualEndpointManager.Instance.IsVirtualEndpoint(ipEndPoint))
                 {
-                    if (SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out CSteamID targetSteamID))
+                    if (VirtualEndpointManager.Instance.TryGetSteamID(ipEndPoint, out CSteamID targetSteamID))
                     {
                         DeliveryMethod? deliveryMethod = PacketSignature.TryGetDeliveryMethod(buffer, offset, size);
                         _diagCount++;
@@ -325,23 +405,26 @@ namespace EscapeFromDuckovCoopMod
                         );
                         if (success)
                         {
+                            _sendCount++;
+                            if (_sendCount % 50 == 1)
+                            {
+                                Debug.Log($"[Patch_SendTo] 发送包 #{_sendCount}: {size}字节 -> {targetSteamID.m_SteamID} ({ipEndPoint}), Mode={deliveryMethod}");
+                            }
                             __result = size;
                             return false;
                         }
                         else
                         {
-                            Debug.LogError($"[Patch_SendTo] ❌ Steam P2P发送失败！DeliveryMethod={deliveryMethod}, Size={size}");
+                            Debug.LogError($"[Patch_SendTo] Steam P2P发送失败: {size}字节 -> {targetSteamID.m_SteamID}, Mode={deliveryMethod}");
                             return true;
                         }
                     }
                     else
                     {
-                        Debug.LogWarning($"[Patch_SendTo] ❌ 虚拟端点 {ipEndPoint} 没有对应的Steam ID映射");
-                        Debug.LogWarning($"[Patch_SendTo] 当前已映射的端点:");
-                        var allEndPoints = SteamEndPointMapper.Instance.GetAllEndPoints();
-                        foreach (var ep in allEndPoints)
+                        Debug.LogError($"[Patch_SendTo] 虚拟端点 {ipEndPoint} 没有对应的Steam ID映射");
+                        if (VirtualEndpointManager.Instance != null)
                         {
-                            Debug.LogWarning($"  - {ep}");
+                            Debug.LogError(VirtualEndpointManager.Instance.GetDiagnosticInfo());
                         }
                     }
                 }
@@ -366,3 +449,4 @@ namespace EscapeFromDuckovCoopMod
 
 
 }
+

@@ -22,12 +22,15 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
-using LeTai.Asset.TranslucentImage;
 using Steamworks;
 using Duckov.MiniMaps.UI;
 using Duckov.UI;
 using static BakeryLightmapGroup;
 using RenderMode = UnityEngine.RenderMode;
+using System.Net;
+using LiteNetLib;
+using LiteNetLib.Utils;
+using EscapeFromDuckovCoopMod.Net.HybridP2P;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -296,7 +299,7 @@ public class MModUI : MonoBehaviour
     
     private void DrawVersionInfo()
     {
-        var modVersion = "1.6.0";
+        var modVersion = "1.8.7";
         var gitCommit = "dev";
         
         try
@@ -507,28 +510,6 @@ public class MModUI : MonoBehaviour
 
     private void InitializeBlurSource()
     {
-        // 在主相机上添加模糊源组件
-        var mainCamera = Camera.main;
-        if (mainCamera == null)
-        {
-            Debug.LogWarning("主相机未找到，模糊效果将不可用");
-            return;
-        }
-
-        var source = mainCamera.GetComponent<TranslucentImageSource>();
-        if (source == null)
-        {
-            source = mainCamera.gameObject.AddComponent<TranslucentImageSource>();
-        }
-
-        // 配置模糊参数
-        var blurConfig = new ScalableBlurConfig
-        {
-            Strength = 12f,      // 模糊强度（半径）
-            Iteration = 4        // 迭代次数（质量）
-        };
-        source.BlurConfig = blurConfig;
-        source.Downsample = 1;  // 降采样等级（提升性能）
     }
 
     private void CreateMainPanel()
@@ -1238,8 +1219,8 @@ public class MModUI : MonoBehaviour
         if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out var ipAddr) && int.TryParse(parts[1], out var port))
         {
             var ipEndPoint = new System.Net.IPEndPoint(ipAddr, port);
-            if (SteamEndPointMapper.Instance != null &&
-                SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out CSteamID cSteamId))
+            if (VirtualEndpointManager.Instance != null &&
+                VirtualEndpointManager.Instance.TryGetSteamID(ipEndPoint, out CSteamID cSteamId))
             {
                 return cSteamId.m_SteamID;
             }
@@ -1285,7 +1266,7 @@ public class MModUI : MonoBehaviour
                     if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out var ipAddr) && int.TryParse(parts[1], out var port))
                     {
                         var ipEndPoint = new System.Net.IPEndPoint(ipAddr, port);
-                        if (SteamEndPointMapper.Instance != null && SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out var cSteamId))
+                        if (VirtualEndpointManager.Instance != null && VirtualEndpointManager.Instance.TryGetSteamID(ipEndPoint, out var cSteamId))
                         {
                             steamId = cSteamId.m_SteamID;
                         }
@@ -1307,7 +1288,7 @@ public class MModUI : MonoBehaviour
                 {
                     avatarImage.sprite = cachedSprite;
                     avatarImage.color = Color.white;
-                    Debug.Log($"[MModUI] 使用缓存的Steam头像: {steamId}");
+                    // Debug.Log($"[MModUI] 使用缓存的Steam头像: {steamId}");
                 }
                 else
                 {
@@ -1500,7 +1481,7 @@ public class MModUI : MonoBehaviour
         }
     }
 
-    private void UpdateVotePanel()
+    public void UpdateVotePanel()
     {
         if (SceneNet.Instance == null)
         {
@@ -1743,8 +1724,8 @@ public class MModUI : MonoBehaviour
                         if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out var ipAddr) && int.TryParse(parts[1], out var port))
                         {
                             var ipEndPoint = new System.Net.IPEndPoint(ipAddr, port);
-                            if (SteamEndPointMapper.Instance != null &&
-                                SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out CSteamID cSteamId))
+                            if (VirtualEndpointManager.Instance != null &&
+                                VirtualEndpointManager.Instance.TryGetSteamID(ipEndPoint, out CSteamID cSteamId))
                             {
                                 steamIdValue = cSteamId.m_SteamID;
                                 Debug.Log($"[VOTE-UI] IP地址映射成功: {pid} -> SteamID {steamIdValue}");
@@ -1906,43 +1887,135 @@ public class MModUI : MonoBehaviour
             Destroy(_disconnectDialog);
         }
 
-        _disconnectDialog = CreateModernPanel("DisconnectDialog", _canvas.transform, new Vector2(500, 250), new Vector2(960, 100), TextAnchor.LowerCenter);
+        _disconnectDialog = CreateModernPanel("DisconnectDialog", _canvas.transform, new Vector2(700, 500), new Vector2(960, 540), TextAnchor.MiddleCenter);
         
         var dialogGroup = _disconnectDialog.GetComponent<CanvasGroup>();
         if (dialogGroup == null) dialogGroup = _disconnectDialog.AddComponent<CanvasGroup>();
-        dialogGroup.alpha = 0f;
+        dialogGroup.alpha = 1f;
+        
+        var verticalLayout = _disconnectDialog.AddComponent<VerticalLayoutGroup>();
+        verticalLayout.childControlWidth = true;
+        verticalLayout.childControlHeight = false;
+        verticalLayout.childForceExpandWidth = true;
+        verticalLayout.childForceExpandHeight = false;
+        verticalLayout.spacing = 15f;
+        verticalLayout.padding = new RectOffset(30, 30, 30, 30);
+        verticalLayout.childAlignment = TextAnchor.UpperCenter;
         
         var headerRow = CreateHorizontalGroup(_disconnectDialog.transform, "Header");
         var headerLayout = headerRow.AddComponent<LayoutElement>();
-        headerLayout.minHeight = 50;
-        headerLayout.preferredHeight = 50;
+        headerLayout.minHeight = 60;
+        headerLayout.preferredHeight = 60;
         
-        var titleText = CreateText("Title", headerRow.transform, "连接已断开", 20, ModernColors.Error, TextAlignmentOptions.Center, FontStyles.Bold);
-        var titleLayout = titleText.gameObject.GetComponent<LayoutElement>();
-        titleLayout.flexibleWidth = 1;
+        var titleText = CreateText("Title", headerRow.transform, CoopLocalization.Get("ui.disconnect.title"), 24, ModernColors.Error, TextAlignmentOptions.Center, FontStyles.Bold);
+        var titleRect = titleText.gameObject.GetComponent<RectTransform>();
+        titleRect.sizeDelta = new Vector2(640, 60);
         
         CreateDivider(_disconnectDialog.transform);
         
         var contentRow = new GameObject("Content");
         contentRow.transform.SetParent(_disconnectDialog.transform, false);
         var contentLayout = contentRow.AddComponent<LayoutElement>();
-        contentLayout.flexibleHeight = 1;
+        contentLayout.minHeight = 200;
+        contentLayout.preferredHeight = 200;
         
-        var reasonText = CreateText("Reason", contentRow.transform, reason, 16, ModernColors.TextPrimary, TextAlignmentOptions.Center);
+        var contentVertical = contentRow.AddComponent<VerticalLayoutGroup>();
+        contentVertical.childControlWidth = true;
+        contentVertical.childControlHeight = false;
+        contentVertical.childForceExpandWidth = true;
+        contentVertical.childForceExpandHeight = false;
+        contentVertical.spacing = 15f;
+        contentVertical.padding = new RectOffset(20, 20, 15, 15);
+        contentVertical.childAlignment = TextAnchor.UpperCenter;
+        
+        var reasonText = CreateText("Reason", contentRow.transform, GetDisconnectReasonText(reason), 16, ModernColors.TextPrimary, TextAlignmentOptions.Center);
+        var reasonLayout = reasonText.gameObject.AddComponent<LayoutElement>();
+        reasonLayout.minHeight = 60;
+        reasonLayout.preferredHeight = 80;
+        reasonLayout.flexibleHeight = 1;
+        
+        var diagRow = new GameObject("DiagnosticsRow");
+        diagRow.transform.SetParent(contentRow.transform, false);
+        var diagRowLayout = diagRow.AddComponent<LayoutElement>();
+        diagRowLayout.minHeight = 50;
+        diagRowLayout.preferredHeight = 50;
+        
+        var diagHorizontal = diagRow.AddComponent<HorizontalLayoutGroup>();
+        diagHorizontal.childControlWidth = false;
+        diagHorizontal.childControlHeight = true;
+        diagHorizontal.childForceExpandWidth = false;
+        diagHorizontal.childForceExpandHeight = true;
+        diagHorizontal.spacing = 10f;
+        diagHorizontal.childAlignment = TextAnchor.MiddleCenter;
+        
+        var hybridRelay = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridP2PRelay.Instance;
+        string natType = hybridRelay != null ? hybridRelay.GetLocalNATType().ToString() : "Unknown";
+        
+        var diagText = CreateText("DiagInfo", diagRow.transform, 
+            string.Format("{0} | {1}", 
+                string.Format(CoopLocalization.Get("ui.disconnect.diagnostics.nat"), natType),
+                string.IsNullOrEmpty(_lastDisconnectEndpoint) ? "端点未知" : _lastDisconnectEndpoint
+            ), 
+            12, ModernColors.TextSecondary, TextAlignmentOptions.Center);
+        var diagTextLayout = diagText.gameObject.AddComponent<LayoutElement>();
+        diagTextLayout.minWidth = 600;
+        diagTextLayout.preferredWidth = 600;
         
         CreateDivider(_disconnectDialog.transform);
         
         var buttonRow = CreateHorizontalGroup(_disconnectDialog.transform, "ButtonRow");
-        var buttonLayout = buttonRow.AddComponent<LayoutElement>();
-        buttonLayout.minHeight = 60;
-        buttonLayout.preferredHeight = 60;
+        var buttonRowLayout = buttonRow.AddComponent<LayoutElement>();
+        buttonRowLayout.minHeight = 70;
+        buttonRowLayout.preferredHeight = 70;
+        
+        var buttonHorizontal = buttonRow.GetComponent<HorizontalLayoutGroup>();
+        if (buttonHorizontal != null)
+        {
+            buttonHorizontal.childAlignment = TextAnchor.MiddleCenter;
+            buttonHorizontal.spacing = 20f;
+            buttonHorizontal.padding = new RectOffset(80, 80, 10, 10);
+        }
+        
+        bool canRetry = !string.IsNullOrEmpty(_lastDisconnectEndpoint) && reason.Contains("ConnectionFailed");
+        
+        if (canRetry)
+        {
+            var retryButtonGO = new GameObject("RetryButton");
+            retryButtonGO.transform.SetParent(buttonRow.transform, false);
+            var retryRect = retryButtonGO.AddComponent<RectTransform>();
+            retryRect.sizeDelta = new Vector2(220, 50);
+            var retryLayout = retryButtonGO.AddComponent<LayoutElement>();
+            retryLayout.minWidth = 220;
+            retryLayout.minHeight = 50;
+            retryLayout.preferredWidth = 220;
+            retryLayout.preferredHeight = 50;
+            
+            var retryImage = retryButtonGO.AddComponent<Image>();
+            retryImage.color = ModernColors.Warning;
+            
+            var retryButton = retryButtonGO.AddComponent<Button>();
+            retryButton.onClick.AddListener(() => 
+            {
+                if (_disconnectDialog != null)
+                {
+                    Destroy(_disconnectDialog);
+                    _disconnectDialog = null;
+                }
+                StartCoroutine(RetryConnection());
+            });
+            
+            CreateText("ButtonText", retryButtonGO.transform, CoopLocalization.Get("ui.disconnect.retry"), 16, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
+        }
         
         var okButtonGO = new GameObject("OKButton");
         okButtonGO.transform.SetParent(buttonRow.transform, false);
         var okRect = okButtonGO.AddComponent<RectTransform>();
+        okRect.sizeDelta = new Vector2(220, 50);
         var okLayout = okButtonGO.AddComponent<LayoutElement>();
-        okLayout.flexibleWidth = 1;
-        okLayout.minHeight = 40;
+        okLayout.minWidth = 220;
+        okLayout.minHeight = 50;
+        okLayout.preferredWidth = 220;
+        okLayout.preferredHeight = 50;
         
         var okImage = okButtonGO.AddComponent<Image>();
         okImage.color = ModernColors.Primary;
@@ -1957,9 +2030,62 @@ public class MModUI : MonoBehaviour
             }
         });
         
-        CreateText("ButtonText", okButtonGO.transform, "确定", 16, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
+        CreateText("ButtonText", okButtonGO.transform, CoopLocalization.Get("ui.disconnect.confirm"), 16, Color.white, TextAlignmentOptions.Center, FontStyles.Bold);
         
         StartCoroutine(AnimateDialog(dialogGroup));
+    }
+    
+    private IEnumerator RetryConnection()
+    {
+        const int maxRetries = 3;
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            Debug.Log($"[Connection-Retry] 尝试第 {attempt}/{maxRetries} 次连接");
+            SetStatusText(string.Format(CoopLocalization.Get("ui.connection.retry"), attempt, maxRetries), ModernColors.Info);
+            
+            if (NetService.Instance != null)
+            {
+                if (TransportMode == NetworkTransportMode.SteamP2P && _lastHostSteamID != CSteamID.Nil)
+                {
+                    Debug.Log($"[Connection-Retry] P2P模式，重新连接到主机 Steam ID: {_lastHostSteamID}");
+                    
+                    if (VirtualEndpointManager.Instance != null)
+                    {
+                        IPEndPoint newEndpoint = VirtualEndpointManager.Instance.RegisterOrUpdateSteamID(_lastHostSteamID, 27015);
+                        Debug.Log($"[Connection-Retry] 重新映射主机: {_lastHostSteamID} -> {newEndpoint}");
+                        
+                        NetService.Instance.ConnectToHost(newEndpoint.Address.ToString(), newEndpoint.Port);
+                    }
+                }
+                else if (!string.IsNullOrEmpty(_lastDisconnectEndpoint))
+                {
+                    var parts = _lastDisconnectEndpoint.Split(':');
+                    if (parts.Length == 2)
+                    {
+                        string host = parts[0];
+                        if (int.TryParse(parts[1], out int port))
+                        {
+                            Debug.Log($"[Connection-Retry] 直连模式，重新连接到 {host}:{port}");
+                            NetService.Instance.ConnectToHost(host, port);
+                        }
+                    }
+                }
+                
+                yield return new WaitForSeconds(5f);
+                
+                if (NetService.Instance.connectedPeer != null && NetService.Instance.connectedPeer.ConnectionState == LiteNetLib.ConnectionState.Connected)
+                {
+                    Debug.Log($"[Connection-Retry] ✓ 第 {attempt} 次连接成功");
+                    SetStatusText("[OK] 连接成功", ModernColors.Success);
+                    yield break;
+                }
+            }
+            
+            yield return new WaitForSeconds(2f);
+        }
+        
+        Debug.LogWarning($"[Connection-Retry] ✗ 所有重试失败 ({maxRetries} 次)");
+        SetStatusText(string.Format(CoopLocalization.Get("ui.connection.retry.failed"), maxRetries), ModernColors.Error);
     }
     
     private IEnumerator AnimateDialog(CanvasGroup group)
@@ -1979,6 +2105,69 @@ public class MModUI : MonoBehaviour
         if (group != null)
             group.alpha = 1f;
     }
+    
+    private string GetDisconnectReasonText(string rawReason)
+    {
+        if (string.IsNullOrEmpty(rawReason))
+        {
+            return CoopLocalization.Get("ui.disconnect.reason.unknown");
+        }
+        
+        if (rawReason.Contains("Timeout"))
+        {
+            return CoopLocalization.Get("ui.disconnect.reason.timeout");
+        }
+        else if (rawReason.Contains("DisconnectPeerCalled") || rawReason.Contains("RemoteConnectionClose"))
+        {
+            return CoopLocalization.Get("ui.disconnect.reason.remote");
+        }
+        else if (rawReason.Contains("ConnectionFailed"))
+        {
+            return CoopLocalization.Get("ui.disconnect.reason.failed");
+        }
+        else if (rawReason.Contains("HostUnreachable"))
+        {
+            return CoopLocalization.Get("ui.disconnect.reason.unreachable");
+        }
+        else if (rawReason.Contains("PeerNotFound"))
+        {
+            return CoopLocalization.Get("ui.disconnect.reason.peer_not_found");
+        }
+        else if (rawReason.Contains("PeerToPeerUnavailable"))
+        {
+            string natType = "Unknown";
+            var hybridRelay = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridP2PRelay.Instance;
+            if (hybridRelay != null)
+            {
+                natType = hybridRelay.GetLocalNATType().ToString();
+            }
+            return string.Format(CoopLocalization.Get("ui.disconnect.reason.p2p_failed"), natType);
+        }
+        else
+        {
+            return string.Format(CoopLocalization.Get("ui.disconnect.reason.generic"), rawReason);
+        }
+    }
+    
+    private string _lastDisconnectEndpoint = "";
+    private string _lastDisconnectReason = "";
+    private CSteamID _lastHostSteamID = CSteamID.Nil;
+    
+    public void SetLastDisconnectInfo(string endpoint, string reason)
+    {
+        _lastDisconnectEndpoint = endpoint;
+        _lastDisconnectReason = reason;
+        
+        if (TransportMode == NetworkTransportMode.SteamP2P && LobbyManager != null && LobbyManager.IsInLobby)
+        {
+            _lastHostSteamID = LobbyManager.GetLobbyOwner();
+            Debug.Log($"[MModUI] 保存断开连接信息: 端点={endpoint}, 原因={reason}, 主机SteamID={_lastHostSteamID}");
+        }
+        else
+        {
+            Debug.Log($"[MModUI] 保存断开连接信息: 端点={endpoint}, 原因={reason}");
+        }
+    }
 
     #endregion
 
@@ -1993,47 +2182,10 @@ public class MModUI : MonoBehaviour
         rect.sizeDelta = size;
         SetAnchor(rect, anchorPos, pivot);
 
-        // --- 🎨 尝试使用真实高斯模糊玻璃效果 ---
-        bool useTranslucentImage = false;
-        TranslucentImage translucentImage = null;
-
-        try
-        {
-            var mainCamera = Camera.main;
-            if (mainCamera != null)
-            {
-                var source = mainCamera.GetComponent<TranslucentImageSource>();
-                if (source != null)
-                {
-                    translucentImage = panel.AddComponent<TranslucentImage>();
-                    translucentImage.source = source;
-                    translucentImage.color = new Color(0.15f, 0.15f, 0.15f, 0.85f);
-                    useTranslucentImage = true;
-
-                    // 延迟设置属性
-                    StartCoroutine(InitializeTranslucentImageProperties(translucentImage));
-                }
-            }
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning($"TranslucentImage 初始化失败，使用普通背景: {e.Message}");
-            if (translucentImage != null)
-            {
-                Destroy(translucentImage);
-                translucentImage = null;
-            }
-            useTranslucentImage = false;
-        }
-
-        // 回退方案：使用普通 Image + 噪声纹理
-        if (!useTranslucentImage)
-        {
-            var image = panel.AddComponent<Image>();
-            image.color = new Color(0.25f, 0.25f, 0.25f, 0.93f);
-            image.sprite = CreateEmbeddedNoiseSprite();
-            image.type = Image.Type.Tiled;
-        }
+        var image = panel.AddComponent<Image>();
+        image.color = new Color(0.25f, 0.25f, 0.25f, 0.93f);
+        image.sprite = CreateEmbeddedNoiseSprite();
+        image.type = Image.Type.Tiled;
 
         // 添加柔和阴影
         var shadow = panel.AddComponent<Shadow>();
@@ -2138,26 +2290,6 @@ public class MModUI : MonoBehaviour
         }
     }
     
-    private IEnumerator InitializeTranslucentImageProperties(TranslucentImage translucentImage)
-    {
-        // 等待几帧，让 TranslucentImage 完成初始化
-        yield return null;
-        yield return null;
-
-        if (translucentImage != null && translucentImage.material != null)
-        {
-            try
-            {
-                translucentImage.vibrancy = 0.3f;      // 降低色彩饱和度
-                translucentImage.brightness = 0.9f;    // 略微变暗
-                translucentImage.flatten = 0.5f;       // 扁平化，减少背景干扰
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogWarning($"TranslucentImage 参数设置失败: {e.Message}");
-            }
-        }
-    }
     private static Sprite CreateEmbeddedNoiseSprite()
     {
         int size = 128;

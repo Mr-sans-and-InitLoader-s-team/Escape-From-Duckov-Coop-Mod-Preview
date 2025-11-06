@@ -48,11 +48,14 @@ public class SceneNet : MonoBehaviour
     // 记录已经“举手”的客户端（用 EndPoint 字符串，与现有 PlayerStatus 保持一致）
     public readonly HashSet<string> _srvGateReadyPids = new();
 
-    // 所有端都使用主机广播的这份参与者 pid 列表（关键：统一 pid）
+    private int _currentVoteId = -1;
+    
+    [Obsolete("Use RESTful API instead")]
     public readonly List<string> sceneParticipantIds = new();
-
-    // 就绪表（key = 上面那个 pid）
+    
+    [Obsolete("Use RESTful API instead")]
     public readonly Dictionary<string, bool> sceneReady = new();
+    
     private float _cliGateDeadline;
     private float _cliGateSeverDeadline;
 
@@ -73,6 +76,43 @@ public class SceneNet : MonoBehaviour
     public void Init()
     {
         Instance = this;
+        
+        var restfulVote = Net.Core.RESTfulVoteSystem.Instance;
+        if (restfulVote != null)
+        {
+            restfulVote.OnVoteCompleted += OnRESTfulVoteCompleted;
+            restfulVote.OnPlayerReady += OnRESTfulPlayerReady;
+        }
+    }
+    
+    private void OnRESTfulVoteCompleted(int sceneId)
+    {
+        if (_currentVoteId < 0) return;
+        
+        Debug.Log($"[SceneNet-RESTful] Vote completed for scene {sceneId}");
+        Server_BroadcastBeginSceneLoad();
+    }
+    
+    private void OnRESTfulPlayerReady(string playerId, bool isReady, int sceneId)
+    {
+        Debug.Log($"[SceneNet-RESTful] Player {playerId} ready: {isReady}");
+        
+        if (sceneReady.ContainsKey(playerId))
+        {
+            sceneReady[playerId] = isReady;
+        }
+        
+        if (IsServer && networkStarted && netManager != null)
+        {
+            var w = new NetDataWriter();
+            w.Put((byte)Op.SCENE_READY_SET);
+            w.Put(playerId);
+            w.Put(isReady);
+            netManager.SendToAll(w, LiteNetLib.DeliveryMethod.ReliableOrdered);
+            Debug.Log($"[SceneNet-RESTful] Broadcasted ready status: {playerId} = {isReady}");
+        }
+        
+        MModUI.Instance?.UpdateVotePanel();
     }
 
     public void TrySendSceneReadyOnce()
@@ -106,7 +146,7 @@ public class SceneNet : MonoBehaviour
         _sceneReadySidSent = sid;
     }
 
-    private void Server_BroadcastBeginSceneLoad()
+    public void Server_BroadcastBeginSceneLoad()
     {
         if (Spectator.Instance._spectatorActive && Spectator.Instance._spectatorEndOnVotePending)
         {
@@ -170,35 +210,185 @@ public class SceneNet : MonoBehaviour
 
         if (!sceneVoteActive) return;
         
-        // 获取SteamID格式的pid
+        var restfulVote = Net.Core.RESTfulVoteSystem.Instance;
+        if (restfulVote != null && _currentVoteId >= 0)
+        {
+            string playerId = null;
+            
+            var lobbyManager = SteamLobbyManager.Instance;
+            bool isP2PMode = lobbyManager != null && lobbyManager.IsInLobby && SteamManager.Initialized;
+            
+            if (fromPeer != null)
+            {
+                if (isP2PMode && fromPeer.EndPoint is System.Net.IPEndPoint ipEndPoint)
+                {
+                    if (VirtualEndpointManager.Instance.TryGetSteamID(ipEndPoint, out var steamId))
+                    {
+                        playerId = $"steam_{steamId.m_SteamID}";
+                        Debug.Log($"[SceneNet-RESTful-Server] Client {fromPeer.EndPoint} using SteamID: {playerId}");
+                    }
+                }
+                
+                if (playerId == null)
+                {
+                    var playerStatus = playerStatuses.TryGetValue(fromPeer, out var ps) ? ps : null;
+                    playerId = playerStatus?.EndPoint ?? fromPeer.EndPoint?.ToString();
+                }
+            }
+            else
+            {
+                if (isP2PMode)
+                {
+                    var mySteamId = Steamworks.SteamUser.GetSteamID();
+                    playerId = $"steam_{mySteamId.m_SteamID}";
+                    Debug.Log($"[SceneNet-RESTful-Server] Host using SteamID: {playerId}");
+                }
+                else
+                {
+                    playerId = localPlayerStatus?.EndPoint ?? $"Host:{port}";
+                }
+            }
+            
+            if (!string.IsNullOrEmpty(playerId) && restfulVote._votes.TryGetValue(_currentVoteId, out var vote))
+            {
+                if (vote.Participants.ContainsKey(playerId))
+                {
+                    vote.Participants[playerId] = ready;
+                    Debug.Log($"[SceneNet-RESTful-Server] Player {playerId} ready={ready}");
+                    
+                    if (fromPeer == null)
+                    {
+                        localReady = ready;
+                    }
+                    
+                    restfulVote.TriggerPlayerReady(playerId, ready, vote.SceneId);
+                    
+                    bool allReady = vote.Participants.Values.All(r => r);
+                    int readyCount = vote.Participants.Values.Count(r => r);
+                    int totalCount = vote.Participants.Count;
+                    
+                    Debug.Log($"[SceneNet-RESTful-Server] Vote status: {readyCount}/{totalCount} ready. Players: {string.Join(", ", vote.Participants.Select(p => $"{p.Key}={p.Value}"))}");
+                    
+                    if (allReady)
+                    {
+                        Debug.Log($"[SceneNet-RESTful-Server] All players ready, triggering completion");
+                        restfulVote.TriggerVoteCompleted(vote.SceneId);
+                    }
+                }
+                else
+                {
+                    Debug.LogWarning($"[SceneNet-RESTful-Server] Player {playerId} not in participants list. Available: {string.Join(", ", vote.Participants.Keys)}");
+                }
+            }
+            
+            return;
+        }
+        
+        var unifiedVote = Net.HybridP2P.UnifiedVoteSystem.Instance;
+        if (unifiedVote != null)
+        {
+            Net.HybridP2P.UnifiedPlayerID playerId = null;
+            
+            if (fromPeer != null)
+            {
+                playerId = Net.HybridP2P.UnifiedPlayerID.FromPeer(fromPeer);
+                Debug.Log($"[SceneNet-Ready] Client ready: {playerId}, ready={ready}");
+            }
+            else
+            {
+                playerId = Net.HybridP2P.UnifiedPlayerID.GetLocalPlayerID();
+                Debug.Log($"[SceneNet-Ready] Host ready: {playerId}, ready={ready}");
+            }
+            
+            if (playerId != null)
+            {
+                localReady = ready;
+                unifiedVote.Server_BroadcastReadyState(playerId, ready);
+            }
+            else
+            {
+                Debug.LogWarning($"[SceneNet-Ready] Cannot determine player ID");
+            }
+            
+            return;
+        }
+        
+        Debug.Log($"[SceneNet-Ready] Using legacy ready system");
+        
         string pid = null;
+        
         if (fromPeer != null)
         {
             var endPoint = fromPeer.EndPoint as System.Net.IPEndPoint;
-            if (endPoint != null && SteamEndPointMapper.Instance != null)
+            if (endPoint != null && VirtualEndpointManager.Instance != null)
             {
-                if (SteamEndPointMapper.Instance.TryGetSteamID(endPoint, out var steamId))
+                if (VirtualEndpointManager.Instance.TryGetSteamID(endPoint, out var steamId))
                 {
                     pid = $"steam_{steamId.m_SteamID}";
-                    Debug.Log($"[SERVER-READY] 收到客户端准备: SteamID={steamId.m_SteamID}, ready={ready}");
+                    Debug.Log($"[SERVER-READY] 收到客户端准备(Steam): SteamID={steamId.m_SteamID}, ready={ready}");
                 }
+            }
+            
+            if (string.IsNullOrEmpty(pid))
+            {
+                pid = fromPeer.EndPoint?.ToString();
+                Debug.Log($"[SERVER-READY] 收到客户端准备(直连): EndPoint={pid}, ready={ready}");
             }
         }
         else
         {
-            // 主机自己
-            if (SteamManager.Initialized)
+            bool hasNonLocalConnection = false;
+            if (playerStatuses != null && playerStatuses.Count > 0)
+            {
+                var firstPeer = playerStatuses.Keys.FirstOrDefault();
+                if (firstPeer != null)
+                {
+                    var ep = firstPeer.EndPoint as System.Net.IPEndPoint;
+                    if (ep != null)
+                    {
+                        hasNonLocalConnection = !ep.Address.ToString().StartsWith("127.0.0.1");
+                    }
+                }
+            }
+            
+            if (SteamManager.Initialized && hasNonLocalConnection)
             {
                 var hostSteamId = SteamUser.GetSteamID().m_SteamID;
                 pid = $"steam_{hostSteamId}";
-                Debug.Log($"[SERVER-READY] 主机准备: SteamID={hostSteamId}, ready={ready}");
+                Debug.Log($"[SERVER-READY] 主机准备(Steam模式): SteamID={hostSteamId}, ready={ready}");
+            }
+            else if (localPlayerStatus != null)
+            {
+                pid = localPlayerStatus.EndPoint;
+                Debug.Log($"[SERVER-READY] 主机准备(LAN模式): EndPoint={pid}, ready={ready}");
+            }
+            else
+            {
+                pid = $"Host:{NetService.Instance.port}";
+                Debug.Log($"[SERVER-READY] 主机准备(LAN模式-默认): EndPoint={pid}, ready={ready}");
             }
         }
         
-        if (string.IsNullOrEmpty(pid) || !sceneReady.ContainsKey(pid))
+        if (string.IsNullOrEmpty(pid))
         {
-            Debug.LogWarning($"[SERVER-READY] 未找到玩家: pid={pid}, participants={sceneParticipantIds.Count}");
+            Debug.LogWarning($"[SERVER-READY] 无法解析玩家ID: fromPeer={fromPeer?.EndPoint}");
             return;
+        }
+        
+        if (!sceneReady.ContainsKey(pid))
+        {
+            Debug.LogWarning($"[SERVER-READY] 玩家不在参与列表: pid={pid}, participants={string.Join(", ", sceneParticipantIds)}");
+            
+            if (sceneParticipantIds.Count == 0)
+            {
+                Debug.Log($"[SERVER-READY] 参与列表为空，允许玩家加入");
+                sceneParticipantIds.Add(pid);
+                sceneReady[pid] = false;
+            }
+            else
+            {
+                return;
+            }
         }
 
         sceneReady[pid] = ready;
@@ -233,7 +423,7 @@ public class SceneNet : MonoBehaviour
     }
 
     // ===== 客户端：收到“投票开始”（带参与者 pid 列表）=====
-    public void Client_OnSceneVoteStart(NetPacketReader r)
+    public void Client_OnSceneVoteStart(NetDataReader r)
     {
         Debug.Log($"[CLIENT-VOTE-PARSE] 开始解析投票消息, availableBytes={r.AvailableBytes}");
         
@@ -393,7 +583,7 @@ public class SceneNet : MonoBehaviour
                     }
                     
                     // 2. 如果没找到，尝试通过SteamID查找对应的所有IP
-                    if (!found && SteamManager.Initialized && SteamEndPointMapper.Instance != null)
+                    if (!found && SteamManager.Initialized && VirtualEndpointManager.Instance != null)
                     {
                         var mySteamId = SteamUser.GetSteamID();
                         
@@ -409,7 +599,7 @@ public class SceneNet : MonoBehaviour
                             {
                                 var ipEndPoint = new System.Net.IPEndPoint(ipAddr, port);
                                 
-                                if (SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out var steamId))
+                                if (VirtualEndpointManager.Instance.TryGetSteamID(ipEndPoint, out var steamId))
                                 {
                                     if (steamId == mySteamId)
                                     {
@@ -434,7 +624,7 @@ public class SceneNet : MonoBehaviour
                 }
             }
             
-            Debug.Log($"[CLIENT-VOTE-PARSE] 检查白名单: me='{myIdentifier}', found={found}, participants={sceneParticipantIds.Count}, ver={ver}");
+            Debug.Log($"[CLIENT-VOTE-PARSE] 检查白名单: me='{myIdentifier}', found={found}, participants={sceneParticipantIds.Count}, ver={ver}, IsServer={IsServer}");
             foreach (var p in sceneParticipantIds)
             {
                 Debug.Log($"[CLIENT-VOTE-PARSE] 参与者: {p}");
@@ -444,12 +634,11 @@ public class SceneNet : MonoBehaviour
             {
                 if (!IsServer)
                 {
-                    Debug.Log($"[CLIENT-VOTE-PARSE] 客户端白名单未匹配，但服务器发来投票，允许参与");
+                    Debug.Log($"[CLIENT-VOTE-PARSE] 客户端白名单未匹配，直连模式允许参与");
                 }
                 else
                 {
-                    Debug.LogWarning($"[CLIENT-VOTE-PARSE] vote: ignore (not in participants) me='{myIdentifier}'");
-                    return;
+                    Debug.Log($"[CLIENT-VOTE-PARSE] 主机白名单未匹配，直连模式允许主机参与投票");
                 }
             }
         }
@@ -465,6 +654,9 @@ public class SceneNet : MonoBehaviour
         localReady = false;
         sceneReady.Clear();
         foreach (var pid in sceneParticipantIds) sceneReady[pid] = false;
+        
+        _currentVoteId = 1;
+        Debug.Log($"[CLIENT-VOTE-PARSE] Set _currentVoteId = {_currentVoteId} for RESTful voting");
 
         Debug.Log($"[CLIENT-VOTE-PARSE] ✅ 投票接收成功 v{ver}: target='{sceneTargetId}', hostScene='{hostSceneId}', myScene='{mySceneId}', players={cnt}, voteActive={sceneVoteActive}");
 
@@ -473,15 +665,20 @@ public class SceneNet : MonoBehaviour
     }
 
 
-    // ===== 客户端：收到“某人准备状态变更”（pid + ready）=====
-    private void Client_OnSomeoneReadyChanged(NetPacketReader r)
+    // ===== 客户端：收到"某人准备状态变更"（pid + ready）=====
+    private void Client_OnSomeoneReadyChanged(NetDataReader r)
     {
         var pid = r.GetString();
         var rd = r.GetBool();
-        if (sceneReady.ContainsKey(pid)) sceneReady[pid] = rd;
+        if (sceneReady.ContainsKey(pid))
+        {
+            sceneReady[pid] = rd;
+            Debug.Log($"[CLIENT-READY] Received ready status: {pid} = {rd}");
+            MModUI.Instance?.UpdateVotePanel();
+        }
     }
 
-    public void Client_OnBeginSceneLoad(NetPacketReader r)
+    public void Client_OnBeginSceneLoad(NetDataReader r)
     {
         if (!EnsureAvailable(r, 2))
         {
@@ -549,22 +746,52 @@ public class SceneNet : MonoBehaviour
     {
         if (IsServer || connectedPeer == null) return;
 
+        var restfulVote = Net.Core.RESTfulVoteSystem.Instance;
+        if (restfulVote != null && _currentVoteId >= 0)
+        {
+            string myPid = null;
+            
+            var lobbyManager = SteamLobbyManager.Instance;
+            if (lobbyManager != null && lobbyManager.IsInLobby && SteamManager.Initialized)
+            {
+                var mySteamId = Steamworks.SteamUser.GetSteamID();
+                myPid = $"steam_{mySteamId.m_SteamID}";
+                Debug.Log($"[SceneNet-RESTful] Using Steam ID for ready: {myPid}");
+            }
+            else
+            {
+                myPid = localPlayerStatus?.EndPoint ?? connectedPeer.EndPoint?.ToString();
+                Debug.Log($"[SceneNet-RESTful] Using EndPoint for ready: {myPid}");
+            }
+            
+            if (string.IsNullOrEmpty(myPid))
+            {
+                Debug.LogWarning("[SceneNet-RESTful] Cannot send ready: player ID is null");
+                return;
+            }
+            
+            restfulVote.Client_UpdateParticipantStatus(
+                voteId: _currentVoteId,
+                playerId: myPid,
+                isReady: ready,
+                onSuccess: (participant) =>
+                {
+                    localReady = ready;
+                    Debug.Log($"[SceneNet-RESTful] Ready status updated: {participant.PlayerId} = {participant.IsReady}");
+                },
+                onError: (error) =>
+                {
+                    Debug.LogError($"[SceneNet-RESTful] Failed to update ready status: {error}");
+                }
+            );
+            
+            return;
+        }
+
         var voteRPC = VoteSystemRPC.Instance;
         if (voteRPC != null && voteRPC.UseRPCMode)
         {
             voteRPC.Client_SendReady(ready);
-            
-            // 本地乐观更新：使用SteamID格式
-            if (sceneVoteActive && SteamManager.Initialized)
-            {
-                var mySteamId = SteamUser.GetSteamID().m_SteamID;
-                var me = $"steam_{mySteamId}";
-                if (sceneReady.ContainsKey(me))
-                {
-                    sceneReady[me] = ready;
-                    Debug.Log($"[CLIENT-READY] 本地更新准备状态(RPC): SteamID={mySteamId}, ready={ready}");
-                }
-            }
             return;
         }
 
@@ -572,40 +799,6 @@ public class SceneNet : MonoBehaviour
         w.Put((byte)Op.SCENE_READY_SET);
         w.Put(ready);
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
-
-        if (sceneVoteActive && sceneReady.Count > 0)
-        {
-            string myPid = null;
-            
-            var firstKey = sceneParticipantIds.Count > 0 ? sceneParticipantIds[0] : "";
-            if (firstKey.StartsWith("steam_"))
-            {
-                if (SteamManager.Initialized)
-                {
-                    var mySteamId = SteamUser.GetSteamID().m_SteamID;
-                    myPid = $"steam_{mySteamId}";
-                }
-            }
-            else
-            {
-                foreach (var pid in sceneReady.Keys)
-                {
-                    if (pid.StartsWith("Host:")) continue;
-                    myPid = pid;
-                    break;
-                }
-            }
-            
-            if (!string.IsNullOrEmpty(myPid) && sceneReady.ContainsKey(myPid))
-            {
-                sceneReady[myPid] = ready;
-                Debug.Log($"[CLIENT-READY] 本地更新准备状态: pid={myPid}, ready={ready}");
-            }
-            else
-            {
-                Debug.LogWarning($"[CLIENT-READY] 本地更新失败: pid={myPid}, sceneReady有{sceneReady.Count}项");
-            }
-        }
     }
 
     /// <summary>
@@ -621,7 +814,22 @@ public class SceneNet : MonoBehaviour
 
         Debug.Log("[SCENE] 取消投票，重置场景触发器");
 
-        // 如果是服务器，广播取消投票消息给所有客户端
+        var restfulVote = Net.Core.RESTfulVoteSystem.Instance;
+        if (restfulVote != null && _currentVoteId >= 0)
+        {
+            restfulVote.Client_DeleteVote(
+                voteId: _currentVoteId,
+                onSuccess: () =>
+                {
+                    Debug.Log($"[SceneNet-RESTful] Vote {_currentVoteId} deleted");
+                },
+                onError: (error) =>
+                {
+                    Debug.LogError($"[SceneNet-RESTful] Failed to delete vote: {error}");
+                }
+            );
+        }
+
         if (IsServer && networkStarted && netManager != null)
         {
             var w = new NetDataWriter();
@@ -630,19 +838,13 @@ public class SceneNet : MonoBehaviour
             Debug.Log("[SCENE] 服务器已广播取消投票消息");
         }
 
-        // 清除投票状态
         sceneVoteActive = false;
-        sceneParticipantIds.Clear();
-        sceneReady.Clear();
+        _currentVoteId = -1;
         localReady = false;
 
-        // 重置场景触发器，允许重新触发投票
         EscapeFromDuckovCoopMod.Utils.SceneTriggerResetter.ResetAllSceneTriggers();
     }
 
-    /// <summary>
-    /// 客户端接收到服务器的取消投票消息
-    /// </summary>
     public void Client_OnVoteCancelled()
     {
         if (IsServer)
@@ -653,13 +855,10 @@ public class SceneNet : MonoBehaviour
 
         Debug.Log("[SCENE] 收到服务器取消投票通知，重置本地状态");
 
-        // 清除投票状态
         sceneVoteActive = false;
-        sceneParticipantIds.Clear();
-        sceneReady.Clear();
+        _currentVoteId = -1;
         localReady = false;
 
-        // 重置场景触发器，允许重新触发投票
         EscapeFromDuckovCoopMod.Utils.SceneTriggerResetter.ResetAllSceneTriggers();
     }
 
@@ -718,20 +917,25 @@ public class SceneNet : MonoBehaviour
         
         if (fromPeer != null) SceneM._srvPeerScene[fromPeer] = sceneId;
 
-        if (_srvUnifiedSpawnScene != sceneId || _srvUnifiedSpawnPos == Vector3.zero)
+        bool isValidPosition = pos.sqrMagnitude > 0.01f && !float.IsNaN(pos.x) && !float.IsNaN(pos.y) && !float.IsNaN(pos.z);
+        
+        if (_srvUnifiedSpawnScene != sceneId || _srvUnifiedSpawnPos == Vector3.zero || !isValidPosition)
         {
-            _srvUnifiedSpawnScene = sceneId;
-            _srvUnifiedSpawnPos = pos;
-            _srvUnifiedSpawnRot = rot;
-            Debug.Log($"[SERVER-SCENE-READY] Set unified spawn for scene {sceneId}: pos={pos}, rot={rot.eulerAngles}");
-        }
-        else
-        {
-            Debug.Log($"[SERVER-SCENE-READY] Using existing unified spawn: pos={_srvUnifiedSpawnPos}");
+            if (isValidPosition)
+            {
+                _srvUnifiedSpawnScene = sceneId;
+                _srvUnifiedSpawnPos = pos;
+                _srvUnifiedSpawnRot = rot;
+                Debug.Log($"[SERVER-SCENE-READY] Set unified spawn for scene {sceneId}: pos={pos}, rot={rot.eulerAngles}");
+            }
+            else
+            {
+                Debug.LogWarning($"[SERVER-SCENE-READY] Invalid position received: {pos}, using player's position instead");
+            }
         }
 
-        var actualPos = _srvUnifiedSpawnPos;
-        var actualRot = _srvUnifiedSpawnRot;
+        var actualPos = isValidPosition && (_srvUnifiedSpawnScene == sceneId) ? _srvUnifiedSpawnPos : pos;
+        var actualRot = isValidPosition && (_srvUnifiedSpawnScene == sceneId) ? _srvUnifiedSpawnRot : rot;
 
         // 1) 回给 fromPeer：同图的所有已知玩家（使用统一位置）
         foreach (var kv in SceneM._srvPeerScene)
@@ -816,7 +1020,137 @@ public class SceneNet : MonoBehaviour
         sceneUseLocation = useLocation;
         sceneLocationName = locationName ?? "";
 
-        sceneParticipantIds.Clear();
+        var restfulVote = Net.Core.RESTfulVoteSystem.Instance;
+        var hybridTransport = Net.Core.HybridTransport.Instance;
+        var restTransport = hybridTransport?.RESTfulTransport;
+        
+        Debug.Log($"[SceneNet-Vote] RESTfulVoteSystem: {(restfulVote != null ? "OK" : "NULL")}, HybridTransport: {(hybridTransport != null ? "OK" : "NULL")}, RESTTransport: {(restTransport != null ? "OK" : "NULL")}, IsInitialized: {restTransport?.IsInitialized}");
+        
+        if (restfulVote != null && restTransport != null && restTransport.IsInitialized)
+        {
+            Debug.Log("[SceneNet-Vote] Using RESTful API for voting");
+            
+            var participants = new List<string>();
+            
+            var lobbyManager = SteamLobbyManager.Instance;
+            if (lobbyManager != null && lobbyManager.IsInLobby && SteamManager.Initialized)
+            {
+                var currentLobby = lobbyManager.CurrentLobbyId;
+                int memberCount = Steamworks.SteamMatchmaking.GetNumLobbyMembers(currentLobby);
+                
+                for (int i = 0; i < memberCount; i++)
+                {
+                    var memberId = Steamworks.SteamMatchmaking.GetLobbyMemberByIndex(currentLobby, i);
+                    var pid = $"steam_{memberId.m_SteamID}";
+                    participants.Add(pid);
+                    Debug.Log($"[SceneNet-RESTful] Adding participant: {pid}");
+                }
+            }
+            else
+            {
+                var hostPid = localPlayerStatus?.EndPoint ?? $"Host:{port}";
+                participants.Add(hostPid);
+                
+                if (playerStatuses != null)
+                {
+                    foreach (var kv in playerStatuses)
+                    {
+                        var pid = kv.Value?.EndPoint;
+                        if (!string.IsNullOrEmpty(pid) && !participants.Contains(pid))
+                        {
+                            participants.Add(pid);
+                        }
+                    }
+                }
+            }
+            
+            Debug.Log($"[SceneNet-RESTful] Creating vote with {participants.Count} participants");
+            
+            int sceneIdInt = 0;
+            int.TryParse(targetSceneId, out sceneIdInt);
+            
+            restfulVote.Client_CreateVote(
+                sceneId: sceneIdInt,
+                participants: participants,
+                onSuccess: (voteResource) =>
+                {
+                    _currentVoteId = voteResource.VoteId;
+                    sceneVoteActive = true;
+                    localReady = false;
+                    
+                    sceneParticipantIds.Clear();
+                    sceneReady.Clear();
+                    foreach (var p in participants)
+                    {
+                        sceneParticipantIds.Add(p);
+                        sceneReady[p] = false;
+                    }
+                    
+                    Debug.Log($"[SceneNet-RESTful] Vote created: ID={_currentVoteId}, Status={voteResource.Status}, Participants={participants.Count}");
+                    
+                    if (IsServer)
+                    {
+                        string hostSceneId = "";
+                        if (LocalPlayerManager.Instance != null)
+                        {
+                            LocalPlayerManager.Instance.ComputeIsInGame(out hostSceneId);
+                        }
+                        hostSceneId = hostSceneId ?? "";
+                        
+                        var w = new NetDataWriter();
+                        w.Put((byte)Op.SCENE_VOTE_START);
+                        w.Put((byte)3);
+                        w.Put(targetSceneId ?? "");
+                        var flags = PackFlag.PackFlags(!string.IsNullOrEmpty(curtainGuid), useLocation, notifyEvac, saveToFile);
+                        w.Put(flags);
+                        if (!string.IsNullOrEmpty(curtainGuid)) w.Put(curtainGuid);
+                        w.Put(locationName ?? "");
+                        w.Put(hostSceneId);
+                        
+                        var steamIdList = new List<ulong>();
+                        
+                        var lobbyManager = SteamLobbyManager.Instance;
+                        if (lobbyManager != null && lobbyManager.IsInLobby && SteamManager.Initialized)
+                        {
+                            var currentLobby = lobbyManager.CurrentLobbyId;
+                            int memberCount = Steamworks.SteamMatchmaking.GetNumLobbyMembers(currentLobby);
+                            
+                            for (int i = 0; i < memberCount; i++)
+                            {
+                                var memberId = Steamworks.SteamMatchmaking.GetLobbyMemberByIndex(currentLobby, i);
+                                steamIdList.Add(memberId.m_SteamID);
+                                Debug.Log($"[SceneNet-RESTful] Adding lobby member SteamID: {memberId.m_SteamID}");
+                            }
+                        }
+                        else
+                        {
+                            Debug.LogWarning("[SceneNet-RESTful] Not in Steam lobby, sending 0 participants");
+                            steamIdList.Add(0UL);
+                        }
+                        
+                        w.Put(steamIdList.Count);
+                        foreach (var steamId in steamIdList)
+                        {
+                            w.Put(steamId);
+                        }
+                        
+                        netManager.SendToAll(w, LiteNetLib.DeliveryMethod.ReliableOrdered);
+                        Debug.Log($"[SceneNet-RESTful] Broadcasted vote start to all clients: target={targetSceneId}, hostScene={hostSceneId}, participants={steamIdList.Count}");
+                    }
+                    
+                    MModUI.Instance?.UpdateVotePanel();
+                },
+                onError: (error) =>
+                {
+                    Debug.LogError($"[SceneNet-RESTful] Failed to create vote: {error}");
+                }
+            );
+            
+            return;
+        }
+        
+        Debug.Log($"[SceneNet] RESTfulVoteSystem not available, falling back to legacy");
+        
         var participantSteamIds = new List<ulong>();
         
         var voteRPC = VoteSystemRPC.Instance;
@@ -830,7 +1164,9 @@ public class SceneNet : MonoBehaviour
         }
         
         bool useSteamIds = false;
-        if (SteamManager.Initialized && SteamEndPointMapper.Instance != null)
+        bool hasNonLocalConnection = false;
+        
+        if (SteamManager.Initialized && VirtualEndpointManager.Instance != null)
         {
             if (playerStatuses != null && playerStatuses.Count > 0)
             {
@@ -838,7 +1174,11 @@ public class SceneNet : MonoBehaviour
                 if (firstPeer != null)
                 {
                     var ep = firstPeer.EndPoint as System.Net.IPEndPoint;
-                    useSteamIds = ep != null && SteamEndPointMapper.Instance.TryGetSteamID(ep, out _);
+                    if (ep != null)
+                    {
+                        hasNonLocalConnection = !ep.Address.ToString().StartsWith("127.0.0.1");
+                        useSteamIds = hasNonLocalConnection && VirtualEndpointManager.Instance.TryGetSteamID(ep, out _);
+                    }
                 }
             }
             else
@@ -846,6 +1186,8 @@ public class SceneNet : MonoBehaviour
                 useSteamIds = true;
             }
         }
+        
+        Debug.Log($"[SERVER-VOTE-BUILD] hasNonLocalConnection={hasNonLocalConnection}, useSteamIds={useSteamIds}, SteamInit={SteamManager.Initialized}");
         
         if (useSteamIds)
         {
@@ -858,7 +1200,7 @@ public class SceneNet : MonoBehaviour
                 Debug.Log($"[SERVER-VOTE-BUILD] Steam模式 - 添加主机: SteamID={hostSteamId}");
             }
             
-            if (playerStatuses != null && SteamEndPointMapper.Instance != null)
+            if (playerStatuses != null && VirtualEndpointManager.Instance != null)
             {
                 foreach (var kv in playerStatuses)
                 {
@@ -866,7 +1208,7 @@ public class SceneNet : MonoBehaviour
                     if (peer == null) continue;
                     
                     var endPoint = peer.EndPoint as System.Net.IPEndPoint;
-                    if (endPoint != null && SteamEndPointMapper.Instance.TryGetSteamID(endPoint, out var steamId))
+                    if (endPoint != null && VirtualEndpointManager.Instance.TryGetSteamID(endPoint, out var steamId))
                     {
                         var pid = $"steam_{steamId.m_SteamID}";
                         if (!sceneParticipantIds.Contains(pid))
@@ -881,9 +1223,19 @@ public class SceneNet : MonoBehaviour
         }
         else
         {
+            string hostPid = null;
             if (localPlayerStatus != null)
             {
-                var hostPid = localPlayerStatus.EndPoint;
+                hostPid = localPlayerStatus.EndPoint;
+            }
+            else
+            {
+                hostPid = $"Host:{NetService.Instance.port}";
+                Debug.Log($"[SERVER-VOTE-BUILD] LAN模式 - localPlayerStatus为空，使用默认主机ID");
+            }
+            
+            if (!string.IsNullOrEmpty(hostPid))
+            {
                 sceneParticipantIds.Add(hostPid);
                 Debug.Log($"[SERVER-VOTE-BUILD] LAN模式 - 添加主机: EndPoint={hostPid}");
             }
@@ -893,7 +1245,7 @@ public class SceneNet : MonoBehaviour
                 foreach (var kv in playerStatuses)
                 {
                     var peer = kv.Key;
-                    if (peer == null) continue;
+                    if (peer == null || peer.EndPoint == null) continue;
                     
                     var pid = peer.EndPoint.ToString();
                     if (!sceneParticipantIds.Contains(pid))
@@ -902,6 +1254,11 @@ public class SceneNet : MonoBehaviour
                         Debug.Log($"[SERVER-VOTE-BUILD] LAN模式 - 添加客户端: EndPoint={pid}");
                     }
                 }
+            }
+            
+            if (sceneParticipantIds.Count == 0)
+            {
+                Debug.LogWarning($"[SERVER-VOTE-BUILD] LAN模式 - 参与者列表为空！playerStatuses count={playerStatuses?.Count ?? 0}");
             }
         }
 
@@ -982,8 +1339,16 @@ public class SceneNet : MonoBehaviour
         
         if (voteRPC != null && voteRPC.UseRPCMode)
         {
-            Debug.Log($"[SERVER-VOTE-SEND] Calling voteRPC.Server_StartVote");
-            voteRPC.Server_StartVote(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile, sceneUseLocation, sceneLocationName, participantSteamIds);
+            if (useSteamIds)
+            {
+                Debug.Log($"[SERVER-VOTE-SEND] Calling voteRPC.Server_StartVoteP2P with {participantSteamIds.Count} Steam IDs");
+                voteRPC.Server_StartVoteP2P(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile, sceneUseLocation, sceneLocationName, participantSteamIds);
+            }
+            else
+            {
+                Debug.Log($"[SERVER-VOTE-SEND] Calling voteRPC.Server_StartVoteLAN with {sceneParticipantIds.Count} EndPoints");
+                voteRPC.Server_StartVoteLAN(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile, sceneUseLocation, sceneLocationName, sceneParticipantIds.ToList());
+            }
             Debug.Log($"[SERVER-VOTE-SEND] RPC call completed");
         }
         else
@@ -1187,7 +1552,7 @@ public class SceneNet : MonoBehaviour
     }
 
     // ——安全读取（调试期防止崩溃）——
-    public static bool TryGetString(NetPacketReader r, out string s)
+    public static bool TryGetString(NetDataReader r, out string s)
     {
         try
         {
@@ -1201,7 +1566,7 @@ public class SceneNet : MonoBehaviour
         }
     }
 
-    public static bool EnsureAvailable(NetPacketReader r, int need)
+    public static bool EnsureAvailable(NetDataReader r, int need)
     {
         return r.AvailableBytes >= need;
     }

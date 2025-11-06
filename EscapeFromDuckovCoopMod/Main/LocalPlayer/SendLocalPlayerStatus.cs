@@ -38,45 +38,66 @@ public class SendLocalPlayerStatus : MonoBehaviour
     {
         if (!IsServer) return;
 
+        var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager == null) return;
+
         var statuses = new List<PlayerStatus> { localPlayerStatus };
         foreach (var kvp in playerStatuses) statuses.Add(kvp.Value);
+        
+        var tempWriter = new NetDataWriter();
 
-        writer.Reset();
-        writer.Put((byte)Op.PLAYER_STATUS_UPDATE); // opcode
-        writer.Put(statuses.Count);
-
-        foreach (var st in statuses)
+        rpcManager.CallRPC("PlayerStatusFullSync", EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.AllClients, 0, w =>
         {
-            writer.Put(st.EndPoint);
-            writer.Put(st.PlayerName);
-            writer.Put(st.Latency);
-            writer.Put(st.IsInGame);
-            writer.PutVector3(st.Position);
-            writer.PutQuaternion(st.Rotation);
+            w.Put(statuses.Count);
 
-            var sid = st.SceneId;
-            writer.Put(sid ?? string.Empty);
+            foreach (var st in statuses)
+            {
+                w.Put(st.EndPoint);
+                w.Put(st.PlayerName);
+                w.Put(st.Latency);
+                w.Put(st.IsInGame);
+                w.Put(st.Position.x);
+                w.Put(st.Position.y);
+                w.Put(st.Position.z);
+                w.Put(st.Rotation.x);
+                w.Put(st.Rotation.y);
+                w.Put(st.Rotation.z);
+                w.Put(st.Rotation.w);
 
-            writer.Put(st.CustomFaceJson ?? "");
+                var sid = st.SceneId;
+                w.Put(sid ?? string.Empty);
 
-            var equipmentList = st == localPlayerStatus ? LocalPlayerManager.Instance.GetLocalEquipment() : st.EquipmentList ?? new List<EquipmentSyncData>();
-            writer.Put(equipmentList.Count);
-            foreach (var e in equipmentList) e.Serialize(writer);
+                w.Put(st.CustomFaceJson ?? "");
 
-            var weaponList = st == localPlayerStatus ? LocalPlayerManager.Instance.GetLocalWeapons() : st.WeaponList ?? new List<WeaponSyncData>();
-            writer.Put(weaponList.Count);
-            foreach (var w in weaponList) w.Serialize(writer);
-            
-            writer.Put((byte)st.NATType);
-            writer.Put(st.UseRelay);
-        }
+                var equipmentList = st == localPlayerStatus ? LocalPlayerManager.Instance.GetLocalEquipment() : st.EquipmentList ?? new List<EquipmentSyncData>();
+                w.Put(equipmentList.Count);
+                foreach (var e in equipmentList)
+                {
+                    tempWriter.Reset();
+                    e.Serialize(tempWriter);
+                    w.Put(tempWriter.Data, 0, tempWriter.Length);
+                }
 
-        netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
+                var weaponList = st == localPlayerStatus ? LocalPlayerManager.Instance.GetLocalWeapons() : st.WeaponList ?? new List<WeaponSyncData>();
+                w.Put(weaponList.Count);
+                foreach (var wep in weaponList)
+                {
+                    tempWriter.Reset();
+                    wep.Serialize(tempWriter);
+                    w.Put(tempWriter.Data, 0, tempWriter.Length);
+                }
+                
+                w.Put((byte)st.NATType);
+                w.Put(st.UseRelay);
+            }
+        }, DeliveryMethod.ReliableOrdered);
     }
 
 
     private int _positionUpdateCount = 0;
     private float _lastPosLogTime = 0;
+    private float _lastPosSendTime = 0;
+    private const float MIN_POS_SEND_INTERVAL = 0.033f;
     
     public void SendPositionUpdate()
     {
@@ -84,6 +105,13 @@ public class SendLocalPlayerStatus : MonoBehaviour
 
         var main = CharacterMainControl.Main;
         if (!main) return;
+        
+        float timeSinceLastSend = Time.realtimeSinceStartup - _lastPosSendTime;
+        if (timeSinceLastSend < MIN_POS_SEND_INTERVAL)
+        {
+            return;
+        }
+        _lastPosSendTime = Time.realtimeSinceStartup;
 
         var tr = main.transform;
         var mr = main.modelRoot ? main.modelRoot.transform : null;
@@ -111,21 +139,26 @@ public class SendLocalPlayerStatus : MonoBehaviour
             relay.RecordPosition(localPlayerStatus.EndPoint, pos, rot, velocity);
         }
 
-        writer.Reset();
-        writer.Put((byte)Op.POSITION_UPDATE);
-        writer.Put(localPlayerStatus.EndPoint);
+        var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager == null) return;
 
-        // 统一：量化坐标 + 方向
-        writer.PutV3cm(pos);
-        writer.PutDir(fwd);
+        var target = IsServer ? EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.AllClients : EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.Server;
+        var rpcName = IsServer ? "PlayerPositionBroadcast" : "PlayerPositionUpdate";
 
-        if (IsServer) netManager.SendToAll(writer, DeliveryMethod.Unreliable);
-        else connectedPeer?.Send(writer, DeliveryMethod.Unreliable);
+        rpcManager.CallRPC(rpcName, target, 0, w =>
+        {
+            w.Put(localPlayerStatus.EndPoint);
+            w.Put(pos.x);
+            w.Put(pos.y);
+            w.Put(pos.z);
+            w.Put(fwd.x);
+            w.Put(fwd.y);
+            w.Put(fwd.z);
+        }, DeliveryMethod.Unreliable);
         
         _positionUpdateCount++;
         if (Time.realtimeSinceStartup - _lastPosLogTime > 5f)
         {
-            Debug.Log($"[POSITION-UPDATE] 位置更新频率: {_positionUpdateCount / 5f} updates/sec, IsServer={IsServer}");
             _positionUpdateCount = 0;
             _lastPosLogTime = Time.realtimeSinceStartup;
         }
@@ -135,14 +168,17 @@ public class SendLocalPlayerStatus : MonoBehaviour
     {
         if (localPlayerStatus == null || !networkStarted) return;
 
-        writer.Reset();
-        writer.Put((byte)Op.EQUIPMENT_UPDATE);
-        writer.Put(localPlayerStatus.EndPoint);
-        writer.Put(equipmentData.SlotHash);
-        writer.Put(equipmentData.ItemId ?? "");
+        var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager == null) return;
 
-        if (IsServer) netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
-        else connectedPeer?.Send(writer, DeliveryMethod.ReliableOrdered);
+        var target = IsServer ? EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.AllClients : EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.Server;
+
+        rpcManager.CallRPC("EquipmentSync", target, 0, w =>
+        {
+            w.Put(localPlayerStatus.EndPoint);
+            w.Put(equipmentData.SlotHash);
+            w.Put(equipmentData.ItemId ?? "");
+        }, DeliveryMethod.ReliableOrdered);
     }
 
 
@@ -150,19 +186,25 @@ public class SendLocalPlayerStatus : MonoBehaviour
     {
         if (localPlayerStatus == null || !networkStarted) return;
 
-        writer.Reset();
-        writer.Put((byte)Op.PLAYERWEAPON_UPDATE); // opcode
-        writer.Put(localPlayerStatus.EndPoint);
-        writer.Put(weaponSyncData.SlotHash);
-        writer.Put(weaponSyncData.ItemId ?? "");
+        var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager == null) return;
 
-        if (IsServer) netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
-        else connectedPeer?.Send(writer, DeliveryMethod.ReliableOrdered);
+        var target = IsServer ? EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.AllClients : EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.Server;
+
+        rpcManager.CallRPC("WeaponEquipSync", target, 0, w =>
+        {
+            w.Put(localPlayerStatus.EndPoint);
+            w.Put(weaponSyncData.SlotHash);
+            w.Put(weaponSyncData.ItemId ?? "");
+        }, DeliveryMethod.ReliableOrdered);
     }
 
     public void SendAnimationStatus()
     {
         if (!networkStarted) return;
+
+        var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager == null) return;
 
         var mainControl = CharacterMainControl.Main;
         if (mainControl == null) return;
@@ -178,63 +220,68 @@ public class SendLocalPlayerStatus : MonoBehaviour
         var stateHash = state.shortNameHash;
         var normTime = state.normalizedTime;
 
-        writer.Reset();
-        writer.Put((byte)Op.ANIM_SYNC); // opcode
-
         if (IsServer)
         {
-            // 主机广播：带 playerId
-            writer.Put(localPlayerStatus.EndPoint);
-            writer.Put(anim.GetFloat("MoveSpeed"));
-            writer.Put(anim.GetFloat("MoveDirX"));
-            writer.Put(anim.GetFloat("MoveDirY"));
-            writer.Put(anim.GetBool("Dashing"));
-            writer.Put(anim.GetBool("Attack"));
-            writer.Put(anim.GetInteger("HandState"));
-            writer.Put(anim.GetBool("GunReady"));
-            writer.Put(stateHash);
-            writer.Put(normTime);
-            netManager.SendToAll(writer, DeliveryMethod.Sequenced);
+            rpcManager.CallRPC("AnimationSync", EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.AllClients, 0, w =>
+            {
+                w.Put(localPlayerStatus.EndPoint);
+                w.Put(anim.GetFloat("MoveSpeed"));
+                w.Put(anim.GetFloat("MoveDirX"));
+                w.Put(anim.GetFloat("MoveDirY"));
+                w.Put(anim.GetBool("Dashing"));
+                w.Put(anim.GetBool("Attack"));
+                w.Put(anim.GetInteger("HandState"));
+                w.Put(anim.GetBool("GunReady"));
+                w.Put(stateHash);
+                w.Put(normTime);
+            }, DeliveryMethod.Sequenced);
         }
         else
         {
-            // 客户端 -> 主机：不带 playerId
-            if (connectedPeer == null) return;
-            writer.Put(anim.GetFloat("MoveSpeed"));
-            writer.Put(anim.GetFloat("MoveDirX"));
-            writer.Put(anim.GetFloat("MoveDirY"));
-            writer.Put(anim.GetBool("Dashing"));
-            writer.Put(anim.GetBool("Attack"));
-            writer.Put(anim.GetInteger("HandState"));
-            writer.Put(anim.GetBool("GunReady"));
-            writer.Put(stateHash);
-            writer.Put(normTime);
-            connectedPeer.Send(writer, DeliveryMethod.Sequenced);
+            rpcManager.CallRPC("AnimationSyncRequest", EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.Server, 0, w =>
+            {
+                w.Put(anim.GetFloat("MoveSpeed"));
+                w.Put(anim.GetFloat("MoveDirX"));
+                w.Put(anim.GetFloat("MoveDirY"));
+                w.Put(anim.GetBool("Dashing"));
+                w.Put(anim.GetBool("Attack"));
+                w.Put(anim.GetInteger("HandState"));
+                w.Put(anim.GetBool("GunReady"));
+                w.Put(stateHash);
+                w.Put(normTime);
+            }, DeliveryMethod.Sequenced);
         }
     }
 
 
     public void Net_ReportPlayerDeadTree(CharacterMainControl who)
     {
-        // 仅客户端上报；主机不需要发
-        if (!networkStarted || IsServer || connectedPeer == null || who == null) return;
+        if (!networkStarted || IsServer || who == null) return;
 
-        var item = who.CharacterItem; // 本机一定能拿到
+        var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager == null) return;
+
+        var item = who.CharacterItem;
         if (item == null) return;
 
-        // 尸体位置/朝向尽量贴近角色模型
         var pos = who.transform.position;
         var rot = who.characterModel ? who.characterModel.transform.rotation : who.transform.rotation;
 
-        // 组包并发送
-        writer.Reset();
-        writer.Put((byte)Op.PLAYER_DEAD_TREE);
-        writer.PutV3cm(pos);
-        writer.PutQuaternion(rot);
+        var tempWriter = new NetDataWriter();
+        
+        rpcManager.CallRPC("PlayerDeadTree", EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.Server, 0, w =>
+        {
+            w.Put(pos.x);
+            w.Put(pos.y);
+            w.Put(pos.z);
+            w.Put(rot.x);
+            w.Put(rot.y);
+            w.Put(rot.z);
+            w.Put(rot.w);
 
-        // 把整棵物品“快照”写进包里
-        ItemTool.WriteItemSnapshot(writer, item);
-
-        connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+            tempWriter.Reset();
+            ItemTool.WriteItemSnapshot(tempWriter, item);
+            w.Put(tempWriter.Data, 0, tempWriter.Length);
+        }, DeliveryMethod.ReliableOrdered);
     }
 }

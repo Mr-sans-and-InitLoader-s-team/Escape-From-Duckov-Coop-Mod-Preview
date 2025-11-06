@@ -56,8 +56,7 @@ public static class CreateRemoteCharacter
             Debug.LogWarning("Item Loading failed");
         }
 
-        Traverse.Create(characterModel).Field<Item>("characterItem").Value = itemLoaded;
-        // Debug.Log(peer.EndPoint.ToString() + " CreateRemoteCharacterForClient");
+        Patch.CharacterItemAccessor.SetCharacterItem(characterModel, itemLoaded);
         // 统一设置初始位姿
         instance.transform.SetPositionAndRotation(position, rotation);
 

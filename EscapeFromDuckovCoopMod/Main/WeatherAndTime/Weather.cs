@@ -125,110 +125,125 @@ public class Weather
             } // 基于 Now 计算 :contentReference[oaicite:10]{index=10}
         }
 
-        // 3) 打包并发出
-        var w = new NetDataWriter();
-        w.Put((byte)Op.ENV_SYNC_STATE);
-        w.Put(day);
-        w.Put(secOfDay);
-        w.Put(timeScale);
-        w.Put(seed);
-        w.Put(forceWeather);
-        w.Put(forceWeatherVal);
-        w.Put(currentWeather);
-        w.Put(stormLevel);
+        var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager == null) return;
 
+        long connectionId = 0;
+        var rpcTarget = EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.AllClients;
+        if (target != null)
+        {
+            connectionId = rpcManager.GetConnectionIdByPeer(target);
+            if (connectionId == 0) return;
+            rpcTarget = EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.TargetClient;
+        }
+
+        var lootBoxes = new List<(int k, bool on)>();
         try
         {
             var all = Object.FindObjectsOfType<LootBoxLoader>(true);
-            // 收集 (key, active)
-            var tmp = new List<(int k, bool on)>(all.Length);
             foreach (var l in all)
             {
                 if (!l || !l.gameObject) continue;
                 var k = LootManager.Instance.ComputeLootKey(l.transform);
-                var on = l.gameObject.activeSelf; // 已经由 RandomActive 决定
-                tmp.Add((k, on));
-            }
-
-            w.Put(tmp.Count);
-            for (var i = 0; i < tmp.Count; ++i)
-            {
-                w.Put(tmp[i].k);
-                w.Put(tmp[i].on);
+                var on = l.gameObject.activeSelf;
+                lootBoxes.Add((k, on));
             }
         }
         catch
         {
-            // 防守式：写一个 0，避免客户端读表时越界
-            w.Put(0);
         }
 
-        // Door
-
+        var doors = new List<(int key, bool closed)>();
         var includeDoors = target != null;
         if (includeDoors)
         {
-            var doors = Object.FindObjectsOfType<global::Door>(true);
-            var tmp = new List<(int key, bool closed)>(doors.Length);
+            try
+            {
+                var allDoors = Object.FindObjectsOfType<global::Door>(true);
+                foreach (var d in allDoors)
+                {
+                    if (!d) continue;
+                    var k = 0;
+                    try
+                    {
+                        var doorField = GetFieldSafe(typeof(global::Door), "doorClosedDataKeyCached");
+                        if (doorField != null)
+                        {
+                            k = (int)doorField.GetValue(d);
+                        }
+                    }
+                    catch
+                    {
+                    }
 
+                    if (k == 0) k = COOPManager.Door.ComputeDoorKey(d.transform);
+
+                    bool closed;
+                    try
+                    {
+                        closed = !d.IsOpen;
+                    }
+                    catch
+                    {
+                        closed = true;
+                    }
+
+                    doors.Add((k, closed));
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        rpcManager.CallRPC("EnvSyncState", rpcTarget, connectionId, w =>
+        {
+            w.Put(day);
+            w.Put(secOfDay);
+            w.Put(timeScale);
+            w.Put(seed);
+            w.Put(forceWeather);
+            w.Put(forceWeatherVal);
+            w.Put(currentWeather);
+            w.Put(stormLevel);
+
+            w.Put(lootBoxes.Count);
+            foreach (var lb in lootBoxes)
+            {
+                w.Put(lb.k);
+                w.Put(lb.on);
+            }
+
+            w.Put(doors.Count);
             foreach (var d in doors)
             {
-                if (!d) continue;
-                var k = 0;
-                try
-                {
-                    var doorField = GetFieldSafe(typeof(global::Door), "doorClosedDataKeyCached");
-                    if (doorField != null)
-                    {
-                        k = (int)doorField.GetValue(d);
-                    }
-                }
-                catch
-                {
-                }
-
-                if (k == 0) k = COOPManager.Door.ComputeDoorKey(d.transform);
-
-                bool closed;
-                try
-                {
-                    closed = !d.IsOpen;
-                }
-                catch
-                {
-                    closed = true;
-                } // 兜底：没取到就当作关闭
-
-                tmp.Add((k, closed));
+                w.Put(d.key);
+                w.Put(d.closed);
             }
 
-            w.Put(tmp.Count);
-            for (var i = 0; i < tmp.Count; ++i)
-            {
-                w.Put(tmp[i].key);
-                w.Put(tmp[i].closed);
-            }
-        }
-        else
-        {
-            w.Put(0); // 周期广播不带门清单
-        }
-
-        w.Put(COOPManager.destructible._deadDestructibleIds.Count);
-        foreach (var id in COOPManager.destructible._deadDestructibleIds) w.Put(id);
-
-        if (target != null) target.Send(w, DeliveryMethod.ReliableOrdered);
-        else netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+            w.Put(COOPManager.destructible._deadDestructibleIds.Count);
+            foreach (var id in COOPManager.destructible._deadDestructibleIds)
+                w.Put(id);
+        }, DeliveryMethod.ReliableOrdered);
     }
 
 
     // ========== 环境同步：客户端请求 ==========
     public void Client_RequestEnvSync()
     {
-        if (IsServer || connectedPeer == null) return;
-        var w = new NetDataWriter();
-        w.Put((byte)Op.ENV_SYNC_REQUEST);
-        connectedPeer.Send(w, DeliveryMethod.Sequenced);
+        if (IsServer) return;
+        
+        if (!networkStarted)
+        {
+            return;
+        }
+
+        var rpcManager = EscapeFromDuckovCoopMod.Net.HybridP2P.HybridRPCManager.Instance;
+        if (rpcManager == null) return;
+
+        rpcManager.CallRPC("EnvSyncRequest", EscapeFromDuckovCoopMod.Net.HybridP2P.RPCTarget.Server, 0, w =>
+        {
+        }, DeliveryMethod.Sequenced);
     }
 
     // ========== 环境同步：客户端应用 ==========

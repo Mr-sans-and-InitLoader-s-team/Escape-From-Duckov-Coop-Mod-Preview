@@ -44,7 +44,7 @@ public static class NetPackProjectile
     }
 
     // 主机/客户端共用：读取 ProjectileContext 关键参数
-    public static bool TryGetProjectilePayload(NetPacketReader r, ref ProjectileContext c)
+    public static bool TryGetProjectilePayload(NetDataReader r, ref ProjectileContext c)
     {
         if (r.AvailableBytes < 1) return false;
         if (!r.GetBool()) return false; // hasPayload

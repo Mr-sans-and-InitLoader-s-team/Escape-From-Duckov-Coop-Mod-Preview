@@ -132,7 +132,7 @@ public class AIHandle
     }
 
 
-    public void HandleAiSeedSnapshot(NetPacketReader r)
+    public void HandleAiSeedSnapshot(NetDataReader r)
     {
         sceneSeed = r.GetInt();
         aiRootSeeds.Clear();
@@ -689,7 +689,7 @@ public class AIHandle
     }
 
     // 客户端：应用增量，不清空，直接补/改
-    public void HandleAiSeedPatch(NetPacketReader r)
+    public void HandleAiSeedPatch(NetDataReader r)
     {
         var n = r.GetInt();
         for (var i = 0; i < n; i++)

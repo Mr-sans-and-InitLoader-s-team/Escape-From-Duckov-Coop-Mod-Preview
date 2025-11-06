@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -116,6 +116,19 @@ internal static class Patch_Buff_Setup_Safe
         }
     }
 
+    [HarmonyPatch(typeof(HealAction), "OnTriggered")]
+    private static class Patch_HealAction_OnTriggered
+    {
+        private static bool Prefix(Buff __instance, bool positive)
+        {
+            var mod = ModBehaviourF.Instance;
+            if (mod == null || !mod.networkStarted || mod.IsServer)
+            {
+                return true;
+            }
+            return false;
+        }
+    }
 
     [HarmonyPatch(typeof(CharacterBuffManager), nameof(CharacterBuffManager.AddBuff))]
     private static class Patch_BroadcastBuffApply

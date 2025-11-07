@@ -248,6 +248,7 @@ namespace EscapeFromDuckovCoopMod
         private static void LoadFallbackTranslations()
         {
             // 기본 영어 번역을 하드코딩으로 제공
+            // English as the default
             currentTranslations.Clear();
             currentTranslations["ui.window.title"] = "Co-op Mod Control Panel";
             currentTranslations["ui.window.playerStatus"] = "Player Status";
@@ -255,7 +256,7 @@ namespace EscapeFromDuckovCoopMod
             currentTranslations["ui.mode.server"] = "Server";
             currentTranslations["ui.mode.client"] = "Client";
             currentTranslations["ui.mode.switchTo"] = "Switch to {0} Mode";
-            currentTranslations["ui.hostList.title"] = "🔍 LAN Host List";
+            currentTranslations["ui.hostList.title"] = "LAN Host List";
             currentTranslations["ui.hostList.empty"] = "(Waiting for broadcast, no hosts found)";
             currentTranslations["ui.hostList.connect"] = "Connect";
             currentTranslations["ui.manualConnect.title"] = "Manual IP and Port Connection:";
@@ -282,8 +283,9 @@ namespace EscapeFromDuckovCoopMod
             currentTranslations["ui.vote.ready"] = "Ready";
             currentTranslations["ui.vote.notReady"] = "Not Ready";
             currentTranslations["ui.vote.playerReadyStatus"] = "Player Ready Status:";
-            currentTranslations["ui.vote.readyIcon"] = "✅ Ready";
-            currentTranslations["ui.vote.notReadyIcon"] = "⌛ Not Ready";
+            currentTranslations["ui.vote.readyIcon"] = "Ready";
+            currentTranslations["ui.vote.notReadyIcon"] = "Not Ready";
+            currentTranslations["ui.vote.cancel"] = "Cancel Vote";
             currentTranslations["ui.spectator.mode"] = "Spectator Mode: LMB ▶ Next | RMB ◀ Previous | Spectating";
 
             // Scene 관련
@@ -313,6 +315,68 @@ namespace EscapeFromDuckovCoopMod
             currentTranslations["net.connectingTo"] = "Connecting to: {0}:{1}";
             currentTranslations["net.connectionFailedLog"] = "Failed to connect to host: {0}";
             currentTranslations["net.connectionFailed"] = "Connection failed";
+
+            // Steam P2P
+            currentTranslations["ui.status.online"] = "Online";
+            currentTranslations["ui.error"] = "Error";
+            currentTranslations["ui.server.management"] = "Server Management";
+            currentTranslations["ui.server.info"] = "Server Information";
+            currentTranslations["ui.server.port"] = "Port";
+            currentTranslations["ui.server.create"] = "Create Host";
+            currentTranslations["ui.server.close"] = "Close Host";
+            currentTranslations["ui.server.closed"] = "Host closed";
+            currentTranslations["ui.server.created"] = "Host created successfully, listening on port {0}";
+            currentTranslations["ui.server.hint.waiting"] = "Server mode: Waiting for players to connect";
+            currentTranslations["ui.server.hint.willUsePort"] = "Direct client: Will use port {0} to create server";
+            currentTranslations["ui.client.hint.browse"] = "Client mode: Browse and connect to servers";
+            currentTranslations["ui.error.serverNotInGame"] = "Server is not in a game level, disconnected";
+            currentTranslations["ui.error.gameNotInitialized"] = "Game not initialized";
+            currentTranslations["ui.error.mustInLevel"] = "Must enter a level before connecting";
+            currentTranslations["ui.hostList.lanServer"] = "LAN Server - {0}";
+            currentTranslations["ui.hostList.serverDetails"] = "Port: {0}  |  Players: 0/4  |  Ping: <50ms";
+            currentTranslations["ui.playerStatus.local"] = "Local";
+            currentTranslations["ui.playerStatus.inGameStatus"] = "In Game";
+            currentTranslations["ui.playerStatus.idle"] = "Idle";
+            currentTranslations["ui.vote.title"] = "Map Vote";
+            currentTranslations["ui.steam.lobbyList"] = "Steam Lobby List";
+            currentTranslations["ui.steam.client.connected"] = "Steam Client: Connected to lobby";
+            currentTranslations["ui.steam.hint.createOrJoin"] = "Steam P2P Mode: Create or join a lobby";
+            currentTranslations["ui.steam.joinPassword]" = "Lobby Password";
+            currentTranslations["ui.steam.joinPasswordPlaceholder"] = "If lobby requires password";
+            currentTranslations["ui.steam.lobbyNamePlaceholder"] = "My Lobby";
+            currentTranslations["ui.steam.lobbyPasswordPlaceholder"] = "Leave empty for public";
+            currentTranslations["ui.steam.visibility"] = "Visibility";
+            currentTranslations["ui.steam.maxPlayers.label"] = "Max Players";
+            currentTranslations["ui.steam.lobby.left"] = "Left lobby";
+            currentTranslations["ui.steam.lobby.creating"] = "Creating Steam lobby...";
+            currentTranslations["ui.steam.playerCount"] = "Players: {0}/{1}";
+            currentTranslations["ui.steam.notInitialized"] = "Steam not initialized";
+            currentTranslations["ui.steam.refresh"] = "Refresh List";
+            currentTranslations["ui.steam.lobbiesEmpty"] = "No lobbies found, click to refresh";
+            currentTranslations["ui.steam.joinButton"] = "Join Lobby";
+            currentTranslations["ui.steam.createHost"] = "Create Lobby";
+            currentTranslations["ui.steam.leaveLobby"] = "Leave Lobby";
+            currentTranslations["ui.steam.lobbySettings"] = "Steam Lobby Settings";
+            currentTranslations["ui.steam.lobbyName"] = "Lobby Name";
+            currentTranslations["ui.steam.lobbyPassword"] = "Password";
+            currentTranslations["ui.steam.visibility.public"] = "Public";
+            currentTranslations["ui.steam.visibility.friends"] = "Friends Only";
+            currentTranslations["ui.steam.maxPlayers"] = "Max Players: {0}";
+            currentTranslations["ui.steam.currentLobby"] = "Current Lobby: {0}  Players: {1}/{2}";
+            currentTranslations["ui.steam.server.waiting"] = "Steam Host: Lobby created";
+            currentTranslations["ui.steam.tab.create"] = "Create Lobby";
+            currentTranslations["ui.steam.tab.browse"] = "Browse Lobbies";
+            currentTranslations["ui.steam.error.notInitialized"] = "Steam not initialized";
+            currentTranslations["ui.steam.error.metadata"] = "Lobby information unavailable";
+            currentTranslations["ui.steam.error.password"] = "Incorrect password";
+            currentTranslations["ui.steam.error.generic"] = "Failed to join lobby";
+            currentTranslations["ui.transport.label"] = "Transport Mode";
+            currentTranslations["ui.transport.mode.direct"] = "Direct Connection";
+            currentTranslations["ui.transport.mode.steam"] = "Steam P2P";
+            currentTranslations["ui.manualConnect.hint"] = "Hint: Must be in a level to connect";
+            currentTranslations["ui.actions.quickActions"] = "Quick Actions";
+            currentTranslations["ui.debug.lootBoxCount"] = "Printed {0} loot boxes";
+            currentTranslations["ui.hint.toggleUI"] = "{0} Show/Hide";
         }
 
         /// <summary>

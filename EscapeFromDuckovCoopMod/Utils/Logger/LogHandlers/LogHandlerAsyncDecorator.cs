@@ -10,7 +10,7 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
     /// </summary>
     /// <remarks>
     /// <para>使用独立的后台线程处理日志输出，避免调用线程阻塞在 I/O 操作上</para>
-    /// <para>适用于高频日志场景（> 1000 次/秒）或 I/O 密集型处理器（如文件日志）</para>
+    /// <para>适用于多线程打日志场景 | 高频日志场景（> 1000 次/秒）| I/O 密集型处理器（如文件日志）</para>
     /// <para><b>注意：</b></para>
     /// <list type="bullet">
     /// <item>日志输出存在异步延迟</item>

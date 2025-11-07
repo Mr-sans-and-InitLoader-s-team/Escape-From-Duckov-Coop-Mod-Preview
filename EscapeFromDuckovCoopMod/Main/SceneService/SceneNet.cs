@@ -15,6 +15,8 @@
 // GNU Affero General Public License for more details.
 
 using Duckov.UI;
+using System;
+using System.Collections.Generic;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -51,6 +53,8 @@ public class SceneNet : MonoBehaviour
 
     // 就绪表（key = 上面那个 pid）
     public readonly Dictionary<string, bool> sceneReady = new();
+    private readonly Dictionary<string, string> _cliServerPidToLocal = new();
+    private readonly Dictionary<string, string> _cliLocalPidToServer = new();
     private float _cliGateDeadline;
     private float _cliGateSeverDeadline;
 
@@ -67,6 +71,83 @@ public class SceneNet : MonoBehaviour
     private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
     private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
     private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
+    private Dictionary<string, PlayerStatus> clientPlayerStatuses => Service?.clientPlayerStatuses;
+
+    private void ResetClientParticipantMappings()
+    {
+        _cliServerPidToLocal.Clear();
+        _cliLocalPidToServer.Clear();
+    }
+
+    private void RegisterClientParticipantId(string serverPid, string localPid)
+    {
+        serverPid ??= string.Empty;
+        localPid ??= string.Empty;
+        _cliServerPidToLocal[serverPid] = localPid;
+        _cliLocalPidToServer[localPid] = serverPid;
+    }
+
+    private string MapServerPidToLocal(string pid)
+    {
+        if (string.IsNullOrEmpty(pid)) return pid ?? string.Empty;
+        return _cliServerPidToLocal.TryGetValue(pid, out var local) ? local : pid;
+    }
+
+    internal string NormalizeParticipantId(string pid) => MapServerPidToLocal(pid);
+
+    private string ResolveClientAliasForServerPid(string serverPid)
+    {
+        if (string.IsNullOrEmpty(serverPid)) return string.Empty;
+
+        if (localPlayerStatus != null && string.Equals(localPlayerStatus.EndPoint, serverPid, StringComparison.Ordinal))
+            return localPlayerStatus.EndPoint;
+
+        if (playerStatuses != null)
+            foreach (var kv in playerStatuses)
+            {
+                var st = kv.Value;
+                if (st == null) continue;
+                if (!string.Equals(st.EndPoint, serverPid, StringComparison.Ordinal)) continue;
+
+                return !string.IsNullOrEmpty(st.ClientReportedId) ? st.ClientReportedId : serverPid;
+            }
+
+        return serverPid;
+    }
+
+    private string ResolveLocalAliasFromServerPid(string serverPid, string aliasFromServer)
+    {
+        if (string.IsNullOrEmpty(serverPid)) return aliasFromServer ?? string.Empty;
+
+        if (!string.IsNullOrEmpty(aliasFromServer)) return aliasFromServer;
+
+        if (localPlayerStatus == null) return aliasFromServer ?? string.Empty;
+
+        var me = localPlayerStatus.EndPoint ?? string.Empty;
+        if (string.IsNullOrEmpty(me)) return aliasFromServer ?? string.Empty;
+
+        if (string.Equals(serverPid, me, StringComparison.Ordinal)) return me;
+
+        if (clientPlayerStatuses != null && clientPlayerStatuses.TryGetValue(serverPid, out var st) && st != null)
+        {
+            var sameName = !string.IsNullOrEmpty(st.PlayerName) &&
+                           !string.IsNullOrEmpty(localPlayerStatus.PlayerName) &&
+                           string.Equals(st.PlayerName, localPlayerStatus.PlayerName, StringComparison.Ordinal);
+
+            var sameScene = !string.IsNullOrEmpty(st.SceneId) &&
+                            !string.IsNullOrEmpty(localPlayerStatus.SceneId) &&
+                            string.Equals(st.SceneId, localPlayerStatus.SceneId, StringComparison.Ordinal);
+
+            if (sameName && sameScene) return me;
+
+            if (!string.IsNullOrEmpty(localPlayerStatus.CustomFaceJson) &&
+                !string.IsNullOrEmpty(st.CustomFaceJson) &&
+                string.Equals(st.CustomFaceJson, localPlayerStatus.CustomFaceJson, StringComparison.Ordinal))
+                return me;
+        }
+
+        return aliasFromServer ?? string.Empty;
+    }
 
     public void Init()
     {
@@ -144,6 +225,7 @@ public class SceneNet : MonoBehaviour
         // 收尾与清理
         sceneVoteActive = false;
         sceneParticipantIds.Clear();
+        ResetClientParticipantMappings();
         sceneReady.Clear();
         localReady = false;
     }
@@ -188,7 +270,7 @@ public class SceneNet : MonoBehaviour
         }
 
         var ver = r.GetByte(); // switch 里已经吃掉了 op，这里是 ver
-        if (ver != 1 && ver != 2)
+        if (ver != 1 && ver != 2 && ver != 3)
         {
             Debug.LogWarning($"[SCENE] vote: unsupported ver={ver}");
             return;
@@ -252,6 +334,7 @@ public class SceneNet : MonoBehaviour
         }
 
         sceneParticipantIds.Clear();
+        ResetClientParticipantMappings();
         for (var i = 0; i < cnt; i++)
         {
             if (!TryGetString(r, out var pid))
@@ -260,7 +343,23 @@ public class SceneNet : MonoBehaviour
                 return;
             }
 
-            sceneParticipantIds.Add(pid ?? "");
+            pid ??= string.Empty;
+            string aliasFromServer = string.Empty;
+
+            if (ver >= 3)
+            {
+                if (!TryGetString(r, out aliasFromServer))
+                {
+                    Debug.LogWarning($"[SCENE] vote: bad alias[{i}]");
+                    return;
+                }
+            }
+
+            var localPid = ResolveLocalAliasFromServerPid(pid, aliasFromServer);
+            if (string.IsNullOrEmpty(localPid)) localPid = pid;
+
+            RegisterClientParticipantId(pid, localPid);
+            sceneParticipantIds.Add(localPid);
         }
 
         // ===== 过滤：不同图 & 不在白名单，直接忽略 =====
@@ -280,9 +379,13 @@ public class SceneNet : MonoBehaviour
         if (sceneParticipantIds.Count > 0 && localPlayerStatus != null)
         {
             var me = localPlayerStatus.EndPoint ?? string.Empty;
-            if (!sceneParticipantIds.Contains(me))
+            if (!string.IsNullOrEmpty(me) && !sceneParticipantIds.Contains(me))
             {
                 Debug.Log($"[SCENE] vote: ignore (not in participants) me='{me}'");
+                var peerId = connectedPeer != null && connectedPeer.EndPoint != null
+                    ? connectedPeer.EndPoint.ToString()
+                    : string.Empty;
+                Debug.Log($"[SCENE] vote: ignore (not in participants) local='{localPlayerStatus.EndPoint}' peer='{peerId}'");
                 return;
             }
         }
@@ -311,7 +414,8 @@ public class SceneNet : MonoBehaviour
     {
         var pid = r.GetString();
         var rd = r.GetBool();
-        if (sceneReady.ContainsKey(pid)) sceneReady[pid] = rd;
+        var localPid = MapServerPidToLocal(pid);
+        if (sceneReady.ContainsKey(localPid)) sceneReady[localPid] = rd;
     }
 
     public void Client_OnBeginSceneLoad(NetPacketReader r)
@@ -374,6 +478,7 @@ public class SceneNet : MonoBehaviour
 
         sceneVoteActive = false;
         sceneParticipantIds.Clear();
+        ResetClientParticipantMappings();
         sceneReady.Clear();
         localReady = false;
     }
@@ -421,6 +526,7 @@ public class SceneNet : MonoBehaviour
         // 清除投票状态
         sceneVoteActive = false;
         sceneParticipantIds.Clear();
+        ResetClientParticipantMappings();
         sceneReady.Clear();
         localReady = false;
 
@@ -444,6 +550,7 @@ public class SceneNet : MonoBehaviour
         // 清除投票状态
         sceneVoteActive = false;
         sceneParticipantIds.Clear();
+        ResetClientParticipantMappings();
         sceneReady.Clear();
         localReady = false;
 
@@ -600,7 +707,7 @@ public class SceneNet : MonoBehaviour
 
         var w = new NetDataWriter();
         w.Put((byte)Op.SCENE_VOTE_START);
-        w.Put((byte)2);
+        w.Put((byte)3);
         w.Put(sceneTargetId);
 
         var hasCurtain = !string.IsNullOrEmpty(sceneCurtainGuid);
@@ -612,11 +719,16 @@ public class SceneNet : MonoBehaviour
         w.Put(hostSceneId);
 
         w.Put(sceneParticipantIds.Count);
-        foreach (var pid in sceneParticipantIds) w.Put(pid);
+        foreach (var pid in sceneParticipantIds)
+        {
+            w.Put(pid);
+            var alias = ResolveClientAliasForServerPid(pid);
+            w.Put(alias ?? string.Empty);
+        }
 
 
         netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
-        Debug.Log($"[SCENE] 投票开始 v2: target='{sceneTargetId}', hostScene='{hostSceneId}', loc='{sceneLocationName}', count={sceneParticipantIds.Count}");
+        Debug.Log($"[SCENE] 投票开始 v3: target='{sceneTargetId}', hostScene='{hostSceneId}', loc='{sceneLocationName}', count={sceneParticipantIds.Count}");
 
         // 如需“只发同图”，可以替换为下面这段（二选一）：
         /*
@@ -632,14 +744,19 @@ public class SceneNet : MonoBehaviour
             {
                 var ww = new NetDataWriter();
                 ww.Put((byte)Op.SCENE_VOTE_START);
-                ww.Put((byte)2);
+                ww.Put((byte)3);
                 ww.Put(sceneTargetId);
                 ww.Put(flags);
                 if (hasCurtain) ww.Put(sceneCurtainGuid);
                 ww.Put(sceneLocationName);
                 ww.Put(hostSceneId);
                 ww.Put(sceneParticipantIds.Count);
-                foreach (var pid in sceneParticipantIds) ww.Put(pid);
+                foreach (var pid in sceneParticipantIds)
+                {
+                    ww.Put(pid);
+                    var alias = ResolveClientAliasForServerPid(pid);
+                    ww.Put(alias ?? string.Empty);
+                }
 
                 p.Send(ww, DeliveryMethod.ReliableOrdered);
             }

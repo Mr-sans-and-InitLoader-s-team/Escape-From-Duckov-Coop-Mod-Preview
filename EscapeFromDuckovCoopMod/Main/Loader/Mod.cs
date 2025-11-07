@@ -1000,14 +1000,15 @@ public class ModBehaviourF : MonoBehaviour
                     {
                         var pid = reader.GetString();
                         var rdy = reader.GetBool();
+                        var localPid = SceneNet.Instance.NormalizeParticipantId(pid);
 
-                        if (!SceneNet.Instance.sceneReady.ContainsKey(pid) && SceneNet.Instance.sceneParticipantIds.Contains(pid))
-                            SceneNet.Instance.sceneReady[pid] = false;
+                        if (!SceneNet.Instance.sceneReady.ContainsKey(localPid) && SceneNet.Instance.sceneParticipantIds.Contains(localPid))
+                            SceneNet.Instance.sceneReady[localPid] = false;
 
-                        if (SceneNet.Instance.sceneReady.ContainsKey(pid))
+                        if (SceneNet.Instance.sceneReady.ContainsKey(localPid))
                         {
-                            SceneNet.Instance.sceneReady[pid] = rdy;
-                            Debug.Log($"[SCENE] READY_SET -> {pid} = {rdy}");
+                            SceneNet.Instance.sceneReady[localPid] = rdy;
+                            Debug.Log($"[SCENE] READY_SET -> {localPid} (srv='{pid}') = {rdy}");
                         }
                         else
                         {

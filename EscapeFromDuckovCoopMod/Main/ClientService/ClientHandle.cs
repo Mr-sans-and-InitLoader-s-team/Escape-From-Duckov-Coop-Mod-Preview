@@ -59,6 +59,7 @@ public class ClientHandle
         if (string.IsNullOrEmpty(st.EndPoint))
             st.EndPoint = peer.EndPoint.ToString();  // ✅ 使用服务器端的虚拟IP EndPoint
 
+        st.ClientReportedId = endPoint;
         st.PlayerName = playerName;
         st.Latency = peer.Ping;
         st.IsInGame = isInGame;

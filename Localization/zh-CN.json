@@ -36,7 +36,6 @@
     { "key": "ui.vote.readyIcon", "value": "就绪" },
     { "key": "ui.vote.notReadyIcon", "value": "未就绪" },
     { "key": "ui.vote.cancel", "value": "取消投票" },
-    { "key": "ui.vote.title", "value": "地图投票" },
     { "key": "ui.spectator.mode", "value": "观战模式：左键 ▶ 下一个 | 右键 ◀ 上一个  | 正在观战" },
     { "key": "scene.waitingForHost", "value": "[Coop] 等待主机完成加载… (如迟迟没有进入等待100秒后自动进入)" },
     { "key": "scene.hostReady", "value": "主机已完成，正在进入…" },

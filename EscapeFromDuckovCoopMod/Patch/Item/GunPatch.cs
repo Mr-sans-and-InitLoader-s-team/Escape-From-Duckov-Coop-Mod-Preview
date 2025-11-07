@@ -14,6 +14,8 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 namespace EscapeFromDuckovCoopMod;
 
 [HarmonyPatch(typeof(ItemAgent_Gun), "ShootOneBullet")]
@@ -142,6 +144,6 @@ internal static class Patch_ProjectileInit_Broadcast
         // 把服务端算好的弹丸参数一并带上（含 explosionRange / explosionDamage 等）
         w.PutProjectilePayload(_context);
 
-        mod.netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+        mod.netManager.SendSmart(w, Op.FIRE_EVENT);
     }
 }

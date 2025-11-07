@@ -17,6 +17,7 @@
 using System.Reflection;
 using Object = UnityEngine.Object;
 using Random = UnityEngine.Random;
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -126,7 +127,7 @@ public class AIHandle
         }
 
         if (target == null) CoopTool.BroadcastReliable(w);
-        else target.Send(w, DeliveryMethod.ReliableOrdered);
+        else target.SendSmart(w, Op.AI_SEED_SNAPSHOT);
 
         Debug.Log($"[AI-SEED] 已发送 {pairs.Count} 条 Root 映射（原 Root 数={roots.Length}）目标={(target == null ? "ALL" : target.EndPoint.ToString())}");
     }

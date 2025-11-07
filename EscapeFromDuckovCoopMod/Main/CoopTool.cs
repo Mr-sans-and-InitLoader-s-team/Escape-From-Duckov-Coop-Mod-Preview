@@ -17,6 +17,7 @@
 using Duckov.UI;
 using ItemStatsSystem;
 using Object = UnityEngine.Object;
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -130,8 +131,25 @@ public static class CoopTool
         manager.SendToAll(w, DeliveryMethod.ReliableOrdered);
     }
 
+    /// <summary>
+    /// 发送可靠包（智能选择传输方式）
+    /// 注意：此方法已过时，建议直接使用 SendSmart 扩展方法
+    /// </summary>
+    public static void SendReliable(NetDataWriter w, Op op)
+    {
+        var manager = NetManager;
+        if (IsServer) manager?.SendSmart(w, op);
+        else ConnectedPeer?.SendSmart(w, op);
+    }
+
+    /// <summary>
+    /// 发送可靠包（兼容旧接口，从包中读取 Op 码）
+    /// 警告：这个方法假设 writer 的第一个字节是 Op 码
+    /// </summary>
     public static void SendReliable(NetDataWriter w)
     {
+        // 从 writer 中读取第一个字节作为 Op 码（假设调用者已经 Put 了 Op）
+        // 这是一个临时兼容方案，建议调用者改用带 Op 参数的版本
         var manager = NetManager;
         if (IsServer) manager?.SendToAll(w, DeliveryMethod.ReliableOrdered);
         else ConnectedPeer?.Send(w, DeliveryMethod.ReliableOrdered);

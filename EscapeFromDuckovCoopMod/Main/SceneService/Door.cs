@@ -15,6 +15,7 @@
 // GNU Affero General Public License for more details.
 
 using Object = UnityEngine.Object;
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -103,7 +104,7 @@ public class Door
         w.Put((byte)Op.DOOR_REQ_SET);
         w.Put(key);
         w.Put(closed);
-        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+        connectedPeer.SendSmart(w, Op.DOOR_REQ_SET);
     }
 
     // 主机：处理客户端的设门请求
@@ -133,7 +134,7 @@ public class Door
         w.Put((byte)Op.DOOR_STATE);
         w.Put(key);
         w.Put(closed);
-        netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+        netManager.SendSmart(w, Op.DOOR_STATE);
     }
 
     // 客户端：应用门状态（反射调用 SetClosed，确保 NavMeshCut/插值/存档一致）

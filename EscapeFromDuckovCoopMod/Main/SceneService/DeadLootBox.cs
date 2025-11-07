@@ -17,6 +17,7 @@
 using System.Collections;
 using ItemStatsSystem;
 using UnityEngine.SceneManagement;
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -247,7 +248,7 @@ public class DeadLootBox : MonoBehaviour
             writer.Put(lootUid); // 稳定 ID
             writer.PutV3cm(box.transform.position);
             writer.PutQuaternion(box.transform.rotation);
-            netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
+            netManager.SendSmart(writer, Op.DEAD_LOOT_SPAWN);
 
             if (EAGER_BROADCAST_LOOT_STATE_ON_SPAWN)
                 StartCoroutine(RebroadcastDeadLootStateAfterFill(box));
@@ -285,7 +286,7 @@ public class DeadLootBox : MonoBehaviour
             writer.Put(SceneManager.GetActiveScene().buildIndex);
             writer.PutV3cm(box.transform.position);
             writer.PutQuaternion(box.transform.rotation);
-            netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
+            netManager.SendSmart(writer, Op.DEAD_LOOT_SPAWN);
 
             // 2) 可选：是否立刻广播整箱内容（默认不广播，等客户端真正打开时再按需请求）
             if (EAGER_BROADCAST_LOOT_STATE_ON_SPAWN) COOPManager.LootNet.Server_SendLootboxState(null, box.Inventory); // 如需老行为，打开上面的开关即可

@@ -30,6 +30,7 @@ public class SteamP2PManager : MonoBehaviour
     private ConcurrentQueue<ReceivedPacket> _receivedPackets = new ConcurrentQueue<ReceivedPacket>();
     private const int MAX_QUEUE_SIZE = 512;
     private const int BATCH_PROCESS_LIMIT = 512;
+    private int _oversizePacketWarningCount = 0;  // 🛡️ 限制过大包警告的频率
     private int _packetsSent;
     private int _packetsReceived;
     private long _bytesSent;
@@ -130,59 +131,68 @@ public class SteamP2PManager : MonoBehaviour
     }
     private void ReceiveSteamPackets()
     {
-        const int channel = 0;
+        // 🛡️ 修复：遍历所有通道（0-3）
         int processedInThisFrame = 0;
-        while (SteamNetworking.IsP2PPacketAvailable(out uint packetSize, channel))
+        for (int channel = 0; channel < 4; channel++)
         {
-            if (processedInThisFrame >= BATCH_PROCESS_LIMIT)
+            while (SteamNetworking.IsP2PPacketAvailable(out uint packetSize, channel))
             {
-                break;
-            }
-            if (packetSize > _receiveBuffer.Length)
-            {
-                Debug.LogWarning($"[SteamP2P] 收到过大的数据包 ({packetSize} bytes)，扩展缓冲区");
-                _receiveBuffer = new byte[packetSize];
-            }
-            CSteamID remoteSteamID;
-            if (SteamNetworking.ReadP2PPacket(_receiveBuffer, packetSize, out uint bytesRead, out remoteSteamID, channel))
-            {
-                processedInThisFrame++;
-                if (bytesRead == 9 && System.Text.Encoding.UTF8.GetString(_receiveBuffer, 0, 9) == "HANDSHAKE")
+                if (processedInThisFrame >= BATCH_PROCESS_LIMIT)
                 {
-                    continue;
+                    return; // 达到批处理限制，退出所有通道
                 }
-                byte[] data = new byte[bytesRead];
-                Array.Copy(_receiveBuffer, data, bytesRead);
-                int currentQueueSize = _receivedPackets.Count;
-                if (currentQueueSize >= MAX_QUEUE_SIZE)
+                if (packetSize > _receiveBuffer.Length)
                 {
-                    if (_receivedPackets.TryDequeue(out _))
+                    // 🛡️ 限制日志频率：每100次只输出1次
+                    _oversizePacketWarningCount++;
+                    if (_oversizePacketWarningCount == 1 || _oversizePacketWarningCount % 100 == 0)
                     {
-                        PacketsDropped++;
-                        if (PacketsDropped == 1 || PacketsDropped % 500 == 0)
+                        Debug.LogWarning($"[SteamP2P] 收到过大的数据包 (Channel {channel}, {packetSize} bytes)，扩展缓冲区 (已发生 {_oversizePacketWarningCount} 次)");
+                    }
+                    _receiveBuffer = new byte[packetSize];
+                }
+                CSteamID remoteSteamID;
+                if (SteamNetworking.ReadP2PPacket(_receiveBuffer, packetSize, out uint bytesRead, out remoteSteamID, channel))
+                {
+                    processedInThisFrame++;
+                    if (bytesRead == 9 && System.Text.Encoding.UTF8.GetString(_receiveBuffer, 0, 9) == "HANDSHAKE")
+                    {
+                        continue;
+                    }
+                    byte[] data = new byte[bytesRead];
+                    Array.Copy(_receiveBuffer, data, bytesRead);
+                    int currentQueueSize = _receivedPackets.Count;
+                    if (currentQueueSize >= MAX_QUEUE_SIZE)
+                    {
+                        if (_receivedPackets.TryDequeue(out _))
                         {
-                            Debug.LogWarning($"[SteamP2P] ⚠️ 队列已满，已丢弃 {PacketsDropped} 个数据包");
+                            PacketsDropped++;
+                            if (PacketsDropped == 1 || PacketsDropped % 500 == 0)
+                            {
+                                Debug.LogWarning($"[SteamP2P] ⚠️ 队列已满，已丢弃 {PacketsDropped} 个数据包");
+                            }
                         }
                     }
+                    _receivedPackets.Enqueue(new ReceivedPacket
+                    {
+                        Data = data,
+                        Length = (int)bytesRead,
+                        RemoteSteamID = remoteSteamID
+                    });
+                    currentQueueSize = _receivedPackets.Count;
+                    if (currentQueueSize > MaxQueueDepth)
+                    {
+                        MaxQueueDepth = currentQueueSize;
+                    }
+                    System.Threading.Interlocked.Increment(ref _packetsReceived);
+                    System.Threading.Interlocked.Add(ref _bytesReceived, bytesRead);
                 }
-                _receivedPackets.Enqueue(new ReceivedPacket
-                {
-                    Data = data,
-                    Length = (int)bytesRead,
-                    RemoteSteamID = remoteSteamID
-                });
-                currentQueueSize = _receivedPackets.Count;
-                if (currentQueueSize > MaxQueueDepth)
-                {
-                    MaxQueueDepth = currentQueueSize;
-                }
-                System.Threading.Interlocked.Increment(ref _packetsReceived);
-                System.Threading.Interlocked.Add(ref _bytesReceived, bytesRead);
             }
         }
     }
     private System.Collections.Generic.HashSet<CSteamID> _acceptedSessions = new System.Collections.Generic.HashSet<CSteamID>();
-    public bool SendPacket(CSteamID targetSteamID, byte[] data, int offset, int length, EP2PSend sendType = EP2PSend.k_EP2PSendUnreliableNoDelay)
+    // 🛡️ 修复：添加通道参数
+    public bool SendPacket(CSteamID targetSteamID, byte[] data, int offset, int length, EP2PSend sendType = EP2PSend.k_EP2PSendUnreliableNoDelay, int channel = 0)
     {
         if (!SteamManager.Initialized)
         {
@@ -194,16 +204,17 @@ public class SteamP2PManager : MonoBehaviour
             SteamNetworking.AcceptP2PSessionWithUser(targetSteamID);
             _acceptedSessions.Add(targetSteamID);
         }
+        // 🛡️ 修复：使用实际通道号而不是硬编码 0
         bool success;
         if (offset == 0)
         {
-            success = SteamNetworking.SendP2PPacket(targetSteamID, data, (uint)length, sendType, 0);
+            success = SteamNetworking.SendP2PPacket(targetSteamID, data, (uint)length, sendType, channel);
         }
         else
         {
             byte[] sendData = new byte[length];
             Array.Copy(data, offset, sendData, 0, length);
-            success = SteamNetworking.SendP2PPacket(targetSteamID, sendData, (uint)length, sendType, 0);
+            success = SteamNetworking.SendP2PPacket(targetSteamID, sendData, (uint)length, sendType, channel);
         }
         if (success)
         {

@@ -14,6 +14,8 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 namespace EscapeFromDuckovCoopMod;
 
 [HarmonyPatch(typeof(CharacterAnimationControl_MagicBlend), "OnAttack")]
@@ -86,7 +88,7 @@ internal static class Patch_AI_OnAttack_Broadcast
         mod.writer.Reset();
         mod.writer.Put((byte)Op.AI_ATTACK_SWING);
         mod.writer.Put(aiId);
-        mod.netManager.SendToAll(mod.writer, DeliveryMethod.ReliableUnordered);
+        mod.netManager.SendSmart(mod.writer, Op.AI_ATTACK_SWING);
     }
 }
 
@@ -116,7 +118,7 @@ internal static class Patch_AI_OnAttack_BroadcastAll
         w.Put((byte)Op.MELEE_ATTACK_SWING);
         w.Put($"AI:{tag.aiId}");
         w.Put(__instance.attackTime); // 有就写；没有也无妨
-        mod.netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+        mod.netManager.SendSmart(w, Op.MELEE_ATTACK_SWING);
     }
 }
 
@@ -141,7 +143,7 @@ internal static class Patch_AI_OnAttack_MeleeOnly
         var w = new NetDataWriter();
         w.Put((byte)Op.MELEE_ATTACK_SWING);
         w.Put($"AI:{tag.aiId}");
-        mod.netManager.SendToAll(w, DeliveryMethod.ReliableUnordered);
+        mod.netManager.SendSmart(w, Op.MELEE_ATTACK_SWING);
     }
 }
 

@@ -14,6 +14,8 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
+
 namespace EscapeFromDuckovCoopMod;
 
 public class SendLocalPlayerStatus : MonoBehaviour
@@ -57,7 +59,8 @@ public class SendLocalPlayerStatus : MonoBehaviour
             var sid = st.SceneId;
             writer.Put(sid ?? string.Empty);
 
-            writer.Put(st.CustomFaceJson ?? "");
+            // ✅ 不再发送 faceJson，保持小包快速传输
+            // writer.Put(st.CustomFaceJson ?? "");
 
             var equipmentList = st == localPlayerStatus ? LocalPlayerManager.Instance.GetLocalEquipment() : st.EquipmentList ?? new List<EquipmentSyncData>();
             writer.Put(equipmentList.Count);
@@ -68,7 +71,8 @@ public class SendLocalPlayerStatus : MonoBehaviour
             foreach (var w in weaponList) w.Serialize(writer);
         }
 
-        netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
+        // 使用 SendSmart 自动选择传输方式（PLAYER_STATUS_UPDATE → Important → ReliableSequenced）
+        netManager.SendSmart(writer, Op.PLAYER_STATUS_UPDATE);
     }
 
 
@@ -95,8 +99,9 @@ public class SendLocalPlayerStatus : MonoBehaviour
         writer.PutV3cm(pos);
         writer.PutDir(fwd);
 
-        if (IsServer) netManager.SendToAll(writer, DeliveryMethod.Unreliable);
-        else connectedPeer?.Send(writer, DeliveryMethod.Unreliable);
+        // 使用 SendSmart 自动选择传输方式（POSITION_UPDATE → Frequent → Unreliable）
+        if (IsServer) netManager.SendSmart(writer, Op.POSITION_UPDATE);
+        else connectedPeer?.SendSmart(writer, Op.POSITION_UPDATE);
     }
 
     public void SendEquipmentUpdate(EquipmentSyncData equipmentData)
@@ -109,8 +114,9 @@ public class SendLocalPlayerStatus : MonoBehaviour
         writer.Put(equipmentData.SlotHash);
         writer.Put(equipmentData.ItemId ?? "");
 
-        if (IsServer) netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
-        else connectedPeer?.Send(writer, DeliveryMethod.ReliableOrdered);
+        // 使用 SendSmart 自动选择传输方式（EQUIPMENT_UPDATE → Important → ReliableSequenced）
+        if (IsServer) netManager.SendSmart(writer, Op.EQUIPMENT_UPDATE);
+        else connectedPeer?.SendSmart(writer, Op.EQUIPMENT_UPDATE);
     }
 
 
@@ -124,8 +130,9 @@ public class SendLocalPlayerStatus : MonoBehaviour
         writer.Put(weaponSyncData.SlotHash);
         writer.Put(weaponSyncData.ItemId ?? "");
 
-        if (IsServer) netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
-        else connectedPeer?.Send(writer, DeliveryMethod.ReliableOrdered);
+        // 使用 SendSmart 自动选择传输方式（PLAYERWEAPON_UPDATE → Important → ReliableSequenced）
+        if (IsServer) netManager.SendSmart(writer, Op.PLAYERWEAPON_UPDATE);
+        else connectedPeer?.SendSmart(writer, Op.PLAYERWEAPON_UPDATE);
     }
 
     public void SendAnimationStatus()
@@ -162,7 +169,8 @@ public class SendLocalPlayerStatus : MonoBehaviour
             writer.Put(anim.GetBool("GunReady"));
             writer.Put(stateHash);
             writer.Put(normTime);
-            netManager.SendToAll(writer, DeliveryMethod.Sequenced);
+            // 使用 SendSmart 自动选择传输方式（ANIM_SYNC → Frequent → Unreliable）
+            netManager.SendSmart(writer, Op.ANIM_SYNC);
         }
         else
         {
@@ -177,7 +185,8 @@ public class SendLocalPlayerStatus : MonoBehaviour
             writer.Put(anim.GetBool("GunReady"));
             writer.Put(stateHash);
             writer.Put(normTime);
-            connectedPeer.Send(writer, DeliveryMethod.Sequenced);
+            // 使用 SendSmart 自动选择传输方式（ANIM_SYNC → Frequent → Unreliable）
+            connectedPeer.SendSmart(writer, Op.ANIM_SYNC);
         }
     }
 
@@ -200,9 +209,10 @@ public class SendLocalPlayerStatus : MonoBehaviour
         writer.PutV3cm(pos);
         writer.PutQuaternion(rot);
 
-        // 把整棵物品“快照”写进包里
+        // 把整棵物品"快照"写进包里
         ItemTool.WriteItemSnapshot(writer, item);
 
-        connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+        // 使用 SendSmart 自动选择传输方式（PLAYER_DEAD_TREE → Critical → ReliableOrdered）
+        connectedPeer.SendSmart(writer, Op.PLAYER_DEAD_TREE);
     }
 }

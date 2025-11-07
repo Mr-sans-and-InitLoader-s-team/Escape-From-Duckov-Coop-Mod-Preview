@@ -17,6 +17,7 @@
 using ItemStatsSystem;
 using ItemStatsSystem.Items;
 using Object = UnityEngine.Object;
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -73,7 +74,7 @@ public static class Patch_Slot_Plug_PickupCleanup
         w.Reset();
         w.Put((byte)Op.ITEM_PICKUP_REQUEST);
         w.Put(id);
-        mod.connectedPeer?.Send(w, DeliveryMethod.ReliableOrdered);
+        mod.connectedPeer?.SendSmart(w, Op.ITEM_PICKUP_REQUEST);
     }
 
     private static void ServerDespawn(ModBehaviourF mod, uint id)
@@ -86,7 +87,7 @@ public static class Patch_Slot_Plug_PickupCleanup
         w.Reset();
         w.Put((byte)Op.ITEM_DESPAWN);
         w.Put(id);
-        mod.netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+        mod.netManager.SendSmart(w, Op.ITEM_DESPAWN);
     }
 
     private static void LocalDestroyAgent(Item it)

@@ -19,6 +19,7 @@ using ItemStatsSystem;
 using ItemStatsSystem.Items;
 using UnityEngine.SceneManagement;
 using static EscapeFromDuckovCoopMod.LootNet;
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -470,6 +471,21 @@ public class ModBehaviourF : MonoBehaviour
     private void LevelManager_OnLevelInitialized()
     {
         AITool.ResetAiSerials();
+
+        // ✅ 重置场景门控状态，为下一次场景切换做准备
+        // ⚠️ 注意：不要在这里清空 _srvGateReadyPids！
+        // ⚠️ 因为此方法在场景加载早期触发，而放行在 OnAfterLevelInitialized 中进行
+        // ⚠️ 如果在这里清空，客户端的举手记录会在放行前丢失
+        if (IsServer)
+        {
+            SceneNet.Instance._srvSceneGateOpen = false;
+            // ❌ 不要在这里清空：SceneNet.Instance._srvGateReadyPids.Clear();
+        }
+        else
+        {
+            SceneNet.Instance._cliSceneGateReleased = false;
+        }
+
         if (!IsServer) HealthM.Instance.Client_ReportSelfHealth_IfReadyOnce();
         SceneNet.Instance.TrySendSceneReadyOnce();
         if (!IsServer) COOPManager.Weather.Client_RequestEnvSync();
@@ -517,7 +533,7 @@ public class ModBehaviourF : MonoBehaviour
                         var rotation = reader.GetQuaternion();
 
                         var sceneId = reader.GetString();
-                        var customFaceJson = reader.GetString();
+                        // ✅ 不再读取 faceJson，通过 PLAYER_APPEARANCE 包接收
 
                         var equipmentCount = reader.GetInt();
                         var equipmentList = new List<EquipmentSyncData>();
@@ -529,7 +545,15 @@ public class ModBehaviourF : MonoBehaviour
                         for (var j = 0; j < weaponCount; j++)
                             weaponList.Add(WeaponSyncData.Deserialize(reader));
 
-                        if (NetService.Instance.IsSelfId(endPoint)) continue;
+                        // 如果是自己的状态，更新本地玩家的延迟值后继续
+                        if (NetService.Instance.IsSelfId(endPoint))
+                        {
+                            if (localPlayerStatus != null)
+                            {
+                                localPlayerStatus.Latency = latency;  // 更新客户端到主机的延迟
+                            }
+                            continue;
+                        }
 
                         if (!clientPlayerStatuses.TryGetValue(endPoint, out var st))
                             st = clientPlayerStatuses[endPoint] = new PlayerStatus();
@@ -541,8 +565,7 @@ public class ModBehaviourF : MonoBehaviour
                         st.LastIsInGame = isInGame;
                         st.Position = position;
                         st.Rotation = rotation;
-                        if (!string.IsNullOrEmpty(customFaceJson))
-                            st.CustomFaceJson = customFaceJson;
+                        // ✅ CustomFaceJson 通过 PLAYER_APPEARANCE 包单独接收
                         st.EquipmentList = equipmentList;
                         st.WeaponList = weaponList;
 
@@ -559,7 +582,9 @@ public class ModBehaviourF : MonoBehaviour
                         {
                             if (!clientRemoteCharacters.ContainsKey(endPoint) || clientRemoteCharacters[endPoint] == null)
                             {
-                                CreateRemoteCharacter.CreateRemoteCharacterForClient(endPoint, position, rotation, customFaceJson).Forget();
+                                // ✅ 使用缓存或状态中的外观数据
+                                var faceJson = st.CustomFaceJson ?? string.Empty;
+                                CreateRemoteCharacter.CreateRemoteCharacterForClient(endPoint, position, rotation, faceJson).Forget();
                             }
                             else
                             {
@@ -1076,10 +1101,53 @@ public class ModBehaviourF : MonoBehaviour
                     var sid = reader.GetString(); // SceneId（string）
                     var pos = reader.GetVector3(); // 初始位置
                     var rot = reader.GetQuaternion();
-                    var face = reader.GetString();
+                    // ✅ faceJson 已拆分到独立的 PLAYER_APPEARANCE 包，不再从这里读取
 
-                    if (IsServer) SceneNet.Instance.Server_HandleSceneReady(peer, id, sid, pos, rot, face);
+                    if (IsServer) SceneNet.Instance.Server_HandleSceneReady(peer, id, sid, pos, rot);
                     // 客户端若收到这条（主机广播），实际创建工作由 REMOTE_CREATE 完成，这里不处理
+                    break;
+                }
+
+            case Op.PLAYER_APPEARANCE:
+                {
+                    var playerId = reader.GetString();
+                    var faceJson = reader.GetString();
+
+                    // 更新玩家外观数据（主机和客户端都处理）
+                    if (IsServer)
+                    {
+                        // 主机：保存到 playerStatuses 并广播给其他玩家
+                        if (peer != null && playerStatuses.TryGetValue(peer, out var status))
+                        {
+                            status.CustomFaceJson = faceJson;
+
+                            // 转发给其他客户端
+                            var w = new NetDataWriter();
+                            w.Put((byte)Op.PLAYER_APPEARANCE);
+                            w.Put(playerId);
+                            w.Put(faceJson);
+                            netManager?.SendSmartExcept(w, Op.PLAYER_APPEARANCE, peer);
+                        }
+                    }
+                    else
+                    {
+                        // 客户端：保存到 clientPlayerStatuses 或缓存
+                        if (clientPlayerStatuses.TryGetValue(playerId, out var status))
+                        {
+                            status.CustomFaceJson = faceJson;
+                        }
+                        else
+                        {
+                            // 玩家还未创建，缓存外观数据
+                            CustomFace._cliPendingFace[playerId] = faceJson;
+                        }
+
+                        // 如果玩家已存在，立即应用外观
+                        if (clientRemoteCharacters.TryGetValue(playerId, out var go) && go != null)
+                        {
+                            CustomFace.Client_ApplyFaceIfAvailable(playerId, go, faceJson);
+                        }
+                    }
                     break;
                 }
 
@@ -1482,7 +1550,7 @@ public class ModBehaviourF : MonoBehaviour
                         w2.Reset();
                         w2.Put((byte)Op.REMOTE_DESPAWN);
                         w2.Put(st.EndPoint); // 客户端用 EndPoint 当 key
-                        netManager.SendToAll(w2, DeliveryMethod.ReliableOrdered);
+                        netManager.SendSmart(w2, Op.REMOTE_DESPAWN);
                     }
 
 
@@ -1547,11 +1615,42 @@ public class ModBehaviourF : MonoBehaviour
                         var pid = reader.GetString();
                         var sid = reader.GetString();
 
+                        // ✅ 使用 peer 对象作为键，而不是字符串 pid
+                        // 这样可以避免客户端自报的 pid 与主机记录的 EndPoint 不匹配的问题
+                        var peerEndpoint = peer != null && peer.EndPoint != null ? peer.EndPoint.ToString() : "Unknown";
+                        Debug.Log($"[GATE] 收到客户端举手：客户端报告的pid={pid}, peer实际地址={peerEndpoint}, sid={sid}, 当前门状态: {(SceneNet.Instance._srvSceneGateOpen ? "已开门" : "未开门")}");
+
                         // 若主机还没确定 gate 的 sid，就用第一次 READY 的 sid
                         if (string.IsNullOrEmpty(SceneNet.Instance._srvGateSid))
                             SceneNet.Instance._srvGateSid = sid;
 
-                        if (sid == SceneNet.Instance._srvGateSid) SceneNet.Instance._srvGateReadyPids.Add(pid);
+                        if (sid == SceneNet.Instance._srvGateSid)
+                        {
+                            // ✅ 使用 peer 对象作为键（通过 playerStatuses 查找对应的 EndPoint）
+                            if (peer != null && playerStatuses.TryGetValue(peer, out var status) && status != null)
+                            {
+                                SceneNet.Instance._srvGateReadyPids.Add(status.EndPoint);
+                                Debug.Log($"[GATE] 记录举手客户端：{status.EndPoint} (客户端报告={pid})，当前已举手: {SceneNet.Instance._srvGateReadyPids.Count} 人");
+
+                                // ✅ 迟到放行：如果主机已经开门，立即放行该客户端
+                                if (SceneNet.Instance._srvSceneGateOpen)
+                                {
+                                    var w = new NetDataWriter();
+                                    w.Put((byte)Op.SCENE_GATE_RELEASE);
+                                    w.Put(sid ?? "");
+                                    peer.SendSmart(w, Op.SCENE_GATE_RELEASE);
+                                    Debug.Log($"[GATE] 迟到放行：{status.EndPoint}");
+                                }
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"[GATE] 无法找到客户端的 playerStatus，peer={peerEndpoint}");
+                            }
+                        }
+                        else
+                        {
+                            Debug.LogWarning($"[GATE] sid 不匹配：客户端={sid}, 主机={SceneNet.Instance._srvGateSid}");
+                        }
                     }
 
                     break;
@@ -1567,6 +1666,7 @@ public class ModBehaviourF : MonoBehaviour
                         {
                             SceneNet.Instance._cliGateSid = sid;
                             SceneNet.Instance._cliSceneGateReleased = true;
+                            Debug.Log($"[GATE] ✅ 客户端收到主机放行：sid={sid}");
                             HealthM.Instance.Client_ReportSelfHealth_IfReadyOnce();
                         }
                         else

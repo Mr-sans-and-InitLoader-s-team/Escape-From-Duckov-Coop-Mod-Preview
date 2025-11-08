@@ -43,6 +43,7 @@ public enum Op : byte
     SCENE_READY = 23,
     REMOTE_CREATE = 24,
     REMOTE_DESPAWN = 25,
+    PLAYER_APPEARANCE = 26, // 玩家外观数据（faceJson）- 异步传输，不阻塞场景同步
 
     DOOR_REQ_SET = 206, // 客户端 -> 主机：请求把某个门设为开/关
     DOOR_STATE = 207, // 主机 -> 全体：下发某个门的状态（单条更新）

@@ -15,6 +15,7 @@
 // GNU Affero General Public License for more details.
 
 using Object = UnityEngine.Object;
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -283,7 +284,7 @@ public class Destructible
         // Hit视觉信息足够：点+法线
         w.PutV3cm(dmg.damagePoint);
         w.PutDir(dmg.damageNormal.sqrMagnitude < 1e-6f ? Vector3.forward : dmg.damageNormal.normalized);
-        netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+        netManager.SendSmart(w, Op.ENV_HURT_EVENT);
     }
 
     public void Server_BroadcastDestructibleDead(uint id, DamageInfo dmg)
@@ -293,7 +294,7 @@ public class Destructible
         w.Put(id);
         w.PutV3cm(dmg.damagePoint);
         w.PutDir(dmg.damageNormal.sqrMagnitude < 1e-6f ? Vector3.up : dmg.damageNormal.normalized);
-        netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+        netManager.SendSmart(w, Op.ENV_DEAD_EVENT);
     }
 
     // 客户端：复现受击视觉（不改血量，不触发本地 OnHurt）

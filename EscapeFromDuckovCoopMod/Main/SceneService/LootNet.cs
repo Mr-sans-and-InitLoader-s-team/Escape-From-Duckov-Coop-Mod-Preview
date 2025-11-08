@@ -135,6 +135,27 @@ public class LootNet
         var capacity = r.GetInt();
         var count = r.GetInt();
 
+        // 🛡️ 场景初始化检查：如果场景还未完全加载，缓存包并稍后处理
+        var lm = LevelManager.Instance;
+        if (lm == null || LevelManager.LootBoxInventories == null)
+        {
+            // 场景尚未就绪，缓存这个 LOOT_STATE 包
+            var list = new List<(int pos, ItemSnapshot snap)>(count);
+            for (var k = 0; k < count; ++k)
+            {
+                var p = r.GetInt();
+                var snap = ItemTool.ReadItemSnapshot(r);
+                list.Add((p, snap));
+            }
+
+            if (lootUid >= 0)
+            {
+                LootManager.Instance._pendingLootStatesByUid[lootUid] = (capacity, list);
+                Debug.Log($"[LOOT] Scene not ready, cached LOOT_STATE for uid={lootUid}");
+            }
+            return;
+        }
+
         Inventory inv = null;
 
         // ★ 1) 优先用稳定 ID 解析

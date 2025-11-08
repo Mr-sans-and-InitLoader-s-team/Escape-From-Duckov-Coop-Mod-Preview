@@ -28,6 +28,11 @@ public static class CreateRemoteCharacter
     private static NetManager netManager => Service?.netManager;
     private static NetDataWriter writer => Service?.writer;
     private static NetPeer connectedPeer => Service?.connectedPeer;
+
+    // 日志频率限制
+    private static int _createRemoteLogCount = 0;
+    private static System.DateTime _lastCreateRemoteLogTime = System.DateTime.MinValue;
+    private const double CREATE_REMOTE_LOG_INTERVAL = 5.0;
     private static PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
     private static bool networkStarted => Service != null && Service.networkStarted;
     private static Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
@@ -111,10 +116,25 @@ public static class CreateRemoteCharacter
 
     public static async UniTask CreateRemoteCharacterForClient(string playerId, Vector3 position, Quaternion rotation, string customFaceJson)
     {
-        if (NetService.Instance.IsSelfId(playerId)) return; // ★ 不给自己创建“远程自己”
+        if (NetService.Instance.IsSelfId(playerId)) return; // ★ 不给自己创建"远程自己"
         if (clientRemoteCharacters.ContainsKey(playerId) && clientRemoteCharacters[playerId] != null) return;
 
-        Debug.Log(playerId + " CreateRemoteCharacterForClient");
+        // 频率限制：避免刷屏
+        _createRemoteLogCount++;
+        var now = System.DateTime.Now;
+        if ((now - _lastCreateRemoteLogTime).TotalSeconds >= CREATE_REMOTE_LOG_INTERVAL)
+        {
+            if (_createRemoteLogCount > 1)
+            {
+                Debug.Log($"[CreateRemote] 创建了 {_createRemoteLogCount} 个远程角色 (最后: {playerId})");
+            }
+            else
+            {
+                Debug.Log($"[CreateRemote] {playerId} CreateRemoteCharacterForClient");
+            }
+            _createRemoteLogCount = 0;
+            _lastCreateRemoteLogTime = now;
+        }
 
         var levelManager = LevelManager.Instance;
         if (levelManager == null || levelManager.MainCharacter == null) return;

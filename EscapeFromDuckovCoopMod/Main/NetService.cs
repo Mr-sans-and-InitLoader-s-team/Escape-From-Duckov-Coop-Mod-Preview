@@ -313,7 +313,13 @@ public class NetService : MonoBehaviour, INetEventListener
         writer = new NetDataWriter();
         netManager = new NetManager(this)
         {
-            BroadcastReceiveEnabled = true
+            BroadcastReceiveEnabled = true,
+            // 启用多通道系统（参考 Fika 架构）
+            // 通道0: Critical (投票、伤害、交互)
+            // 通道1: Important (血量、装备)
+            // 通道2: Normal (NPC、物品生成)
+            // 通道3: Frequent (位置、动画)
+            ChannelsCount = 4
         };
 
 

@@ -16,6 +16,7 @@
 
 using System.Reflection;
 using Duckov.UI;
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
@@ -41,6 +42,11 @@ public class AIHealth
     private readonly Dictionary<int, float> _cliLastAiHp = new();
     private readonly Dictionary<int, float> _cliLastReportedHp = new();
     private readonly Dictionary<int, float> _cliNextReportAt = new();
+
+    // 🛡️ 日志频率限制
+    private static int _pendingAiWarningCount = 0;
+    private const int PENDING_AI_WARNING_INTERVAL = 200;  // 每200次只警告1次
+
     private NetService Service => NetService.Instance;
 
     private bool IsServer => Service != null && Service.IsServer;
@@ -64,7 +70,8 @@ public class AIHealth
         w.Put(aiId);
         w.Put(maxHealth);
         w.Put(currentHealth);
-        netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+        // 使用 SendSmart 自动选择传输方式（AI_HEALTH_SYNC → Critical → ReliableOrdered）
+        netManager.SendSmart(w, Op.AI_HEALTH_SYNC);
     }
 
 
@@ -219,7 +226,13 @@ public class AIHealth
         {
             COOPManager.AIHandle._cliPendingAiHealth[aiId] = cur;
             if (max > 0f) COOPManager.AIHandle._cliPendingAiMax[aiId] = max;
-            Debug.Log($"[AI-HP][CLIENT] pending aiId={aiId} max={max} cur={cur}");
+
+            // 🛡️ 限制日志频率：每200次只输出1次，避免刷屏
+            _pendingAiWarningCount++;
+            if (_pendingAiWarningCount == 1 || _pendingAiWarningCount % PENDING_AI_WARNING_INTERVAL == 0)
+            {
+                Debug.Log($"[AI-HP][CLIENT] pending aiId={aiId} max={max} cur={cur} (已发生 {_pendingAiWarningCount} 次)");
+            }
             return;
         }
 

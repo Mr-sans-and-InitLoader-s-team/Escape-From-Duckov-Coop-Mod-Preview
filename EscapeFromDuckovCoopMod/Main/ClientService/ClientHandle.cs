@@ -38,7 +38,7 @@ public class ClientHandle
         var position = reader.GetVector3();
         var rotation = reader.GetQuaternion();
         var sceneId = reader.GetString();
-        var customFaceJson = reader.GetString();
+        // ✅ 不再读取 faceJson，通过 PLAYER_APPEARANCE 包接收
 
         var equipmentCount = reader.GetInt();
         var equipmentList = new List<EquipmentSyncData>();
@@ -66,15 +66,16 @@ public class ClientHandle
         st.LastIsInGame = isInGame;
         st.Position = position;
         st.Rotation = rotation;
-        if (!string.IsNullOrEmpty(customFaceJson))
-            st.CustomFaceJson = customFaceJson;
+        // ✅ CustomFaceJson 通过 PLAYER_APPEARANCE 包单独接收
         st.EquipmentList = equipmentList;
         st.WeaponList = weaponList;
         st.SceneId = sceneId;
 
         if (isInGame && !remoteCharacters.ContainsKey(peer))
         {
-            CreateRemoteCharacter.CreateRemoteCharacterAsync(peer, position, rotation, customFaceJson).Forget();
+            // ✅ 使用缓存或状态中的外观数据
+            var faceJson = st.CustomFaceJson ?? string.Empty;
+            CreateRemoteCharacter.CreateRemoteCharacterAsync(peer, position, rotation, faceJson).Forget();
             foreach (var e in equipmentList) COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(peer, e.SlotHash, e.ItemId).Forget();
             foreach (var w in weaponList) COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(peer, w.SlotHash, w.ItemId).Forget();
         }

@@ -18,6 +18,7 @@ using System.Reflection;
 using Duckov.Utilities;
 using Duckov.Weathers;
 using Object = UnityEngine.Object;
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -189,8 +190,8 @@ public class Weather
         w.Put(COOPManager.destructible._deadDestructibleIds.Count);
         foreach (var id in COOPManager.destructible._deadDestructibleIds) w.Put(id);
 
-        if (target != null) target.Send(w, DeliveryMethod.ReliableOrdered);
-        else netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+        if (target != null) target.SendSmart(w, Op.ENV_SYNC_STATE);
+        else netManager.SendSmart(w, Op.ENV_SYNC_STATE);
     }
 
 
@@ -200,7 +201,7 @@ public class Weather
         if (IsServer || connectedPeer == null) return;
         var w = new NetDataWriter();
         w.Put((byte)Op.ENV_SYNC_REQUEST);
-        connectedPeer.Send(w, DeliveryMethod.Sequenced);
+        connectedPeer.SendSmart(w, Op.ENV_SYNC_REQUEST);
     }
 
     // ========== 环境同步：客户端应用 ==========

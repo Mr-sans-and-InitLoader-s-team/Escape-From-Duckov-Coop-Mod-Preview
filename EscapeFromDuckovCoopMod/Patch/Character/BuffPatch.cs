@@ -18,6 +18,7 @@ using System.Reflection;
 using Duckov.Buffs;
 using UnityEngine.Events;
 using Object = UnityEngine.Object;
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -112,7 +113,7 @@ internal static class Patch_Buff_Setup_Safe
             w.Put((byte)Op.PLAYER_BUFF_SELF_APPLY); // 新 opcode（见 Mod.cs）
             w.Put(overrideWeaponID); // weaponTypeId：客户端可用它解析出正确的 buff prefab
             w.Put(buffPrefab.ID); // 兜底：buffId（若武器没法解析，就用 id 回退）
-            peer.Send(w, DeliveryMethod.ReliableOrdered);
+            peer.SendSmart(w, Op.PLAYER_BUFF_SELF_APPLY);
         }
     }
 
@@ -147,7 +148,7 @@ internal static class Patch_Buff_Setup_Safe
                 w.Put((byte)Op.PLAYER_BUFF_SELF_APPLY);
                 w.Put(overrideWeaponID);
                 w.Put(buffPrefab.ID);
-                ownerPeer.Send(w, DeliveryMethod.ReliableOrdered);
+                ownerPeer.SendSmart(w, Op.PLAYER_BUFF_SELF_APPLY);
             }
 
             // ② 如果“被命中者是主机本体”，就广播给所有客户端，让他们在“主机的代理对象”上也加 Buff（用于可见 FX）
@@ -159,7 +160,7 @@ internal static class Patch_Buff_Setup_Safe
                 w2.Put(mod.localPlayerStatus?.EndPoint ?? $"Host:{mod.port}");
                 w2.Put(overrideWeaponID);
                 w2.Put(buffPrefab.ID);
-                mod.netManager.SendToAll(w2, DeliveryMethod.ReliableOrdered);
+                mod.netManager.SendSmart(w2, Op.HOST_BUFF_PROXY_APPLY);
             }
         }
     }

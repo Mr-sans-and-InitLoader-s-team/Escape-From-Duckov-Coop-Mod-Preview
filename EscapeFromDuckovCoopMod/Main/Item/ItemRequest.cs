@@ -43,7 +43,7 @@ public class ItemRequest
         w.Put(angle);
         w.Put(createRb);
         ItemTool.WriteItemSnapshot(w, item);
-        CoopTool.SendReliable(w);
+        CoopTool.SendReliable(w, Op.ITEM_DROP_REQUEST);
     }
 
     public void SendItemPickupRequest(uint dropId)
@@ -54,6 +54,6 @@ public class ItemRequest
         w.Reset();
         w.Put((byte)Op.ITEM_PICKUP_REQUEST);
         w.Put(dropId);
-        CoopTool.SendReliable(w);
+        CoopTool.SendReliable(w, Op.ITEM_PICKUP_REQUEST);
     }
 }

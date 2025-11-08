@@ -15,6 +15,7 @@
 // GNU Affero General Public License for more details.
 
 using Duckov.Utilities;
+using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 using Random = UnityEngine.Random;
 
 namespace EscapeFromDuckovCoopMod;
@@ -288,7 +289,8 @@ public class WeaponHandle
         }
 
         w.PutProjectilePayload(payloadCtx);
-        netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
+        // 使用 SendSmart 自动选择传输方式（FIRE_EVENT → Critical → ReliableOrdered）
+        netManager.SendSmart(w, Op.FIRE_EVENT);
 
         FxManager.PlayMuzzleFxAndShell(localPlayerStatus.EndPoint, gun.Item.TypeID, muzzleWorld, finalDir);
     }
@@ -678,7 +680,8 @@ public class WeaponHandle
         else
             writer.Put(false);
 
-        netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);
+        // 使用 SendSmart 自动选择传输方式（FIRE_EVENT → Critical → ReliableOrdered）
+        netManager.SendSmart(writer, Op.FIRE_EVENT);
 
         _hasPayloadHint = false;
     }
@@ -709,7 +712,8 @@ public class WeaponHandle
             w.Put((byte)Op.MELEE_ATTACK_SWING);
             w.Put(pid);
             w.Put(delay);
-            p.Send(w, DeliveryMethod.ReliableOrdered);
+            // 使用 SendSmart 自动选择传输方式（MELEE_ATTACK_SWING → Critical → ReliableOrdered）
+            p.SendSmart(w, Op.MELEE_ATTACK_SWING);
         }
     }
 

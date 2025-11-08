@@ -527,19 +527,41 @@ public class LootManager : MonoBehaviour
         inv = null;
 
         // A) InteractableLootbox.Inventories
-        var dictA = InteractableLootbox.Inventories;
-        if (dictA != null && dictA.TryGetValue(posKey, out inv) && inv) return true;
+        try
+        {
+            var dictA = InteractableLootbox.Inventories;
+            if (dictA != null && dictA.TryGetValue(posKey, out inv) && inv) return true;
+        }
+        catch (Exception ex)
+        {
+            // 🛡️ InteractableLootbox.Inventories 可能在场景切换时为 null
+            Debug.LogWarning($"[LOOT] InteractableLootbox.Inventories access failed (scene loading?): {ex.Message}");
+        }
 
         // B) LevelManager.LootBoxInventories
         try
         {
             var lm = LevelManager.Instance;
-            var dictB = lm != null ? LevelManager.LootBoxInventories : null;
-            if (dictB != null && dictB.TryGetValue(posKey, out inv) && inv)
+            // 🛡️ 添加更严格的 null 检查
+            if (lm == null)
+            {
+                Debug.LogWarning("[LOOT] LevelManager.Instance is null (scene loading?)");
+                return false;
+            }
+
+            var dictB = LevelManager.LootBoxInventories;
+            if (dictB == null)
+            {
+                Debug.LogWarning("[LOOT] LevelManager.LootBoxInventories is null (scene loading?)");
+                return false;
+            }
+
+            if (dictB.TryGetValue(posKey, out inv) && inv)
             {
                 // 顺手回填 A，保持一致
                 try
                 {
+                    var dictA = InteractableLootbox.Inventories;
                     if (dictA != null) dictA[posKey] = inv;
                 }
                 catch
@@ -549,8 +571,10 @@ public class LootManager : MonoBehaviour
                 return true;
             }
         }
-        catch
+        catch (Exception ex)
         {
+            // 🛡️ 捕获所有可能的 NullReferenceException
+            Debug.LogWarning($"[LOOT] LevelManager.LootBoxInventories access failed (scene loading?): {ex.Message}");
         }
 
         inv = null;

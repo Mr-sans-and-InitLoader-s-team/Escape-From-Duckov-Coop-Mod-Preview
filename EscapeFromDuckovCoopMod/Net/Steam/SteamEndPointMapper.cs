@@ -159,6 +159,50 @@ namespace EscapeFromDuckovCoopMod
         }
         public void OnP2PSessionFailed(CSteamID remoteSteamID)
         {
+            Debug.LogWarning($"[SteamEndPointMapper] P2P会话失败，准备断开玩家: {remoteSteamID}");
+            
+            // 1. 获取对应的虚拟EndPoint
+            if (_steamToEndPoint.TryGetValue(remoteSteamID, out IPEndPoint endPoint))
+            {
+                // 2. 在NetService中查找对应的NetPeer并断开
+                var netService = NetService.Instance;
+                if (netService != null && netService.IsServer && netService.netManager != null)
+                {
+                    // 遍历所有连接的peer，找到匹配的EndPoint
+                    foreach (var peer in netService.playerStatuses.Keys.ToList())
+                    {
+                        if (peer != null && peer.EndPoint != null && peer.EndPoint.Equals(endPoint))
+                        {
+                            Debug.LogWarning($"[SteamEndPointMapper] 找到对应的NetPeer，断开连接: {peer.EndPoint}");
+                            peer.Disconnect();
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            // 3. 关闭Steam P2P会话（这会触发对方的断开事件）
+            if (SteamManager.Initialized)
+            {
+                Debug.Log($"[SteamEndPointMapper] 关闭Steam P2P会话: {remoteSteamID}");
+                Steamworks.SteamNetworking.CloseP2PSessionWithUser(remoteSteamID);
+            }
+            
+            // 4. 如果是主机且在Lobby中，通知Lobby系统该玩家已被移除
+            // 注意：Steam Lobby没有直接的"踢人"API，但关闭P2P会话会导致对方无法继续通信
+            // 对方会收到连接失败的通知，应该主动离开Lobby
+            if (SteamLobbyManager.Instance != null && 
+                SteamLobbyManager.Instance.IsHost && 
+                SteamLobbyManager.Instance.IsInLobby)
+            {
+                var memberName = SteamLobbyManager.Instance.GetCachedMemberName(remoteSteamID);
+                if (!string.IsNullOrEmpty(memberName))
+                {
+                    Debug.LogWarning($"[SteamEndPointMapper] 玩家 {memberName} 因P2P超时被移除");
+                }
+            }
+            
+            // 5. 清理映射
             UnregisterSteamID(remoteSteamID);
         }
         private IPEndPoint GenerateVirtualEndPoint(int port)

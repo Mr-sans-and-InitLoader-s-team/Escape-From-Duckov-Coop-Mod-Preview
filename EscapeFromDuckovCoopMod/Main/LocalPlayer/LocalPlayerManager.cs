@@ -461,6 +461,12 @@ public class PlayerStatus
     public Quaternion Rotation { get; set; }
     public string CustomFaceJson { get; set; }
     public string ClientReportedId { get; set; }
+    
+    /// <summary>
+    /// 🔧 真实网络ID（主机分配的，用于解决客户端本地ID与主机看到的ID不一致问题）
+    /// </summary>
+    public string RealNetworkId { get; set; }
+    
     public List<EquipmentSyncData> EquipmentList { get; set; } = new();
     public List<WeaponSyncData> WeaponList { get; set; } = new();
 }

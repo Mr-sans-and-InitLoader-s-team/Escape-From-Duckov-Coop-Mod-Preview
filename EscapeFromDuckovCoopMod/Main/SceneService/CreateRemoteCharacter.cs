@@ -111,6 +111,10 @@ public static class CreateRemoteCharacter
         cmc.gameObject.SetActive(false);
         remoteCharacters[peer] = instance;
         cmc.gameObject.SetActive(true);
+        
+        // 🕐 标记玩家已成功进入游戏，清除加入超时计时
+        Service.MarkPlayerJoinedSuccessfully(peer);
+        
         return instance;
     }
 

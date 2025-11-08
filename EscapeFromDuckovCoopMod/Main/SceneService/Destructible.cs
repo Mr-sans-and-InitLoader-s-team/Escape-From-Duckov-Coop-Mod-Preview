@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,8 +14,12 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System.Collections;
+using System.Reflection;
 using Object = UnityEngine.Object;
-using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
+using EscapeFromDuckovCoopMod.Net;
+using IEnumerator = System.Collections.IEnumerator;
+using EscapeFromDuckovCoopMod.Utils; // 【修复】明确指定使用非泛型 IEnumerator
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -32,6 +36,13 @@ public class Destructible
     // Destructible registry: id -> HealthSimpleBase
     private readonly Dictionary<uint, HealthSimpleBase> _serverDestructibles = new();
     private NetService Service => NetService.Instance;
+
+    // 【优化】缓存 HalfObsticle 的 isDead 字段，避免重复的 AccessTools 警告
+    private static FieldInfo _fieldHalfObsticleIsDead;
+    private static bool _halfObsticleFieldInitialized = false;
+
+    // 【优化】防止重复扫描标志
+    private bool _scanScheduled = false;
 
     private bool IsServer => Service != null && Service.IsServer;
     private NetManager netManager => Service?.netManager;
@@ -56,6 +67,18 @@ public class Destructible
         else _clientDestructibles.TryGetValue(id, out hs);
         if (hs) return hs;
 
+        // ✅ 优化：优先从缓存查找，减少 FindObjectsOfType 调用
+        if (GameObjectCacheManager.Instance != null)
+        {
+            hs = GameObjectCacheManager.Instance.Destructibles.FindById(id);
+            if (hs)
+            {
+                RegisterDestructible(id, hs);
+                return hs;
+            }
+        }
+
+        // 兜底：全量扫描并注册
         var all = Object.FindObjectsOfType<HealthSimpleBase>(true);
         foreach (var e in all)
         {
@@ -142,10 +165,18 @@ public class Destructible
         }
     }
 
-    private void ScanAndMarkInitiallyDeadDestructibles()
+    /// <summary>
+    /// 【优化】改为协程版本，分帧扫描避免卡顿
+    /// </summary>
+    private IEnumerator ScanAndMarkInitiallyDeadDestructiblesAsync(int itemsPerFrame = 20)
     {
-        if (_deadDestructibleIds == null) return;
-        if (_serverDestructibles == null || _serverDestructibles.Count == 0) return;
+        if (_deadDestructibleIds == null) yield break;
+        if (_serverDestructibles == null || _serverDestructibles.Count == 0) yield break;
+
+        Debug.Log($"[Destructible] 开始扫描 {_serverDestructibles.Count} 个可破坏物，每帧处理 {itemsPerFrame} 个");
+
+        int processed = 0;
+        int frameCount = 0;
 
         foreach (var kv in _serverDestructibles)
         {
@@ -165,7 +196,7 @@ public class Destructible
             {
             }
 
-            // 2) Breakable：breaked 外观/主碰撞体关闭 => 视为“已破坏”
+            // 2) Breakable：breaked 外观/主碰撞体关闭 => 视为"已破坏"
             if (!isDead)
                 try
                 {
@@ -188,11 +219,22 @@ public class Destructible
                     var half = hs.GetComponent("HalfObsticle"); // 避免编译期硬引用
                     if (half != null)
                     {
-                        var t = half.GetType();
-                        var fi = AccessTools.Field(t, "isDead");
-                        if (fi != null)
+                        // 【优化】只在第一次查找字段，避免重复警告
+                        if (!_halfObsticleFieldInitialized)
                         {
-                            var v = fi.GetValue(half);
+                            var t = half.GetType();
+                            try
+                            {
+                                _fieldHalfObsticleIsDead = AccessTools.Field(t, "isDead");
+                            }
+                            catch { /* 字段不存在或已重命名 */ }
+                            _halfObsticleFieldInitialized = true;
+                        }
+
+                        // 使用缓存的字段
+                        if (_fieldHalfObsticleIsDead != null)
+                        {
+                            var v = _fieldHalfObsticleIsDead.GetValue(half);
                             if (v is bool && (bool)v) isDead = true;
                         }
                     }
@@ -202,6 +244,50 @@ public class Destructible
                 }
 
             if (isDead) _deadDestructibleIds.Add(id);
+
+            processed++;
+            // 每处理指定数量就让出一帧
+            if (processed % itemsPerFrame == 0)
+            {
+                frameCount++;
+                yield return null;
+            }
+        }
+
+        Debug.Log($"[Destructible] 扫描完成，共处理 {processed} 个物体，用时 {frameCount} 帧，发现 {_deadDestructibleIds.Count} 个已破坏物体");
+
+        // 【优化】通知UI任务完成
+        var syncUI = WaitingSynchronizationUI.Instance;
+        if (syncUI != null) syncUI.CompleteTask("destructible", $"发现 {_deadDestructibleIds.Count} 个已破坏物体");
+    }
+
+    /// <summary>
+    /// 【兼容】保留同步版本供旧代码调用（内部启动协程）
+    /// </summary>
+    private void ScanAndMarkInitiallyDeadDestructibles()
+    {
+        // 【优化】防止重复调度
+        if (_scanScheduled)
+        {
+            Debug.Log("[Destructible] 扫描已调度，跳过重复调用");
+            return;
+        }
+        _scanScheduled = true;
+
+        // 使用SceneInitManager调度
+        var initManager = SceneInitManager.Instance;
+        if (initManager != null)
+        {
+            initManager.EnqueueDelayedTask(() =>
+            {
+                // 【优化】增加每帧处理数量，减少总帧数，加快完成速度
+                NetService.Instance.StartCoroutine(ScanAndMarkInitiallyDeadDestructiblesAsync(20));
+            }, 2.0f, "Destructible_Scan"); // 【优化】延迟到2秒，避免与AI种子同步冲突
+        }
+        else
+        {
+            // 降级：直接启动协程
+            NetService.Instance.StartCoroutine(ScanAndMarkInitiallyDeadDestructiblesAsync(20));
         }
     }
 
@@ -353,6 +439,9 @@ public class Destructible
 
         if (_serverDestructibles != null) _serverDestructibles.Clear();
         if (_clientDestructibles != null) _clientDestructibles.Clear();
+
+        // 【优化】重置扫描标志
+        _scanScheduled = false;
 
         // 遍历所有 HSB（包含未激活物体，避免漏 index）
         var all = Object.FindObjectsOfType<HealthSimpleBase>(true);

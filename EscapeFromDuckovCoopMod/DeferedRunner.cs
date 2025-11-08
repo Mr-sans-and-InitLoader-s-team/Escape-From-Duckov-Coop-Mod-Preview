@@ -1,23 +1,16 @@
 ﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
-//
-// This program is not a free software.
-// It's distributed under a license based on AGPL-3.0,
-// with strict additional restrictions:
-//  YOU MUST NOT use this software for commercial purposes.
-//  YOU MUST NOT use this software to run a headless game server.
-//  YOU MUST include a conspicuous notice of attribution to
-//  Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview as the original author.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
 
+using System;
 using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
 
+/// <summary>
+/// 延迟执行器 - 将任务延迟到帧结束时执行，减少场景加载时的性能压力
+/// </summary>
 internal class DeferedRunner : MonoBehaviour
 {
     static DeferedRunner runner;
@@ -39,6 +32,9 @@ internal class DeferedRunner : MonoBehaviour
         runner.StartCoroutine(runner.EofLoop());
     }
 
+    /// <summary>
+    /// 将任务延迟到帧结束时执行
+    /// </summary>
     public static void EndOfFrame(Action a)
     {
         tasks.Enqueue(a);
@@ -65,7 +61,7 @@ internal class DeferedRunner : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogException(e);
+            Debug.LogError($"[DeferedRunner] 延迟任务执行失败: {e}");
         }
     }
 }

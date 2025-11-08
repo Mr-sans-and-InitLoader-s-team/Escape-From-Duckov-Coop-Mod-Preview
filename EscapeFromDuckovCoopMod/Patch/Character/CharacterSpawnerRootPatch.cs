@@ -129,12 +129,13 @@ internal static class Patch_Root_StartSpawn
                     var aiId = AITool.DeriveSeed(rootId, i + 1);
                     var tag = cmc.GetComponent<NetAiTag>() ?? cmc.gameObject.AddComponent<NetAiTag>();
 
-                    // 主机赋 id + 登记 + 广播；客户端保持 tag.aiId=0 等待绑定（见修复 A）
+                    // 主机赋 id + 登记；客户端保持 tag.aiId=0 等待绑定（见修复 A）
+                    // 【优化】装备同步已改为延迟批量发送，不再立即广播
                     if (mod.IsServer)
                     {
                         tag.aiId = aiId;
-                        COOPManager.AIHandle.RegisterAi(aiId, cmc);
-                        COOPManager.AIHandle.Server_BroadcastAiLoadout(aiId, cmc);
+                        COOPManager.AIHandle.RegisterAi(aiId, cmc); // 内部会将装备信息加入队列
+                        // Server_BroadcastAiLoadout(aiId, cmc); // 【移除】改为批量延迟发送
                     }
                 }
 

@@ -42,99 +42,96 @@ public class DeadLootBox : MonoBehaviour
 
     public void SpawnDeadLootboxAt(int aiId, int lootUid, Vector3 pos, Quaternion rot)
     {
-        try
+        // 【优化】改为协程分帧处理，避免瞬间卡顿
+        StartCoroutine(SpawnDeadLootboxAtAsync(aiId, lootUid, pos, rot));
+    }
+
+    // 【优化】异步协程版本，分帧处理避免卡顿
+    private IEnumerator SpawnDeadLootboxAtAsync(int aiId, int lootUid, Vector3 pos, Quaternion rot)
+    {
+        // 【修复】移除外层 try-catch，因为协程中不能在 try-catch 块内使用 yield
+        // 第一帧：移除尸体
+        // 【优化】物理查询半径从 3.0f 降至 2.5f
+        AITool.TryClientRemoveNearestAICorpse(pos, 2.5f);
+        yield return null;
+
+        // 第二帧：获取预制体并实例化
+        var prefab = GetDeadLootPrefabOnClient(aiId);
+        if (!prefab) yield break;
+
+        var go = Instantiate(prefab, pos, rot);
+        var box = go ? go.GetComponent<InteractableLootbox>() : null;
+        if (!box) yield break;
+
+        var inv = box.Inventory;
+        if (!inv) yield break;
+
+        WorldLootPrime.PrimeIfClient(box);
+        yield return null;
+
+        // 第三帧：字典操作和ID注册
+        var dict = InteractableLootbox.Inventories;
+        if (dict != null)
         {
-            AITool.TryClientRemoveNearestAICorpse(pos, 3.0f);
+            var correctKey = LootManager.ComputeLootKeyFromPos(pos);
+            var wrongKey = -1;
+            foreach (var kv in dict)
+                if (kv.Value == inv && kv.Key != correctKey)
+                {
+                    wrongKey = kv.Key;
+                    break;
+                }
 
-            var prefab = GetDeadLootPrefabOnClient(aiId);
-            if (!prefab)
+            if (wrongKey != -1) dict.Remove(wrongKey);
+            dict[correctKey] = inv;
+        }
+
+        if (lootUid >= 0) LootManager.Instance._cliLootByUid[lootUid] = inv;
+        yield return null;
+
+        // 第四帧：处理缓存的物品数据
+        if (lootUid >= 0 && LootManager.Instance._pendingLootStatesByUid.TryGetValue(lootUid, out var pack))
+        {
+            LootManager.Instance._pendingLootStatesByUid.Remove(lootUid);
+
+            COOPManager.LootNet._applyingLootState = true;
+            try
             {
-                Debug.LogWarning("[LOOT] DeadLoot prefab not found on client, spawn aborted.");
-                return;
+                var cap = Mathf.Clamp(pack.capacity, 1, 128);
+                inv.Loading = true;
+                inv.SetCapacity(cap);
+
+                for (var i = inv.Content.Count - 1; i >= 0; --i)
+                {
+                    Item removed;
+                    inv.RemoveAt(i, out removed);
+                    if (removed != null)
+                    {
+                        try { Destroy(removed.gameObject); }
+                        catch { /* 忽略销毁错误 */ }
+                    }
+                }
+
+                foreach (var (p, snap) in pack.Item2)
+                {
+                    var item = ItemTool.BuildItemFromSnapshot(snap);
+                    if (item) inv.AddAt(item, p);
+                }
             }
-
-            var go = Instantiate(prefab, pos, rot);
-            var box = go ? go.GetComponent<InteractableLootbox>() : null;
-            if (!box) return;
-
-            var inv = box.Inventory;
-            if (!inv)
+            finally
             {
-                Debug.LogWarning("[Client DeadLootBox Spawn] Inventory is null!");
-                return;
+                inv.Loading = false;
+                COOPManager.LootNet._applyingLootState = false;
             }
 
             WorldLootPrime.PrimeIfClient(box);
-
-            // 用主机广播的 pos 注册 posKey → inv（旧兜底仍保留）
-            var dict = InteractableLootbox.Inventories;
-            if (dict != null)
-            {
-                var correctKey = LootManager.ComputeLootKeyFromPos(pos);
-                var wrongKey = -1;
-                foreach (var kv in dict)
-                    if (kv.Value == inv && kv.Key != correctKey)
-                    {
-                        wrongKey = kv.Key;
-                        break;
-                    }
-
-                if (wrongKey != -1) dict.Remove(wrongKey);
-                dict[correctKey] = inv;
-            }
-
-            //稳定 ID → inv
-            if (lootUid >= 0) LootManager.Instance._cliLootByUid[lootUid] = inv;
-
-            // 若快照先到，这里优先吃缓存
-            if (lootUid >= 0 && LootManager.Instance._pendingLootStatesByUid.TryGetValue(lootUid, out var pack))
-            {
-                LootManager.Instance._pendingLootStatesByUid.Remove(lootUid);
-
-                COOPManager.LootNet._applyingLootState = true;
-                try
-                {
-                    var cap = Mathf.Clamp(pack.capacity, 1, 128);
-                    inv.Loading = true; // ★ 进入批量
-                    inv.SetCapacity(cap);
-
-                    for (var i = inv.Content.Count - 1; i >= 0; --i)
-                    {
-                        Item removed;
-                        inv.RemoveAt(i, out removed);
-                        try
-                        {
-                            if (removed) Destroy(removed.gameObject);
-                        }
-                        catch
-                        {
-                        }
-                    }
-
-                    foreach (var (p, snap) in pack.Item2)
-                    {
-                        var item = ItemTool.BuildItemFromSnapshot(snap);
-                        if (item) inv.AddAt(item, p);
-                    }
-                }
-                finally
-                {
-                    inv.Loading = false; // ★ 结束批量
-                    COOPManager.LootNet._applyingLootState = false;
-                }
-
-                WorldLootPrime.PrimeIfClient(box);
-                return; // 吃完缓存就不再发请求
-            }
-
-            // 正常路径：请求一次状态 + 超时兜底
-            COOPManager.LootNet.Client_RequestLootState(inv);
-            StartCoroutine(LootManager.Instance.ClearLootLoadingTimeout(inv, 1.5f));
+            yield break;
         }
-        catch (Exception e)
-        {
-            Debug.LogError("[LOOT] SpawnDeadLootboxAt failed: " + e);
-        }
+        yield return null;
+
+        // 第五帧：网络请求
+        COOPManager.LootNet.Client_RequestLootState(inv);
+        StartCoroutine(LootManager.Instance.ClearLootLoadingTimeout(inv, 1.5f));
     }
 
 
@@ -145,19 +142,17 @@ public class DeadLootBox : MonoBehaviour
         {
             if (aiId > 0 && AITool.aiById.TryGetValue(aiId, out var cmc) && cmc)
             {
-                Debug.LogWarning($"[SpawnDeadloot] AiID:{cmc.GetComponent<NetAiTag>().aiId}");
-                if (cmc.deadLootBoxPrefab.gameObject == null) Debug.LogWarning("[SPawnDead] deadLootBoxPrefab.gameObject null!");
-
+                // 【优化】移除 Debug.LogWarning，减少日志开销
+                // Debug.LogWarning($"[SpawnDeadloot] AiID:{cmc.GetComponent<NetAiTag>().aiId}");
+                // if (cmc.deadLootBoxPrefab.gameObject == null) Debug.LogWarning("[SPawnDead] deadLootBoxPrefab.gameObject null!");
 
                 if (cmc != null)
                 {
                     var obj = cmc.deadLootBoxPrefab.gameObject;
                     if (obj) return obj;
                 }
-                else
-                {
-                    Debug.LogWarning("[SPawnDead] cmc is null!");
-                }
+                // 【优化】移除 Debug.LogWarning
+                // else { Debug.LogWarning("[SPawnDead] cmc is null!"); }
             }
         }
         catch

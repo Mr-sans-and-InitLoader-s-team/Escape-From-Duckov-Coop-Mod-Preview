@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -18,7 +18,8 @@ using System.Reflection;
 using Duckov.Utilities;
 using Duckov.Weathers;
 using Object = UnityEngine.Object;
-using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
+using EscapeFromDuckovCoopMod.Net;
+using EscapeFromDuckovCoopMod.Utils;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -33,6 +34,12 @@ public class Weather
     private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
 
     private bool networkStarted => Service != null && Service.networkStarted;
+
+    // 【优化】缓存反射字段，避免重复的 AccessTools 警告
+    private static FieldInfo _fieldSeed;
+    private static FieldInfo _fieldForceWeather;
+    private static FieldInfo _fieldForceWeatherValue;
+    private static bool _fieldsInitialized = false;
 
     // ========== 环境同步：主机广播 ==========
     public void Server_BroadcastEnvSync(NetPeer target = null)
@@ -61,29 +68,52 @@ public class Weather
 
         if (wm != null)
         {
+            // 【优化】只在第一次初始化时查找字段，避免重复警告
+            if (!_fieldsInitialized)
+            {
+                var wmType = wm.GetType();
+                try
+                {
+                    _fieldSeed = AccessTools.Field(wmType, "seed");
+                }
+                catch { /* 字段不存在 */ }
+
+                try
+                {
+                    _fieldForceWeather = AccessTools.Field(wmType, "forceWeather");
+                }
+                catch { /* 字段不存在或已重命名 */ }
+
+                try
+                {
+                    _fieldForceWeatherValue = AccessTools.Field(wmType, "forceWeatherValue");
+                }
+                catch { /* 字段不存在或已重命名 */ }
+
+                _fieldsInitialized = true;
+            }
+
+            // 使用缓存的字段获取值
             try
             {
-                seed = (int)AccessTools.Field(wm.GetType(), "seed").GetValue(wm);
+                if (_fieldSeed != null)
+                    seed = (int)_fieldSeed.GetValue(wm);
             }
-            catch
-            {
-            }
+            catch { }
 
             try
             {
-                forceWeather = (bool)AccessTools.Field(wm.GetType(), "forceWeather").GetValue(wm);
+                if (_fieldForceWeather != null)
+                    forceWeather = (bool)_fieldForceWeather.GetValue(wm);
             }
-            catch
-            {
-            } // 若字段名不同可改为属性读取
+            catch { }
 
             try
             {
-                forceWeatherVal = (int)AccessTools.Field(wm.GetType(), "forceWeatherValue").GetValue(wm);
+                if (_fieldForceWeatherValue != null)
+                    forceWeatherVal = (int)_fieldForceWeatherValue.GetValue(wm);
             }
-            catch
-            {
-            }
+            catch { }
 
             try
             {
@@ -116,10 +146,14 @@ public class Weather
 
         try
         {
-            var all = Object.FindObjectsOfType<LootBoxLoader>(true);
+            // ✅ 优化：优先从缓存获取 LootBoxLoader，减少 FindObjectsOfType
+            IEnumerable<LootBoxLoader> loaders = GameObjectCacheManager.Instance != null
+                ? GameObjectCacheManager.Instance.Environment.GetAllLoaders()
+                : Object.FindObjectsOfType<LootBoxLoader>(true);
+
             // 收集 (key, active)
-            var tmp = new List<(int k, bool on)>(all.Length);
-            foreach (var l in all)
+            var tmp = new List<(int k, bool on)>();
+            foreach (var l in loaders)
             {
                 if (!l || !l.gameObject) continue;
                 var k = LootManager.Instance.ComputeLootKey(l.transform);
@@ -145,8 +179,11 @@ public class Weather
         var includeDoors = target != null;
         if (includeDoors)
         {
-            var doors = Object.FindObjectsOfType<global::Door>(true);
-            var tmp = new List<(int key, bool closed)>(doors.Length);
+            // ✅ 优化：优先从缓存获取 Door，减少 FindObjectsOfType
+            IEnumerable<global::Door> doors = GameObjectCacheManager.Instance != null
+                ? GameObjectCacheManager.Instance.Environment.GetAllDoors()
+                : Object.FindObjectsOfType<global::Door>(true);
+            var tmp = new List<(int key, bool closed)>();
 
             foreach (var d in doors)
             {

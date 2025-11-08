@@ -106,6 +106,25 @@ public class COOPManager
 
     public static void ChangeHelmatModel(CharacterModel characterModel, Item item)
     {
+        // ✅ 添加 null 检查，防止 NullReferenceException
+        if (characterModel == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeHelmatModel: characterModel 为 null");
+            return;
+        }
+
+        if (characterModel.characterMainControl == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeHelmatModel: characterMainControl 为 null");
+            return;
+        }
+
+        if (characterModel.characterMainControl.CharacterItem == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeHelmatModel: CharacterItem 为 null");
+            return;
+        }
+
         if (item != null)
         {
             var slot = characterModel.characterMainControl.CharacterItem.Slots["Helmat"];
@@ -115,15 +134,36 @@ public class COOPManager
         if (item == null)
         {
             var socket = characterModel.HelmatSocket;
-            for (var i = socket.childCount - 1; i >= 0; i--) Object.Destroy(socket.GetChild(i).gameObject);
-            characterModel.CustomFace.hairSocket.gameObject.SetActive(true);
-            characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(true);
+            if (socket != null)
+            {
+                for (var i = socket.childCount - 1; i >= 0; i--) Object.Destroy(socket.GetChild(i).gameObject);
+            }
+
+            if (characterModel.CustomFace != null)
+            {
+                if (characterModel.CustomFace.hairSocket != null)
+                    characterModel.CustomFace.hairSocket.gameObject.SetActive(true);
+                if (characterModel.CustomFace.mouthPart != null && characterModel.CustomFace.mouthPart.socket != null)
+                    characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(true);
+            }
             return;
         }
 
-        characterModel.CustomFace.hairSocket.gameObject.SetActive(false);
-        characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(false);
+        if (characterModel.CustomFace != null)
+        {
+            if (characterModel.CustomFace.hairSocket != null)
+                characterModel.CustomFace.hairSocket.gameObject.SetActive(false);
+            if (characterModel.CustomFace.mouthPart != null && characterModel.CustomFace.mouthPart.socket != null)
+                characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(false);
+        }
+
         var faceMaskSocket = characterModel.HelmatSocket;
+        if (faceMaskSocket == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeHelmatModel: HelmatSocket 为 null");
+            return;
+        }
+
         var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
         if (itemAgent == null)
         {
@@ -141,6 +181,25 @@ public class COOPManager
 
     public static void ChangeHeadsetModel(CharacterModel characterModel, Item item)
     {
+        // ✅ 添加 null 检查，防止 NullReferenceException
+        if (characterModel == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeHeadsetModel: characterModel 为 null");
+            return;
+        }
+
+        if (characterModel.characterMainControl == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeHeadsetModel: characterMainControl 为 null");
+            return;
+        }
+
+        if (characterModel.characterMainControl.CharacterItem == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeHeadsetModel: CharacterItem 为 null");
+            return;
+        }
+
         if (item != null)
         {
             var slot = characterModel.characterMainControl.CharacterItem.Slots["Headset"];
@@ -150,15 +209,36 @@ public class COOPManager
         if (item == null)
         {
             var socket = characterModel.HelmatSocket;
-            for (var i = socket.childCount - 1; i >= 0; i--) Object.Destroy(socket.GetChild(i).gameObject);
-            characterModel.CustomFace.hairSocket.gameObject.SetActive(true);
-            characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(true);
+            if (socket != null)
+            {
+                for (var i = socket.childCount - 1; i >= 0; i--) Object.Destroy(socket.GetChild(i).gameObject);
+            }
+
+            if (characterModel.CustomFace != null)
+            {
+                if (characterModel.CustomFace.hairSocket != null)
+                    characterModel.CustomFace.hairSocket.gameObject.SetActive(true);
+                if (characterModel.CustomFace.mouthPart != null && characterModel.CustomFace.mouthPart.socket != null)
+                    characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(true);
+            }
             return;
         }
 
-        characterModel.CustomFace.hairSocket.gameObject.SetActive(false);
-        characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(false);
+        if (characterModel.CustomFace != null)
+        {
+            if (characterModel.CustomFace.hairSocket != null)
+                characterModel.CustomFace.hairSocket.gameObject.SetActive(false);
+            if (characterModel.CustomFace.mouthPart != null && characterModel.CustomFace.mouthPart.socket != null)
+                characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(false);
+        }
+
         var faceMaskSocket = characterModel.HelmatSocket;
+        if (faceMaskSocket == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeHeadsetModel: HelmatSocket 为 null");
+            return;
+        }
+
         var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
         if (itemAgent == null)
         {
@@ -176,6 +256,25 @@ public class COOPManager
 
     public static void ChangeBackpackModel(CharacterModel characterModel, Item item)
     {
+        // ✅ 添加 null 检查，防止 NullReferenceException
+        if (characterModel == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeBackpackModel: characterModel 为 null");
+            return;
+        }
+
+        if (characterModel.characterMainControl == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeBackpackModel: characterMainControl 为 null");
+            return;
+        }
+
+        if (characterModel.characterMainControl.CharacterItem == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeBackpackModel: CharacterItem 为 null");
+            return;
+        }
+
         if (item != null)
         {
             var slot = characterModel.characterMainControl.CharacterItem.Slots["Backpack"];
@@ -185,11 +284,20 @@ public class COOPManager
         if (item == null)
         {
             var socket = characterModel.BackpackSocket;
-            for (var i = socket.childCount - 1; i >= 0; i--) Object.Destroy(socket.GetChild(i).gameObject);
+            if (socket != null)
+            {
+                for (var i = socket.childCount - 1; i >= 0; i--) Object.Destroy(socket.GetChild(i).gameObject);
+            }
             return;
         }
 
         var faceMaskSocket = characterModel.BackpackSocket;
+        if (faceMaskSocket == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeBackpackModel: BackpackSocket 为 null");
+            return;
+        }
+
         var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
         if (itemAgent == null)
         {
@@ -208,6 +316,25 @@ public class COOPManager
 
     public static void ChangeFaceMaskModel(CharacterModel characterModel, Item item)
     {
+        // ✅ 添加 null 检查，防止 NullReferenceException
+        if (characterModel == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeFaceMaskModel: characterModel 为 null");
+            return;
+        }
+
+        if (characterModel.characterMainControl == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeFaceMaskModel: characterMainControl 为 null");
+            return;
+        }
+
+        if (characterModel.characterMainControl.CharacterItem == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeFaceMaskModel: CharacterItem 为 null");
+            return;
+        }
+
         if (item != null)
         {
             var slot = characterModel.characterMainControl.CharacterItem.Slots["FaceMask"];
@@ -217,11 +344,20 @@ public class COOPManager
         if (item == null)
         {
             var socket = characterModel.FaceMaskSocket;
-            for (var i = socket.childCount - 1; i >= 0; i--) Object.Destroy(socket.GetChild(i).gameObject);
+            if (socket != null)
+            {
+                for (var i = socket.childCount - 1; i >= 0; i--) Object.Destroy(socket.GetChild(i).gameObject);
+            }
             return;
         }
 
         var faceMaskSocket = characterModel.FaceMaskSocket;
+        if (faceMaskSocket == null)
+        {
+            Debug.LogWarning("[COOPManager] ChangeFaceMaskModel: FaceMaskSocket 为 null");
+            return;
+        }
+
         var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
         if (itemAgent == null)
         {

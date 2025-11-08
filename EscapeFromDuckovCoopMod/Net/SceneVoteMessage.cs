@@ -347,6 +347,7 @@ public static class SceneVoteMessage
         if (
             service != null
             && service.IsServer
+            && service.TransportMode == NetworkTransportMode.SteamP2P  // ✅ 只在 Steam P2P 传输模式下才检查
             && SteamManager.Initialized
             && _hostVoteState.playerList != null
             && _hostVoteState.playerList.items != null

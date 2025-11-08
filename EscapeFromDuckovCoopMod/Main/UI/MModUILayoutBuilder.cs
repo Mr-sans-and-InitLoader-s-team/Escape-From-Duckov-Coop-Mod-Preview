@@ -387,8 +387,8 @@ public class MModUILayoutBuilder
     {
         var actionsCard = _ui.CreateModernCard(parent, "ActionsCard");
         var actionsCardLayout = actionsCard.GetComponent<LayoutElement>();
-        actionsCardLayout.preferredHeight = 170;  // 170 * 0.8 = 136
-        actionsCardLayout.minHeight = 170;
+        actionsCardLayout.preferredHeight = 210;  // 增加高度以容纳新按钮
+        actionsCardLayout.minHeight = 210;
 
         _ui.CreateSectionHeader(actionsCard.transform, CoopLocalization.Get("ui.actions.quickActions"));
 
@@ -398,7 +398,9 @@ public class MModUILayoutBuilder
             _ui.StartCoroutine(_ui.AnimatePanel(_components.PlayerStatusPanel, _ui.showPlayerStatusWindow));
         }, -1, MModUI.ModernColors.Info, 40, 15);
 
-        _ui.CreateModernButton("Debug", actionsCard.transform, CoopLocalization.Get("ui.debug.printLootBoxes"), _ui.DebugPrintLootBoxes, -1, MModUI.ModernColors.Warning, 40, 15);
+        _ui.CreateModernButton("DebugLootBoxes", actionsCard.transform, CoopLocalization.Get("ui.debug.printLootBoxes"), _ui.DebugPrintLootBoxes, -1, MModUI.ModernColors.Warning, 40, 15);
+
+        _ui.CreateModernButton("DebugNetworkState", actionsCard.transform, "Debug: 网络状态 JSON", _ui.DebugPrintRemoteCharacters, -1, MModUI.ModernColors.Warning, 40, 15);
     }
 }
 

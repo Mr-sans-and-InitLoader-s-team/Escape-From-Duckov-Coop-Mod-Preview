@@ -31,7 +31,7 @@ public class ModUI : MonoBehaviour
     private readonly List<string> _hostList = new();
     private readonly HashSet<string> _hostSet = new();
     public readonly KeyCode readyKey = KeyCode.J;
-    private string _manualIP = "127.0.0.1";
+    private string _manualIP = "192.168.123.1";
     private string _manualPort = "9050";
     private int _port = 9050;
     private string _status = "";

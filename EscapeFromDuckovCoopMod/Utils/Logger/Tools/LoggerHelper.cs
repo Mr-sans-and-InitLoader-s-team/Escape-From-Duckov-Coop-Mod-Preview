@@ -10,14 +10,16 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.Tools
     public class LoggerHelper
     {
         // 可以在此次修改初始化逻辑，以添加更多的日志处理器或修改过滤器
-        private static readonly Lazy<LogHandlers.Logger> _instance =
-            new Lazy<LogHandlers.Logger>(() =>
+        private static readonly Lazy<LogHandlers.Logger> _instance = new Lazy<LogHandlers.Logger>(
+            () =>
             {
                 var logger = new LogHandlers.Logger();
 
                 FileLogHandlerForConsoleMod.Init(logger);
 
-                var asyncConsoleHandler = LogHandlerAsyncDecorator.CreateDecorator(new ConsoleLogHandler());
+                var asyncConsoleHandler = LogHandlerAsyncDecorator.CreateDecorator(
+                    new ConsoleLogHandler()
+                );
                 logger.AddHandler(asyncConsoleHandler);
 
                 // 打印标签日志示例：
@@ -33,8 +35,9 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.Tools
                 //});
 
                 return logger;
-            }
-            , LazyThreadSafetyMode.ExecutionAndPublication);
+            },
+            LazyThreadSafetyMode.ExecutionAndPublication
+        );
 
         public static LogHandlers.Logger Instance => _instance.Value;
 
@@ -60,7 +63,8 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.Tools
         }
 
         // 提供其他方法，以免懒得使用 Instance 调用
-        public static void Log<TLog>(TLog log) where TLog : struct, ILog
+        public static void Log<TLog>(TLog log)
+            where TLog : struct, ILog
         {
             Instance.Log(log);
         }
@@ -70,18 +74,22 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.Tools
         {
             Instance.Log(new Log(logLevel, message));
         }
+
         public static void LogInfo(string message)
         {
             Instance.Log(new Log(LogLevel.Info, message));
         }
+
         public static void LogTrace(string message)
         {
             Instance.Log(new Log(LogLevel.Trace, message));
         }
+
         public static void LogDebug(string message)
         {
             Instance.Log(new Log(LogLevel.Debug, message));
         }
+
         public static void LogFatal(string message)
         {
             Instance.Log(new Log(LogLevel.Fatal, message));
@@ -92,30 +100,37 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.Tools
         {
             Instance.Log(new LabelLog(logLevel, message, label));
         }
+
         public static void Log(string message, string label)
         {
             Instance.Log(new LabelLog(LogLevel.Info, message, label));
         }
+
         public static void LogInfo(string message, string label)
         {
             Instance.Log(new LabelLog(LogLevel.Info, message, label));
         }
+
         public static void LogTrace(string message, string label)
         {
             Instance.Log(new LabelLog(LogLevel.Trace, message, label));
         }
+
         public static void LogDebug(string message, string label)
         {
             Instance.Log(new LabelLog(LogLevel.Debug, message, label));
         }
+
         public static void LogWarning(string message, string label)
         {
             Instance.Log(new LabelLog(LogLevel.Warning, message, label));
         }
+
         public static void LogError(string message, string label)
         {
             Instance.Log(new LabelLog(LogLevel.Error, message, label));
         }
+
         public static void LogFatal(string message, string label)
         {
             Instance.Log(new LabelLog(LogLevel.Fatal, message, label));

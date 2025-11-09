@@ -15,6 +15,7 @@
 // GNU Affero General Public License for more details.
 
 using System.Collections;
+using EscapeFromDuckovCoopMod.Utils.Logger.Tools;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -88,7 +89,7 @@ public class HealthM : MonoBehaviour
         if (!force && Time.time < _cliNextSendHp) return;
 
         // 🔍 JSON日志：血量上报（简化版，避免循环）
-        Debug.Log($"[HP_REPORT] max={max:F1}, cur={cur:F1}, force={force}");
+        LoggerHelper.Log($"[HP_REPORT] max={max:F1}, cur={cur:F1}, force={force}");
         
         // 🔍 详细调试：反射读取Health内部状态
         try
@@ -120,7 +121,7 @@ public class HealthM : MonoBehaviour
                 debugData["reflectionError"] = e.Message;
             }
             
-            Debug.Log($"[HP_REPORT_DEBUG] {Newtonsoft.Json.JsonConvert.SerializeObject(debugData, Newtonsoft.Json.Formatting.Indented)}");
+            LoggerHelper.Log($"[HP_REPORT_DEBUG] {Newtonsoft.Json.JsonConvert.SerializeObject(debugData, Newtonsoft.Json.Formatting.None)}");
         }
         catch
         {
@@ -229,7 +230,7 @@ public class HealthM : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogWarning("[CLIENT] apply self hurt from server failed: " + e);
+            LoggerHelper.LogWarning("[CLIENT] apply self hurt from server failed: " + e);
         }
     }
 
@@ -279,12 +280,12 @@ public class HealthM : MonoBehaviour
             ["time"] = Time.time,
             ["isValid"] = max > 0f && cur > 0f
         };
-        Debug.Log($"[HP_REPORT_INIT] {Newtonsoft.Json.JsonConvert.SerializeObject(logData)}");
+        LoggerHelper.Log($"[HP_REPORT_INIT] {Newtonsoft.Json.JsonConvert.SerializeObject(logData)}");
 
         // ⚠️ 检查血量是否有效
         if (max <= 0f || cur <= 0f)
         {
-            Debug.LogWarning($"[HP_REPORT_INIT] ⚠️ 血量未初始化，延迟上报: max={max}, cur={cur}");
+            LoggerHelper.LogWarning($"[HP_REPORT_INIT] ⚠️ 血量未初始化，延迟上报: max={max}, cur={cur}");
             return; // 不上报，等待下一帧重试
         }
 
@@ -295,7 +296,7 @@ public class HealthM : MonoBehaviour
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
 
         HealthTool._cliInitHpReported = true;
-        Debug.Log($"[HP_REPORT_INIT] ✓ 初始血量上报成功");
+        LoggerHelper.Log($"[HP_REPORT_INIT] ✓ 初始血量上报成功");
     }
 
     public void Server_OnHealthChanged(NetPeer ownerPeer, Health h)

@@ -1364,7 +1364,8 @@ public class MModUI : MonoBehaviour
             DestroyImmediate(_components.VotePanel.transform.GetChild(i).gameObject);
         }
 
-        var sceneName = SceneInfoCollection.GetSceneInfo(SceneNet.Instance.sceneTargetId).DisplayName;
+        // 🌏 使用中文场景名称
+        var sceneName = Utils.SceneNameMapper.GetDisplayName(SceneNet.Instance.sceneTargetId);
 
         // 标题
         var titleText = CreateText("VoteTitle", _components.VotePanel.transform, CoopLocalization.Get("ui.vote.title"), 22, ModernColors.TextPrimary, TextAlignmentOptions.Left, FontStyles.Bold);

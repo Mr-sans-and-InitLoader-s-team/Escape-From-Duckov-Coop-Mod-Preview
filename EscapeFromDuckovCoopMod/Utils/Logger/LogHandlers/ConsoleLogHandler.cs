@@ -4,7 +4,7 @@ using ILogHandler = EscapeFromDuckovCoopMod.Utils.Logger.Core.ILogHandler;
 
 namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
 {
-    public class ConsoleLogHandler : ILogHandler, ILogHandler<Log>, ILogHandler<LabelLog>
+    public class ConsoleLogHandler : ILogHandler, ILogHandler<Log>, ILogHandler<LabelLog>, ILogHandler<LogHandlerAsyncDecorator.AsyncLog>
     {
         public void Log<TLog>(TLog log) where TLog : struct, ILog
         {
@@ -20,7 +20,7 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
         {
             try
             {
-                PrintTimestamp();
+                // PrintTimestamp();
 
                 // 打印日志等级
                 var logLevelStr = $"[{log.Level}] ";
@@ -76,11 +76,27 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
             }
         }
 
+        public void Log(LogHandlerAsyncDecorator.AsyncLog log)
+        {
+            try
+            {
+                // 打印时间戳
+                Console.ForegroundColor = ConsoleColor.Gray;
+                Console.Write($"[{log.Timestamp:HH:mm:ss}] ");
+
+                log.LogAction.Invoke(this);
+            }
+            catch (System.IO.IOException)
+            {
+                // 控制台不可用时忽略
+            }
+        }
+
         public void Log(LogLevel logLevel, string parseToString)
         {
             try
             {
-                PrintTimestamp();
+                // PrintTimestamp();
 
                 switch (logLevel)
                 {

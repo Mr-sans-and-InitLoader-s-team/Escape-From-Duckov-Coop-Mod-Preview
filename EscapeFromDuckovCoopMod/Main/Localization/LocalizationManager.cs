@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,10 +14,6 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using System;
-using System.Collections.Generic;
-using System.IO;
-using UnityEngine;
 using SodaCraft.Localizations;
 
 namespace EscapeFromDuckovCoopMod
@@ -341,7 +337,7 @@ namespace EscapeFromDuckovCoopMod
             currentTranslations["ui.steam.lobbyList"] = "Steam Lobby List";
             currentTranslations["ui.steam.client.connected"] = "Steam Client: Connected to lobby";
             currentTranslations["ui.steam.hint.createOrJoin"] = "Steam P2P Mode: Create or join a lobby";
-            currentTranslations["ui.steam.joinPassword]" = "Lobby Password";
+            currentTranslations["ui.steam.joinPassword"] = "Lobby Password";
             currentTranslations["ui.steam.joinPasswordPlaceholder"] = "If lobby requires password";
             currentTranslations["ui.steam.lobbyNamePlaceholder"] = "My Lobby";
             currentTranslations["ui.steam.lobbyPasswordPlaceholder"] = "Leave empty for public";

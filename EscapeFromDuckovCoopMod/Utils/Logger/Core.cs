@@ -61,6 +61,21 @@
         bool Filter(TLog log);
     }
 
+    public interface IDecorator<T> where T : class
+    {
+        T Inner { get; }
+
+        T GetRoot()
+        {
+            T current = Inner;
+            while (current is IDecorator<T> decorator)
+            {
+                current = decorator.Inner;
+            }
+            return current;
+        }
+    }
+
 
     // ===========以下没做完整支持===========
     /// <summary>

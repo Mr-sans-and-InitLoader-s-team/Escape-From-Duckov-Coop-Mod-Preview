@@ -14,8 +14,13 @@ namespace EscapeFromDuckovCoopMod
     {
         static void Postfix(Socket __instance, ref int __result)
         {
+            // ✅ 只在 Steam P2P 传输模式下执行
+            if (NetService.Instance == null || NetService.Instance.TransportMode != NetworkTransportMode.SteamP2P)
+                return;
+
             if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
                 return;
+
             try
             {
                 if (__result > 0)
@@ -58,8 +63,14 @@ namespace EscapeFromDuckovCoopMod
         {
             if (_inPatch)
                 return true;
+
+            // ✅ 只在 Steam P2P 传输模式下执行
+            if (NetService.Instance == null || NetService.Instance.TransportMode != NetworkTransportMode.SteamP2P)
+                return true;
+
             if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
                 return true;
+
             try
             {
                 _inPatch = true;
@@ -124,8 +135,13 @@ namespace EscapeFromDuckovCoopMod
         }
         static bool Prefix(Socket __instance, byte[] buffer, int offset, int size, SocketFlags socketFlags, ref EndPoint remoteEP, ref int __result)
         {
+            // ✅ 只在 Steam P2P 传输模式下执行
+            if (NetService.Instance == null || NetService.Instance.TransportMode != NetworkTransportMode.SteamP2P)
+                return true;
+
             if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
                 return true;
+
             try
             {
                 if (SteamP2PManager.Instance != null)
@@ -180,10 +196,15 @@ namespace EscapeFromDuckovCoopMod
     {
         static bool Prefix(IList checkRead, IList checkWrite, IList checkError, int microSeconds)
         {
+            // ✅ 只在 Steam P2P 传输模式下执行
+            if (NetService.Instance == null || NetService.Instance.TransportMode != NetworkTransportMode.SteamP2P)
+                return true;
+
             if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
             {
                 return true;
             }
+
             try
             {
                 // 🛡️ 修复：检查所有通道（0-3），支持 LiteNetLib 多通道系统
@@ -229,8 +250,13 @@ namespace EscapeFromDuckovCoopMod
         }
         static bool Prefix(Socket __instance, byte[] buffer, int offset, int size, SocketFlags socketFlags, EndPoint remoteEP, ref int __result)
         {
+            // ✅ 只在 Steam P2P 传输模式下执行
+            if (NetService.Instance == null || NetService.Instance.TransportMode != NetworkTransportMode.SteamP2P)
+                return true;
+
             if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
                 return true;
+
             try
             {
                 IPEndPoint ipEndPoint = remoteEP as IPEndPoint;

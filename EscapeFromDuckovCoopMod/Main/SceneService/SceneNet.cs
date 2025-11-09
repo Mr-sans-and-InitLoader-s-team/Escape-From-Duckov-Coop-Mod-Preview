@@ -16,6 +16,7 @@
 
 using Duckov.UI;
 using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
+using EscapeFromDuckovCoopMod.Utils;
 using System;
 using System.Collections.Generic;
 
@@ -486,6 +487,16 @@ public class SceneNet : MonoBehaviour
             return;
         }
 
+        // ✅ 修复：立即更新实例变量，否则后面使用的是旧值！
+        sceneTargetId = id;
+        sceneCurtainGuid = curtainGuid;
+        sceneLocationName = locName;
+        sceneNotifyEvac = notifyEvac;
+        sceneSaveToFile = saveToFile;
+        sceneUseLocation = useLoc;
+
+        Debug.Log($"[SCENE] 客户端收到场景加载通知: targetId={sceneTargetId}, curtain={sceneCurtainGuid}, loc={sceneLocationName}");
+
         allowLocalSceneLoad = true;
         var map = CoopTool.GetMapSelectionEntrylist(sceneTargetId);
         if (map != null && sceneLocationName == "OnPointerClick")
@@ -595,7 +606,12 @@ public class SceneNet : MonoBehaviour
             // （如果后面你把 loader.LoadScene 恢复了，这里可以先试 loader 路径并把 launched=true）
 
             // 无论 loader 是否存在，都尝试 SceneLoaderProxy 兜底
-            foreach (var ii in FindObjectsOfType<SceneLoaderProxy>())
+            // ✅ 优化：使用缓存管理器获取 SceneLoaderProxy，避免 FindObjectsOfType
+            IEnumerable<SceneLoaderProxy> sceneLoaders = GameObjectCacheManager.Instance != null
+                ? GameObjectCacheManager.Instance.Environment.GetAllSceneLoaders()
+                : FindObjectsOfType<SceneLoaderProxy>();
+
+            foreach (var ii in sceneLoaders)
                 try
                 {
                     if (Traverse.Create(ii).Field<string>("sceneID").Value == targetSceneId)
@@ -736,6 +752,11 @@ public class SceneNet : MonoBehaviour
         _srvGateReadyPids.Clear();
         Debug.Log("[GATE] 投票开始，重置场景门控状态");
 
+        // ✅ 使用新的 JSON 投票系统
+        SceneVoteMessage.Host_StartVote(targetSceneId, curtainGuid, notifyEvac, saveToFile, useLocation, locationName);
+        Debug.Log($"[SCENE] 投票开始 (JSON): target='{targetSceneId}', loc='{locationName}'");
+
+        // 保留旧代码以兼容（但不再发送二进制消息）
         // 参与者（同图优先；拿不到 SceneId 的竞态由客户端再过滤）
         sceneParticipantIds.Clear();
         sceneParticipantIds.AddRange(CoopTool.BuildParticipantIds_Server());
@@ -745,6 +766,8 @@ public class SceneNet : MonoBehaviour
         sceneReady.Clear();
         foreach (var pid in sceneParticipantIds) sceneReady[pid] = false;
 
+        // ❌ 旧的二进制消息系统已禁用，使用上面的 JSON 系统
+        /*
         // 计算主机当前 SceneId
         string hostSceneId = null;
         LocalPlayerManager.Instance.ComputeIsInGame(out hostSceneId);
@@ -775,6 +798,7 @@ public class SceneNet : MonoBehaviour
         // 使用 SendSmart 自动选择传输方式（SCENE_VOTE_START → Critical → ReliableOrdered）
         netManager.SendSmart(w, Op.SCENE_VOTE_START);
         Debug.Log($"[SCENE] 投票开始 v3: target='{sceneTargetId}', hostScene='{hostSceneId}', loc='{sceneLocationName}', count={sceneParticipantIds.Count}");
+        */
 
         // 如需“只发同图”，可以替换为下面这段（二选一）：
         /*
@@ -1003,6 +1027,9 @@ public class SceneNet : MonoBehaviour
         w.Put(sid ?? "");
         // 使用 SendSmart 自动选择传输方式（SCENE_GATE_RELEASE → Critical → ReliableOrdered）
         peer.SendSmart(w, Op.SCENE_GATE_RELEASE);
+
+        // 🔧 立即发送战利品箱全量同步
+        LootFullSyncMessage.Host_SendLootFullSync(peer);
     }
 
 

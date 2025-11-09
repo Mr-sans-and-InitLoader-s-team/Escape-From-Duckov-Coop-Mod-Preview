@@ -39,6 +39,32 @@ public class AIHealth
     private static readonly FieldInfo FI_hasCharacter =
         typeof(Health).GetField("hasCharacter", BindingFlags.NonPublic | BindingFlags.Instance);
 
+    // 【优化】缓存反射方法，避免每次死亡都调用 AccessTools.DeclaredMethod
+    private static readonly MethodInfo MI_GetActiveHealthBar;
+    private static readonly MethodInfo MI_ReleaseHealthBar;
+
+    // 【优化】静态构造函数，初始化时缓存反射方法
+    static AIHealth()
+    {
+        try
+        {
+            MI_GetActiveHealthBar = AccessTools.DeclaredMethod(typeof(HealthBarManager), "GetActiveHealthBar", new[] { typeof(Health) });
+        }
+        catch
+        {
+            MI_GetActiveHealthBar = null;
+        }
+
+        try
+        {
+            MI_ReleaseHealthBar = AccessTools.DeclaredMethod(typeof(HealthBar), "Release", Type.EmptyTypes);
+        }
+        catch
+        {
+            MI_ReleaseHealthBar = null;
+        }
+    }
+
     private readonly Dictionary<int, float> _cliLastAiHp = new();
     private readonly Dictionary<int, float> _cliLastReportedHp = new();
     private readonly Dictionary<int, float> _cliNextReportAt = new();
@@ -372,37 +398,59 @@ public class AIHealth
         {
         }
 
-        // 死亡则本地立即隐藏，防“幽灵AI”
+        // 死亡则本地立即隐藏，防"幽灵AI"
         if (cur <= 0f)
         {
+            // 【优化】先禁用 AI 控制器（立即生效），其他清理操作延迟执行
             try
             {
                 var ai = cmc.GetComponent<AICharacterController>();
                 if (ai) ai.enabled = false;
-
-                // 释放/隐藏血条
-                try
-                {
-                    var miGet = AccessTools.DeclaredMethod(typeof(HealthBarManager), "GetActiveHealthBar", new[] { typeof(Health) });
-                    var hb = miGet?.Invoke(HealthBarManager.Instance, new object[] { h }) as HealthBar;
-                    if (hb != null)
-                    {
-                        var miRel = AccessTools.DeclaredMethod(typeof(HealthBar), "Release", Type.EmptyTypes);
-                        if (miRel != null) miRel.Invoke(hb, null);
-                        else hb.gameObject.SetActive(false);
-                    }
-                }
-                catch
-                {
-                }
-
-                cmc.gameObject.SetActive(false);
             }
             catch
             {
             }
 
+            // 【优化】延迟清理操作，避免死亡瞬间卡顿
+            UniTask.Void(async () =>
+            {
+                try
+                {
+                    await UniTask.Delay(50); // 延迟 50ms
 
+                    // 释放/隐藏血条（使用缓存的反射方法）
+                    try
+                    {
+                        var hb = MI_GetActiveHealthBar?.Invoke(HealthBarManager.Instance, new object[] { h }) as HealthBar;
+                        if (hb != null)
+                        {
+                            if (MI_ReleaseHealthBar != null)
+                                MI_ReleaseHealthBar.Invoke(hb, null);
+                            else
+                                hb.gameObject.SetActive(false);
+                        }
+                    }
+                    catch
+                    {
+                    }
+
+                    // 禁用 GameObject
+                    try
+                    {
+                        if (cmc != null)
+                            cmc.gameObject.SetActive(false);
+                    }
+                    catch
+                    {
+                    }
+                }
+                catch
+                {
+                    // 延迟操作失败不影响游戏
+                }
+            });
+
+            // 播放死亡特效（保持原有逻辑）
             if (AITool._cliAiDeathFxOnce.Add(aiId))
                 FxManager.Client_PlayAiDeathFxAndSfx(cmc);
         }

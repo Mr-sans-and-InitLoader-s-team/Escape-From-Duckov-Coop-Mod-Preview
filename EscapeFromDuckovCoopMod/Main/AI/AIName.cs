@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -20,7 +20,7 @@ using Duckov.Utilities;
 using TMPro;
 using UnityEngine.UI;
 
-namespace EscapeFromDuckovCoopMod;
+namespace EscapeFromDuckovCoopMod.Utils;
 
 public static class AIName
 {
@@ -119,7 +119,13 @@ public static class AIName
     {
         if (!IsServer) _nameIconSealed.Clear();
         if (IsServer) return;
-        foreach (var tag in GameObject.FindObjectsOfType<NetAiTag>())
+        
+        // ✅ 优化：使用缓存管理器获取 NetAiTag，避免 FindObjectsOfType
+        IEnumerable<NetAiTag> tags = GameObjectCacheManager.Instance != null
+            ? GameObjectCacheManager.Instance.AI.GetNetAiTags(forceRefresh: true)
+            : GameObject.FindObjectsOfType<NetAiTag>();
+        
+        foreach (var tag in tags)
         {
             var cmc = tag ? tag.GetComponent<CharacterMainControl>() : null;
             if (!cmc)

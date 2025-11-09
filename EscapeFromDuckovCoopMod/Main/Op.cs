@@ -18,6 +18,7 @@ namespace EscapeFromDuckovCoopMod;
 
 public enum Op : byte
 {
+    JSON = 200, // 通用JSON消息传输
     PLAYER_STATUS_UPDATE = 1,
     CLIENT_STATUS_UPDATE = 2,
     POSITION_UPDATE = 3,
@@ -33,7 +34,7 @@ public enum Op : byte
     ITEM_SPAWN = 13,
     ITEM_PICKUP_REQUEST = 14,
     ITEM_DESPAWN = 15,
-    PLAYER_HEALTH_REPORT = 16, // 客户端 -> 主机：上传自己当前(max,curr)                  
+    PLAYER_HEALTH_REPORT = 16, // 客户端 -> 主机：上传自己当前(max,curr)
     AUTH_HEALTH_SELF = 17, // 主机 -> 某个客户端：把“你自己本地人物”的(max,cur)设为权威值
     AUTH_HEALTH_REMOTE = 18, // 主机 -> 所有客户端：某位玩家的(max,cur)用于远端展示（带 playerId）
     SCENE_VOTE_START = 19, // 主机 -> 全体：开始投票（下发目标 SceneID、Curtain GUID 等）
@@ -95,5 +96,5 @@ public enum Op : byte
     LOOT_REQ_TAKE = 253, // 客户端 -> 主机：请求“取出”
     LOOT_PUT_OK = 254, // 主机 -> 发起客户端：确认“放入”成功，附回执 token
     LOOT_TAKE_OK = 255, // 主机 -> 发起客户端：确认“取出”成功 + 返回 Item 快照
-    LOOT_DENY = 249 // 主机 -> 发起客户端：拒绝（例如并发冲突/格子无物品/容量不足）
+    LOOT_DENY = 249, // 主机 -> 发起客户端：拒绝（例如并发冲突/格子无物品/容量不足）
 }

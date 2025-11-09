@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -16,6 +16,7 @@
 
 using System.Reflection;
 using Duckov;
+using EscapeFromDuckovCoopMod.Utils;
 using ItemStatsSystem;
 using ItemStatsSystem.Items;
 using NodeCanvas.Framework;
@@ -161,7 +162,11 @@ public static class AITool
         var best = 30f; // 原 5f -> 放宽，必要时可调到 40f
         CharacterMainControl bestCmc = null;
 
-        var all = Object.FindObjectsOfType<CharacterMainControl>(true);
+        // ✅ 优化：使用缓存管理器，避免 FindObjectsOfType
+        IEnumerable<CharacterMainControl> all = Utils.GameObjectCacheManager.Instance != null
+            ? Utils.GameObjectCacheManager.Instance.AI.GetAllCharacters()
+            : Object.FindObjectsOfType<CharacterMainControl>(true);
+
         foreach (var c in all)
         {
             if (!c || LevelManager.Instance.MainCharacter == c) continue;
@@ -191,8 +196,13 @@ public static class AITool
     public static void Client_ForceFreezeAllAI()
     {
         if (!networkStarted || IsServer) return;
-        var all = Object.FindObjectsOfType<AICharacterController>(true);
-        foreach (var aic in all)
+
+        // ✅ 优化：优先从缓存获取 AI Controllers
+        IEnumerable<AICharacterController> controllers = GameObjectCacheManager.Instance != null
+            ? GameObjectCacheManager.Instance.AI.GetAllControllers()
+            : Object.FindObjectsOfType<AICharacterController>(true);
+
+        foreach (var aic in controllers)
         {
             if (!aic) continue;
             aic.enabled = false;
@@ -279,10 +289,13 @@ public static class AITool
         // 3) 罕见兜底：偶尔扫一次 NetAiTag 做精确匹配（低频触发）
         if (Time.frameCount % 20 == 0) // 大约每 20 帧才做一次全局查看
         {
-            var tags = Object.FindObjectsOfType<NetAiTag>(true);
-            for (var i = 0; i < tags.Length; i++)
+            // ✅ 优化：使用缓存管理器，避免 FindObjectsOfType
+            IEnumerable<NetAiTag> tags = Utils.GameObjectCacheManager.Instance != null
+                ? Utils.GameObjectCacheManager.Instance.AI.GetNetAiTags()
+                : Object.FindObjectsOfType<NetAiTag>(true);
+
+            foreach (var tag in tags)
             {
-                var tag = tags[i];
                 if (!tag || tag.aiId != aiId) continue;
                 var cmc = tag.GetComponentInParent<CharacterMainControl>();
                 if (cmc && !aiById.ContainsValue(cmc))
@@ -301,21 +314,40 @@ public static class AITool
     public static List<EquipmentSyncData> GetLocalAIEquipment(CharacterMainControl cmc)
     {
         var equipmentList = new List<EquipmentSyncData>();
-        var equipmentController = cmc?.EquipmentController;
+        if (cmc == null) return equipmentList;
+
+        var equipmentController = cmc.EquipmentController;
         if (equipmentController == null) return equipmentList;
 
         var slotNames = new[] { "armorSlot", "helmatSlot", "faceMaskSlot", "backpackSlot", "headsetSlot" };
         var slotHashes = new[]
         {
-            CharacterEquipmentController.armorHash, CharacterEquipmentController.helmatHash, CharacterEquipmentController.faceMaskHash,
-            CharacterEquipmentController.backpackHash, CharacterEquipmentController.headsetHash
+            CharacterEquipmentController.armorHash,
+            CharacterEquipmentController.helmatHash,
+            CharacterEquipmentController.faceMaskHash,
+            CharacterEquipmentController.backpackHash,
+            CharacterEquipmentController.headsetHash
         };
 
-        for (var i = 0; i < slotNames.Length; i++)
+        // 【优化】确保两个数组长度一致
+        if (slotNames.Length != slotHashes.Length)
+        {
+            Debug.LogError($"[AI-LOADOUT] 槽位名称和哈希数组长度不一致！names={slotNames.Length}, hashes={slotHashes.Length}");
+            return equipmentList;
+        }
+
+        for (var i = 0; i < slotNames.Length && i < slotHashes.Length; i++)
+        {
             try
             {
+                if (cmc == null || equipmentController == null)
+                {
+                    Debug.LogWarning($"[AI-LOADOUT] CMC或装备控制器在处理槽位 {i} 时变为null");
+                    break;
+                }
+
                 var slotField = Traverse.Create(equipmentController).Field<Slot>(slotNames[i]);
-                if (slotField.Value == null) continue;
+                if (slotField?.Value == null) continue;
 
                 var slot = slotField.Value;
                 var itemId = slot?.Content != null ? slot.Content.TypeID.ToString() : "";
@@ -323,8 +355,9 @@ public static class AITool
             }
             catch (Exception ex)
             {
-                Debug.LogError($"获取槽位 {slotNames[i]} 时发生错误: {ex.Message}");
+                Debug.LogError($"[AI-LOADOUT] 获取槽位 {slotNames[i]} (index={i}) 时发生错误: {ex.Message}\n{ex.StackTrace}");
             }
+        }
 
         return equipmentList;
     }
@@ -337,32 +370,68 @@ public static class AITool
 
         if (!IsRealAI(cmc)) return;
 
-        var all = Object.FindObjectsOfType<AICharacterController>(true);
+        // ✅ 优化：使用缓存管理器，避免 FindObjectsOfType
+        IEnumerable<AICharacterController> all = Utils.GameObjectCacheManager.Instance != null
+            ? Utils.GameObjectCacheManager.Instance.AI.GetAllControllers()
+            : Object.FindObjectsOfType<AICharacterController>(true);
+
         foreach (var aic in all)
         {
             if (!aic) continue;
             aic.enabled = false;
         }
 
-        var all1 = Object.FindObjectsOfType<AI_PathControl>(true);
-        foreach (var aic in all1)
+        // ✅ 优化：使用缓存管理器，避免 FindObjectsOfType
+        // ✅ 安全保护：添加 try-catch，防止场景加载早期访问未初始化的组件导致崩溃
+        try
         {
-            if (!aic) continue;
-            aic.enabled = false;
+            IEnumerable<AI_PathControl> all1 = Utils.GameObjectCacheManager.Instance != null
+                ? Utils.GameObjectCacheManager.Instance.AI.GetAllPathControls()
+                : Object.FindObjectsOfType<AI_PathControl>(true);
+
+            foreach (var aic in all1)
+            {
+                if (!aic) continue;
+                try { aic.enabled = false; } catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[AITool] 禁用 AI_PathControl 失败: {ex.Message}");
         }
 
-        var all2 = Object.FindObjectsOfType<FSMOwner>(true);
-        foreach (var aic in all2)
+        try
         {
-            if (!aic) continue;
-            aic.enabled = false;
+            IEnumerable<FSMOwner> all2 = Utils.GameObjectCacheManager.Instance != null
+                ? Utils.GameObjectCacheManager.Instance.AI.GetAllFSMOwners()
+                : Object.FindObjectsOfType<FSMOwner>(true);
+
+            foreach (var aic in all2)
+            {
+                if (!aic) continue;
+                try { aic.enabled = false; } catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[AITool] 禁用 FSMOwner 失败: {ex.Message}");
         }
 
-        var all3 = Object.FindObjectsOfType<Blackboard>(true);
-        foreach (var aic in all3)
+        try
         {
-            if (!aic) continue;
-            aic.enabled = false;
+            IEnumerable<Blackboard> all3 = Utils.GameObjectCacheManager.Instance != null
+                ? Utils.GameObjectCacheManager.Instance.AI.GetAllBlackboards()
+                : Object.FindObjectsOfType<Blackboard>(true);
+
+            foreach (var aic in all3)
+            {
+                if (!aic) continue;
+                try { aic.enabled = false; } catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[AITool] 禁用 Blackboard 失败: {ex.Message}");
         }
     }
 
@@ -461,9 +530,8 @@ public static class AITool
                     var cmc = kv.Value;
                     if (!cmc || cmc.IsMainCharacter) continue;
 
-                    var isAI = cmc.GetComponent<AICharacterController>() != null
-                               || cmc.GetComponent<NetAiTag>() != null;
-                    if (!isAI) continue;
+                    // 【优化】使用 ComponentCache 避免重复 GetComponent
+                    if (!ComponentCache.IsAI(cmc)) continue;
 
                     var p = cmc.transform.position;
                     p.y = 0f;
@@ -493,9 +561,8 @@ public static class AITool
                     var cmc = c.GetComponentInParent<CharacterMainControl>();
                     if (!cmc || cmc.IsMainCharacter) continue;
 
-                    var isAI = cmc.GetComponent<AICharacterController>() != null
-                               || cmc.GetComponent<NetAiTag>() != null;
-                    if (!isAI) continue;
+                    // 【优化】使用 ComponentCache 避免重复 GetComponent
+                    if (!ComponentCache.IsAI(cmc)) continue;
 
                     var p = cmc.transform.position;
                     p.y = 0f;
@@ -515,8 +582,13 @@ public static class AITool
             {
                 var DamageInfo = new DamageInfo
                 {
-                    armorBreak = 999f, damageValue = 9999f, fromWeaponItemID = CharacterMainControl.Main.CurrentHoldItemAgent.Item.TypeID,
-                    damageType = DamageTypes.normal, fromCharacter = CharacterMainControl.Main, finalDamage = 9999f, toDamageReceiver = best.mainDamageReceiver
+                    armorBreak = 999f,
+                    damageValue = 9999f,
+                    fromWeaponItemID = CharacterMainControl.Main.CurrentHoldItemAgent.Item.TypeID,
+                    damageType = DamageTypes.normal,
+                    fromCharacter = CharacterMainControl.Main,
+                    finalDamage = 9999f,
+                    toDamageReceiver = best.mainDamageReceiver
                 };
                 EXPManager.AddExp(Traverse.Create(best.Health).Field<Item>("item").Value.GetInt("Exp"));
 

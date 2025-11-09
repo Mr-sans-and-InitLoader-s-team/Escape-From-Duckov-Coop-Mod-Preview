@@ -14,6 +14,7 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using EscapeFromDuckovCoopMod.Utils;
 using ItemStatsSystem;
 
 namespace EscapeFromDuckovCoopMod;
@@ -94,9 +95,8 @@ internal static class Patch_CMC_OnDead_Mark
 
         // 只给 AI 打标记（排除本机玩家）
         if (__instance == CharacterMainControl.Main) return;
-        var isAI = __instance.GetComponent<AICharacterController>() != null
-                   || __instance.GetComponent<NetAiTag>() != null;
-        if (!isAI) return;
+        // 【优化】使用 ComponentCache 避免重复 GetComponent
+        if (!ComponentCache.IsAI(__instance)) return;
 
         DeadLootSpawnContext.InOnDead = __instance;
     }
@@ -115,28 +115,38 @@ internal static class Patch_Client_OnDead_ReportCorpseTree
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return;
 
-        // 仅“客户端 + 本机玩家”分支上报
+        // 仅"客户端 + 本机玩家"分支上报
         if (mod.IsServer) return;
         if (__instance != CharacterMainControl.Main) return;
 
         // ⭐ 已经上报过（= 主机已经/可以生成过尸体战利品），直接跳过，不再创建/同步
         if (LocalPlayerManager.Instance._cliCorpseTreeReported) return;
 
-        try
+        // 【优化】延迟尸体树上报，避免死亡瞬间卡顿
+        UniTask.Void(async () =>
         {
-            // 给客户端的 CreateFromItem 拦截补丁一个“正在死亡路径”的标记，避免本地也生成（双生）
-            DeadLootSpawnContext.InOnDead = __instance;
+            try
+            {
+                await UniTask.Delay(50); // 延迟 50ms
 
-            // 首次上报整棵“尸体装备树”给主机（你已有的方法）
-            SendLocalPlayerStatus.Instance.Net_ReportPlayerDeadTree(__instance);
+                // 给客户端的 CreateFromItem 拦截补丁一个"正在死亡路径"的标记，避免本地也生成（双生）
+                DeadLootSpawnContext.InOnDead = __instance;
 
-            // ✅ 标记“本轮生命已经上报过尸体树”
-            LocalPlayerManager.Instance._cliCorpseTreeReported = true;
-        }
-        finally
-        {
-            DeadLootSpawnContext.InOnDead = null;
-        }
+                // 首次上报整棵"尸体装备树"给主机（你已有的方法）
+                SendLocalPlayerStatus.Instance.Net_ReportPlayerDeadTree(__instance);
+
+                // ✅ 标记"本轮生命已经上报过尸体树"
+                LocalPlayerManager.Instance._cliCorpseTreeReported = true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[DEATH] ReportCorpseTree failed: {e}");
+            }
+            finally
+            {
+                DeadLootSpawnContext.InOnDead = null;
+            }
+        });
     }
 }
 
@@ -277,11 +287,8 @@ internal static class Patch_CMC_SetCharacterModel_TagAndRebindOnClient
         if (mod == null || !mod.networkStarted || mod.IsServer) return; // 只在客户端处理
 
         // 给客户端的 AI 复制体打上标记，并强制重绑 Animator
-        var isAI =
-            __instance.GetComponent<AICharacterController>() != null ||
-            __instance.GetComponent<NetAiTag>() != null;
-
-        if (isAI)
+        // 【优化】使用 ComponentCache 避免重复 GetComponent
+        if (ComponentCache.IsAI(__instance))
         {
             if (!__instance.GetComponent<RemoteReplicaTag>())
                 __instance.gameObject.AddComponent<RemoteReplicaTag>();

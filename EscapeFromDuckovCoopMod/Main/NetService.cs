@@ -33,7 +33,7 @@ public class NetService : MonoBehaviour, INetEventListener
     public List<string> hostList = new();
     public bool isConnecting;
     public string status = "";
-    public string manualIP = "127.0.0.1";
+    public string manualIP = "192.168.123.1";
     public string manualPort = "9050"; // GTX 5090 我也想要
     public bool networkStarted;
     public float broadcastTimer;
@@ -52,6 +52,10 @@ public class NetService : MonoBehaviour, INetEventListener
     public readonly Dictionary<NetPeer, GameObject> remoteCharacters = new();
     public NetPeer connectedPeer;
     public HashSet<string> hostSet = new();
+    
+    // 🕐 P2P加入超时管理（仅服务端使用）
+    private readonly Dictionary<NetPeer, float> _peerConnectionTime = new();
+    private const float JOIN_TIMEOUT_SECONDS = 10f;
 
     //本地玩家状态
     public PlayerStatus localPlayerStatus;
@@ -114,6 +118,15 @@ public class NetService : MonoBehaviour, INetEventListener
             status = CoopLocalization.Get("net.connectedTo", peer.EndPoint.ToString());
             isConnecting = false;
             Send_ClientStatus.Instance.SendClientStatusUpdate();
+        }
+        else
+        {
+            // 🔧 主机：告诉客户端其真实网络ID
+            SetIdMessage.SendSetIdToPeer(peer);
+            
+            // 🕐 记录连接时间，开始超时计时
+            _peerConnectionTime[peer] = Time.time;
+            Debug.Log($"[JOIN_TIMEOUT] 玩家 {peer.EndPoint} 开始加入，超时时限: {JOIN_TIMEOUT_SECONDS}秒");
         }
 
         if (!playerStatuses.ContainsKey(peer))
@@ -197,6 +210,9 @@ public class NetService : MonoBehaviour, INetEventListener
                     peer.Send(w, DeliveryMethod.ReliableOrdered);
                 }
         }
+
+        // 🧪 发送JSON测试消息（双方都发送）
+        JsonMessage.SendTestJson(peer, writer);
     }
 
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
@@ -209,6 +225,12 @@ public class NetService : MonoBehaviour, INetEventListener
         }
 
         if (connectedPeer == peer) connectedPeer = null;
+        
+        // 🕐 清理超时记录
+        if (IsServer && _peerConnectionTime.ContainsKey(peer))
+        {
+            _peerConnectionTime.Remove(peer);
+        }
 
         if (playerStatuses.ContainsKey(peer))
         {
@@ -548,8 +570,29 @@ public class NetService : MonoBehaviour, INetEventListener
 
     public bool IsSelfId(string id)
     {
+        if (string.IsNullOrEmpty(id)) return false;
+        
         var mine = localPlayerStatus?.EndPoint;
-        return !string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(mine) && id == mine;
+        
+        // 1. 检查本地ID（SetId消息会更新这个值为主机告知的真实网络ID）
+        if (!string.IsNullOrEmpty(mine) && id == mine)
+        {
+            Debug.Log($"[IsSelfId] ✓ 匹配本地ID: {id}");
+            return true;
+        }
+        
+        // 2. 如果是客户端，检查连接的Peer地址（兜底检查）
+        if (!IsServer && connectedPeer != null)
+        {
+            var myNetworkId = connectedPeer.EndPoint?.ToString();
+            if (!string.IsNullOrEmpty(myNetworkId) && id == myNetworkId)
+            {
+                Debug.Log($"[IsSelfId] ✓ 匹配连接Peer地址: {id}");
+                return true;
+            }
+        }
+        
+        return false;
     }
 
     public string GetPlayerId(NetPeer peer)
@@ -564,5 +607,59 @@ public class NetService : MonoBehaviour, INetEventListener
         if (playerStatuses != null && playerStatuses.TryGetValue(peer, out var st) && !string.IsNullOrEmpty(st.EndPoint))
             return st.EndPoint;
         return peer.EndPoint.ToString();
+    }
+    
+    /// <summary>
+    /// 🕐 标记玩家已成功进入游戏，清除加入超时计时
+    /// </summary>
+    public void MarkPlayerJoinedSuccessfully(NetPeer peer)
+    {
+        if (!IsServer || peer == null) return;
+        
+        if (_peerConnectionTime.ContainsKey(peer))
+        {
+            var elapsed = Time.time - _peerConnectionTime[peer];
+            _peerConnectionTime.Remove(peer);
+            Debug.Log($"[JOIN_TIMEOUT] 玩家 {peer.EndPoint} 成功加入游戏，耗时: {elapsed:F2}秒");
+        }
+    }
+    
+    /// <summary>
+    /// 🕐 检查并踢出超时未进入游戏的玩家（仅服务端调用）
+    /// 应在主循环中定期调用
+    /// </summary>
+    public void CheckJoinTimeouts()
+    {
+        if (!IsServer || _peerConnectionTime.Count == 0) return;
+        
+        var now = Time.time;
+        var timeoutPeers = new List<NetPeer>();
+        
+        foreach (var kv in _peerConnectionTime)
+        {
+            var peer = kv.Key;
+            var connectTime = kv.Value;
+            var elapsed = now - connectTime;
+            
+            if (elapsed > JOIN_TIMEOUT_SECONDS)
+            {
+                timeoutPeers.Add(peer);
+                Debug.LogWarning($"[JOIN_TIMEOUT] 玩家 {peer.EndPoint} 加入超时 ({elapsed:F2}秒 > {JOIN_TIMEOUT_SECONDS}秒)，即将踢出");
+            }
+        }
+        
+        // 踢出超时玩家
+        foreach (var peer in timeoutPeers)
+        {
+            try
+            {
+                peer.Disconnect();
+                Debug.Log($"[JOIN_TIMEOUT] 已踢出超时玩家: {peer.EndPoint}");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[JOIN_TIMEOUT] 踢出玩家时出错: {ex.Message}");
+            }
+        }
     }
 }

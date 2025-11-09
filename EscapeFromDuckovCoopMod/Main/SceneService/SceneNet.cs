@@ -18,6 +18,7 @@ using Duckov.UI;
 using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 using EscapeFromDuckovCoopMod.Utils;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 
 namespace EscapeFromDuckovCoopMod;
@@ -207,6 +208,11 @@ public class SceneNet : MonoBehaviour
             connectedPeer?.SendSmart(w, Op.PLAYER_APPEARANCE);
     }
 
+    /// <summary>
+    /// ✅ 修复：主机在大型地图撤离时崩溃
+    /// 原因：立即广播导致旧场景数据未清理完成
+    /// 解决：延迟广播，等待清理完成后再执行
+    /// </summary>
     private void Server_BroadcastBeginSceneLoad()
     {
         if (Spectator.Instance._spectatorActive && Spectator.Instance._spectatorEndOnVotePending)
@@ -215,6 +221,57 @@ public class SceneNet : MonoBehaviour
             Spectator.Instance.EndSpectatorAndShowClosure();
         }
 
+        // ✅ 先清理投票状态
+        sceneVoteActive = false;
+        sceneParticipantIds.Clear();
+        ResetClientParticipantMappings();
+        sceneReady.Clear();
+        localReady = false;
+
+        // ✅ 启动延迟广播协程，等待清理完成
+        if (this != null && gameObject != null) // 确保对象未销毁
+        {
+            StartCoroutine(BroadcastAfterCleanupCoroutine());
+        }
+    }
+
+    /// <summary>
+    /// ✅ 等待清理完成后再广播场景切换
+    /// </summary>
+    private IEnumerator BroadcastAfterCleanupCoroutine()
+    {
+        Debug.Log("[SCENE] ========== 开始场景切换清理流程 ==========");
+
+        // 等待一帧，让 Unity 销毁旧场景对象
+        yield return null;
+
+        // 强制清理缓存
+        Debug.Log("[SCENE] 清理游戏对象缓存...");
+        if (Utils.GameObjectCacheManager.Instance != null)
+        {
+            Utils.GameObjectCacheManager.Instance.ClearAllCaches();
+        }
+
+        // 清理战利品数据
+        Debug.Log("[SCENE] 清理战利品数据...");
+        if (LootManager.Instance != null)
+        {
+            LootManager.Instance.ClearCaches();
+        }
+
+        // 清空异步消息队列
+        Debug.Log("[SCENE] 清空异步消息队列...");
+        if (Utils.AsyncMessageQueue.Instance != null)
+        {
+            Utils.AsyncMessageQueue.Instance.ClearQueue();
+        }
+
+        // 再等待一帧，确保所有清理完成
+        yield return null;
+
+        Debug.Log("[SCENE] ========== 清理完成，开始广播场景切换 ==========");
+
+        // 现在安全广播
         var w = new NetDataWriter();
         w.Put((byte)Op.SCENE_BEGIN_LOAD);
         w.Put((byte)1); // ver=1
@@ -227,9 +284,9 @@ public class SceneNet : MonoBehaviour
         if (hasCurtain) w.Put(sceneCurtainGuid);
         w.Put(sceneLocationName ?? "");
 
-        // ★ 群发给所有客户端（客户端会根据是否正在投票/是否在名单自行处理）
-        // 使用 SendSmart 自动选择传输方式（SCENE_BEGIN_LOAD → Critical → ReliableOrdered）
+        // ★ 群发给所有客户端
         netManager.SendSmart(w, Op.SCENE_BEGIN_LOAD);
+        Debug.Log($"[SCENE] 已广播场景切换: {sceneTargetId}");
 
         // 主机本地执行加载
         allowLocalSceneLoad = true;
@@ -245,12 +302,7 @@ public class SceneNet : MonoBehaviour
             TryPerformSceneLoad_Local(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile, sceneUseLocation, sceneLocationName);
         }
 
-        // 收尾与清理
-        sceneVoteActive = false;
-        sceneParticipantIds.Clear();
-        ResetClientParticipantMappings();
-        sceneReady.Clear();
-        localReady = false;
+        Debug.Log("[SCENE] ========== 场景切换广播流程完成 ==========");
     }
 
     // ===== 主机：有人（或主机自己）切换准备 =====
@@ -930,10 +982,10 @@ public class SceneNet : MonoBehaviour
         }
 
         // ✅ 主机会在加载完成后立即放行，正常情况下不需要等太久
-        // ✅ 60 秒超时作为保底，防止主机崩溃或网络异常导致死锁
-        _cliGateDeadline = Time.realtimeSinceStartup + 60f;
+        // ✅ 150 秒超时作为保底，防止主机崩溃或网络异常导致死锁（大型地图加载可能需要更长时间）
+        _cliGateDeadline = Time.realtimeSinceStartup + 150f;
 
-        Debug.Log($"[GATE] 客户端等待主机放行... (超时: 60秒)");
+        Debug.Log($"[GATE] 客户端等待主机放行... (超时: 150秒)");
 
         while (!_cliSceneGateReleased && Time.realtimeSinceStartup < _cliGateDeadline)
         {
@@ -950,7 +1002,7 @@ public class SceneNet : MonoBehaviour
 
         if (!_cliSceneGateReleased)
         {
-            Debug.LogWarning("[GATE] 客户端等待超时（60秒），强制开始加载。主机可能崩溃或网络异常。");
+            Debug.LogWarning("[GATE] 客户端等待超时（150秒），强制开始加载。主机可能崩溃或网络异常。");
         }
         else
         {
@@ -965,6 +1017,13 @@ public class SceneNet : MonoBehaviour
         }
         catch
         {
+        }
+
+        // ✅ 场景切换重连功能：在场景门控完成后尝试自动重连
+        if (NetService.Instance != null && !NetService.Instance.IsServer)
+        {
+            Debug.Log("[AUTO_RECONNECT] 场景门控完成，触发自动重连检查");
+            NetService.Instance.TryAutoReconnect();
         }
     }
 
@@ -1028,8 +1087,38 @@ public class SceneNet : MonoBehaviour
         // 使用 SendSmart 自动选择传输方式（SCENE_GATE_RELEASE → Critical → ReliableOrdered）
         peer.SendSmart(w, Op.SCENE_GATE_RELEASE);
 
-        // 🔧 立即发送战利品箱全量同步
-        LootFullSyncMessage.Host_SendLootFullSync(peer);
+        // ✅ 修复：异步发送战利品箱全量同步，避免主线程死锁
+        ModBehaviourF.Instance.StartCoroutine(Server_SendLootFullSyncDelayed(peer));
+    }
+
+    /// <summary>
+    /// ✅ 延迟发送战利品箱全量同步（避免主线程死锁）
+    /// ⚠️ 注意：大型地图（>500个箱子）会导致网络IO阻塞，已禁用全量同步
+    /// </summary>
+    private System.Collections.IEnumerator Server_SendLootFullSyncDelayed(NetPeer peer)
+    {
+        // 等待一帧，让主线程先完成其他操作
+        yield return null;
+
+        // ⚠️ 禁用战利品全量同步：在大型地图上会导致网络IO阻塞，主线程卡死
+        // 解决方案：完全依赖增量同步（LOOT_STATE 消息），由玩家打开箱子时触发同步
+        Debug.Log($"[GATE] 战利品全量同步已禁用（避免大型地图网络IO阻塞） → {peer.EndPoint}");
+        Debug.Log($"[GATE] 战利品将通过增量同步（玩家交互时）自动同步");
+
+        yield break;
+
+        /* 原始代码（已禁用）
+        try
+        {
+            Debug.Log($"[GATE] 开始发送战利品箱全量同步 → {peer.EndPoint}");
+            LootFullSyncMessage.Host_SendLootFullSync(peer);
+            Debug.Log($"[GATE] 战利品箱全量同步发送完成 → {peer.EndPoint}");
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[GATE] 发送战利品箱全量同步失败: {ex.Message}\n{ex.StackTrace}");
+        }
+        */
     }
 
 

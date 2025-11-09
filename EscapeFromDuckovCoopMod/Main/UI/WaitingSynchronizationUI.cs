@@ -50,6 +50,12 @@ public class WaitingSynchronizationUI : MonoBehaviour
     private float _autoProgressPercent = 0f;
     private float _lastAutoProgressTime = 0f;
 
+    // ✅ 超时保护机制
+    private float _uiShowTime = 0f;
+    private const float MAX_UI_DISPLAY_TIME = 90f; // 最大显示时间30秒
+    private const float TASK_STUCK_TIMEOUT = 30f; // 单个任务卡住超时10秒
+    private Dictionary<string, float> _taskLastUpdateTime = new Dictionary<string, float>();
+
     // 无敌状态管理
     private Health _invincibilityTargetHealth = null;
     private bool? _originalInvincibleState = null;
@@ -290,6 +296,23 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
     private void Update()
     {
+        // ✅ 超时保护：强制关闭UI
+        if (_panel != null && _panel.activeSelf)
+        {
+            float elapsedTime = Time.time - _uiShowTime;
+
+            // 1. 绝对超时保护（30秒）
+            if (elapsedTime > MAX_UI_DISPLAY_TIME)
+            {
+                Debug.LogWarning($"[SYNC_UI] ⚠️ 超时保护触发！UI已显示 {elapsedTime:F1} 秒，强制关闭");
+                ForceClose("超时保护");
+                return;
+            }
+
+            // 2. 任务卡住检测（某个任务10秒未更新）
+            CheckStuckTasks();
+        }
+
         // 旋转加载动画
         if (_loadingAnimation != null && _loadingAnimation.activeSelf)
         {
@@ -497,6 +520,39 @@ public class WaitingSynchronizationUI : MonoBehaviour
         return sceneName;
     }
 
+    /// <summary>
+    /// ✅ 检测卡住的任务并自动完成
+    /// </summary>
+    private void CheckStuckTasks()
+    {
+        if (_syncTasks.Count == 0) return;
+
+        bool anyTaskStuck = false;
+        foreach (var kv in _syncTasks.ToList()) // 使用ToList避免修改集合异常
+        {
+            if (kv.Value.IsCompleted) continue;
+
+            // 检查任务是否长时间未更新
+            if (_taskLastUpdateTime.TryGetValue(kv.Key, out float lastUpdate))
+            {
+                float timeSinceUpdate = Time.time - lastUpdate;
+                if (timeSinceUpdate > TASK_STUCK_TIMEOUT)
+                {
+                    Debug.LogWarning($"[SYNC_UI] ⚠️ 任务卡住检测：{kv.Value.Name} 已 {timeSinceUpdate:F1} 秒未更新，自动标记为完成");
+                    kv.Value.IsCompleted = true;
+                    kv.Value.Details = "（超时自动完成）";
+                    anyTaskStuck = true;
+                }
+            }
+        }
+
+        // 如果有任务被自动完成，重新检查是否可以隐藏UI
+        if (anyTaskStuck)
+        {
+            CheckAndHideIfComplete();
+        }
+    }
+
     private void CheckAndHideIfComplete()
     {
         if (_syncTasks.Count == 0)
@@ -506,6 +562,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
         if (allComplete)
         {
             _allTasksCompleted = true;
+            Debug.Log("[SYNC_UI] ✅ 所有任务完成，1秒后隐藏");
             StartCoroutine(HideAfterDelay(1f)); // 1秒后隐藏
         }
     }
@@ -513,7 +570,60 @@ public class WaitingSynchronizationUI : MonoBehaviour
     private IEnumerator HideAfterDelay(float delay)
     {
         yield return new WaitForSeconds(delay);
-        Hide();
+
+        // ✅ 双重保险：延迟后再次检查UI是否还在显示
+        if (_panel != null && _panel.activeSelf)
+        {
+            Hide();
+        }
+    }
+
+    /// <summary>
+    /// ✅ 强制关闭UI（多重保险，确保一定关闭）
+    /// </summary>
+    private void ForceClose(string reason)
+    {
+        Debug.LogWarning($"[SYNC_UI] 🔴 强制关闭UI：{reason}");
+
+        try
+        {
+            // 1. 停止所有协程
+            if (_fadeOutCoroutine != null)
+            {
+                StopCoroutine(_fadeOutCoroutine);
+                _fadeOutCoroutine = null;
+            }
+            StopAllCoroutines();
+
+            // 2. 解除无敌
+            DisableCharacterInvincibility();
+
+            // 3. 强制隐藏所有UI元素
+            if (_canvasGroup != null)
+            {
+                _canvasGroup.alpha = 0f;
+            }
+
+            if (_panel != null)
+            {
+                _panel.SetActive(false);
+            }
+
+            if (_canvas != null)
+            {
+                _canvas.enabled = false;
+            }
+
+            // 4. 重置状态
+            _allTasksCompleted = true;
+            _autoProgressEnabled = false;
+
+            Debug.Log($"[SYNC_UI] ✅ 强制关闭完成：{reason}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[SYNC_UI] 强制关闭失败: {ex.Message}");
+        }
     }
 
     private void LoadBackgroundImage(Image targetImage)
@@ -1151,6 +1261,11 @@ public class WaitingSynchronizationUI : MonoBehaviour
         _autoProgressPercent = 0f;
         _lastAutoProgressTime = 0f;
 
+        // ✅ 重置超时保护状态
+        _uiShowTime = Time.time;
+        _taskLastUpdateTime.Clear();
+        Debug.Log($"[SYNC_UI] 超时保护已启动，最大显示时间: {MAX_UI_DISPLAY_TIME} 秒");
+
         // ✅ 启用角色无敌
         EnableCharacterInvincibility();
 
@@ -1265,6 +1380,8 @@ public class WaitingSynchronizationUI : MonoBehaviour
                 IsCompleted = false,
                 Details = "",
             };
+            // ✅ 记录任务注册时间
+            _taskLastUpdateTime[taskId] = Time.time;
             Debug.Log($"[SYNC_UI] 注册任务: {taskName}");
         }
     }
@@ -1278,6 +1395,13 @@ public class WaitingSynchronizationUI : MonoBehaviour
         {
             task.IsCompleted = isCompleted;
             task.Details = details;
+
+            // ✅ 更新任务最后更新时间（只有在未完成时才更新，避免完成后还被检测为卡住）
+            if (!isCompleted)
+            {
+                _taskLastUpdateTime[taskId] = Time.time;
+            }
+
             Debug.Log(
                 $"[SYNC_UI] 任务状态更新: {task.Name} - {(isCompleted ? "完成" : "进行中")} {details}"
             );
@@ -1290,6 +1414,17 @@ public class WaitingSynchronizationUI : MonoBehaviour
     public void CompleteTask(string taskId, string details = "")
     {
         UpdateTaskStatus(taskId, true, details);
+    }
+
+    /// <summary>
+    /// ✅ 公共方法：强制关闭UI（供外部调用，如场景卸载时）
+    /// </summary>
+    public void ForceCloseIfVisible(string reason = "外部请求")
+    {
+        if (_panel != null && _panel.activeSelf)
+        {
+            ForceClose(reason);
+        }
     }
 
     /// <summary>

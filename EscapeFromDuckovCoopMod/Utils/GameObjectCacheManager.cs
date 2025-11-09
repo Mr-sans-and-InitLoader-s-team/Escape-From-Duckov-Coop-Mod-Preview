@@ -55,14 +55,40 @@ public class GameObjectCacheManager : MonoBehaviour
         try
         {
             AI.ClearCache();
-            Destructibles.RefreshCache();
+
+            // ✅ 优化：Destructibles 缓存已在 BuildDestructibleIndex 中刷新，避免重复调用 FindObjectsOfType
+            // 只在缓存过期时才刷新（10秒过期时间）
+            // Destructibles.RefreshCache(); // 注释掉以避免重复
+
             Environment.RefreshOnSceneLoad();
-            Loot.RefreshCache();
-            Debug.Log("[CacheManager] 所有缓存已刷新");
+
+            // ✅ 优化：Loot 缓存使用协程异步刷新，避免主线程阻塞
+            StartCoroutine(Loot.RefreshCacheCoroutine());
+
+            Debug.Log("[CacheManager] 所有缓存已刷新（Destructibles 跳过，Loot 异步刷新）");
         }
         catch (Exception ex)
         {
             Debug.LogError($"[CacheManager] 刷新缓存失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// ✅ 清空所有缓存（场景卸载时调用，避免旧场景对象引用残留）
+    /// </summary>
+    public void ClearAllCaches()
+    {
+        try
+        {
+            AI.ClearCache();
+            Destructibles.ClearCache();
+            Environment.ClearCache();
+            Loot.ClearCache();
+            Debug.Log("[CacheManager] 所有缓存已清空（场景卸载）");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[CacheManager] 清空缓存失败: {ex.Message}");
         }
     }
 
@@ -372,12 +398,15 @@ public class AIObjectCache
 public class DestructibleCache
 {
     private Dictionary<uint, HealthSimpleBase> _destructiblesById = new();
+    private HealthSimpleBase[] _allDestructibles; // ✅ 新增：缓存所有可破坏物的数组
     private float _lastFullScanTime;
 
     public void RefreshCache()
     {
         _destructiblesById.Clear();
         var all = Object.FindObjectsOfType<HealthSimpleBase>(true);
+        _allDestructibles = all; // ✅ 缓存数组，供 BuildDestructibleIndex 使用
+
         foreach (var hs in all)
         {
             if (!hs) continue;
@@ -388,7 +417,20 @@ public class DestructibleCache
             }
         }
         _lastFullScanTime = Time.time;
-        Debug.Log($"[DestructibleCache] 刷新缓存，找到 {_destructiblesById.Count} 个可破坏物");
+        Debug.Log($"[DestructibleCache] 刷新缓存，找到 {_destructiblesById.Count} 个可破坏物（总共 {all.Length} 个 HealthSimpleBase）");
+    }
+
+    /// <summary>
+    /// ✅ 获取所有可破坏物（供 BuildDestructibleIndex 使用，避免重复调用 FindObjectsOfType）
+    /// </summary>
+    public HealthSimpleBase[] GetAllDestructibles()
+    {
+        // 缓存过期则刷新
+        if (_allDestructibles == null || Time.time - _lastFullScanTime > 10f)
+        {
+            RefreshCache();
+        }
+        return _allDestructibles;
     }
 
     public HealthSimpleBase FindById(uint id)
@@ -427,6 +469,16 @@ public class DestructibleCache
         {
             ListPool<uint>.Return(invalidList);
         }
+    }
+
+    /// <summary>
+    /// ✅ 清空缓存（场景卸载时调用）
+    /// </summary>
+    public void ClearCache()
+    {
+        _destructiblesById.Clear();
+        _allDestructibles = null; // ✅ 清空缓存的数组
+        _lastFullScanTime = 0f;
     }
 }
 
@@ -533,6 +585,17 @@ public class EnvironmentObjectCache
         count += _cachedSceneLoaders.RemoveAll(sl => !sl);
         return count;
     }
+
+    /// <summary>
+    /// ✅ 清空缓存（场景卸载时调用）
+    /// </summary>
+    public void ClearCache()
+    {
+        _cachedLoaders.Clear();
+        _cachedDoors.Clear();
+        _cachedSceneLoaders.Clear();
+        _lastRefreshTime = 0f;
+    }
 }
 
 /// <summary>
@@ -548,6 +611,73 @@ public class LootObjectCache
     // ✅ 递归保护：防止在刷新过程中再次触发刷新导致死循环
     private static bool _isRefreshing = false;
 
+    // ✅ 委托缓存：用于快速访问 InteractableLootbox 的 inventoryReference 字段
+    private static Func<InteractableLootbox, Inventory> _getInventoryRefDelegate;
+    private static readonly object _delegateLock = new object();
+
+    /// <summary>
+    /// ✅ 初始化委托（只在第一次调用时通过反射创建，后续直接使用缓存的委托）
+    /// 性能：委托访问比反射快 100+ 倍
+    /// </summary>
+    private static void EnsureInventoryDelegateInitialized()
+    {
+        if (_getInventoryRefDelegate != null) return;
+
+        lock (_delegateLock)
+        {
+            if (_getInventoryRefDelegate != null) return;
+
+            try
+            {
+                // 通过反射获取 inventoryReference 字段
+                var fieldInfo = typeof(InteractableLootbox).GetField(
+                    "inventoryReference",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+                );
+
+                if (fieldInfo == null)
+                {
+                    Debug.LogError("[LootCache] 无法找到 InteractableLootbox.inventoryReference 字段");
+                    // 创建一个返回 null 的委托作为降级方案
+                    _getInventoryRefDelegate = (lb) => null;
+                    return;
+                }
+
+                // ✅ 使用 Expression Tree 创建高性能的字段访问委托
+                var parameter = System.Linq.Expressions.Expression.Parameter(typeof(InteractableLootbox), "lb");
+                var fieldAccess = System.Linq.Expressions.Expression.Field(parameter, fieldInfo);
+                var lambda = System.Linq.Expressions.Expression.Lambda<Func<InteractableLootbox, Inventory>>(
+                    fieldAccess,
+                    parameter
+                );
+                _getInventoryRefDelegate = lambda.Compile();
+
+                Debug.Log("[LootCache] 委托初始化成功（Expression Tree 编译）");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[LootCache] 委托初始化失败: {ex.Message}，使用降级反射方案");
+
+                // 降级方案：使用反射包装（虽然慢，但至少能工作）
+                var fieldInfo = typeof(InteractableLootbox).GetField(
+                    "inventoryReference",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+                );
+
+                if (fieldInfo != null)
+                {
+                    _getInventoryRefDelegate = (lb) => (Inventory)fieldInfo.GetValue(lb);
+                    Debug.LogWarning("[LootCache] 使用反射降级方案（性能较低）");
+                }
+                else
+                {
+                    _getInventoryRefDelegate = (lb) => null;
+                    Debug.LogError("[LootCache] 无法访问 inventoryReference 字段");
+                }
+            }
+        }
+    }
+
     public void RefreshCache()
     {
         // ✅ 递归保护：如果正在刷新，直接返回避免无限递归
@@ -561,31 +691,124 @@ public class LootObjectCache
         {
             _isRefreshing = true;
 
+            // ✅ 确保委托已初始化
+            EnsureInventoryDelegateInitialized();
+
             _allLootboxes = Object.FindObjectsOfType<InteractableLootbox>(true).ToList();
             _lootboxByInv.Clear();
+
+            int initializedCount = 0;
+            int uninitializedCount = 0;
 
             foreach (var lb in _allLootboxes)
             {
                 if (!lb) continue;
 
-                // ✅ 安全获取 Inventory：使用 try-catch 避免触发 Setup 导致的递归
+                // ✅ 关键优化：使用委托快速访问 inventoryReference 字段，避免触发 Inventory 属性的 getter
+                // Inventory 属性的 getter 会调用 GetOrCreateInventory()，触发 Setup()，导致主线程阻塞
                 try
                 {
-                    var inv = lb.Inventory;
-                    if (inv)
+                    // 使用委托直接访问字段（比反射快 100+ 倍）
+                    var inv = _getInventoryRefDelegate(lb);
+
+                    if (inv != null)
                     {
                         _lootboxByInv[inv] = lb;
+                        initializedCount++;
+                    }
+                    else
+                    {
+                        // 箱子尚未初始化（inventoryReference 为 null），跳过
+                        uninitializedCount++;
                     }
                 }
                 catch (Exception ex)
                 {
-                    // 在场景初始化期间，某些 lootbox 可能尚未完全初始化，跳过即可
-                    Debug.LogWarning($"[LootCache] 跳过未初始化的 lootbox: {lb.name}, Error: {ex.Message}");
+                    // 委托调用失败或其他异常，跳过
+                    Debug.LogWarning($"[LootCache] 跳过战利品箱: {lb.name}, Error: {ex.Message}");
+                    uninitializedCount++;
                 }
             }
 
             _lastRefreshTime = Time.time;
-            Debug.Log($"[LootCache] 刷新缓存，找到 {_allLootboxes.Count} 个战利品箱，映射 {_lootboxByInv.Count} 个 Inventory");
+            Debug.Log($"[LootCache] 刷新缓存，找到 {_allLootboxes.Count} 个战利品箱，映射 {initializedCount} 个 Inventory，跳过 {uninitializedCount} 个未初始化箱子");
+        }
+        finally
+        {
+            _isRefreshing = false;
+        }
+    }
+
+    /// <summary>
+    /// ✅ 协程版本：分帧刷新缓存，避免大型地图（760+箱子）导致主线程阻塞
+    /// 每处理50个箱子后 yield 一次，分散到多帧处理
+    /// </summary>
+    public IEnumerator RefreshCacheCoroutine()
+    {
+        // ✅ 递归保护：如果正在刷新，直接返回避免无限递归
+        if (_isRefreshing)
+        {
+            Debug.LogWarning("[LootCache] 递归调用 RefreshCacheCoroutine 被阻止，避免死循环");
+            yield break;
+        }
+
+        try
+        {
+            _isRefreshing = true;
+
+            // ✅ 确保委托已初始化
+            EnsureInventoryDelegateInitialized();
+
+            // ✅ FindObjectsOfType 本身无法分帧，但耗时相对较短（主要是后续处理耗时）
+            var allLootboxesArray = Object.FindObjectsOfType<InteractableLootbox>(true);
+            _allLootboxes = new List<InteractableLootbox>(allLootboxesArray.Length);
+            _lootboxByInv.Clear();
+
+            int initializedCount = 0;
+            int uninitializedCount = 0;
+            int processedCount = 0;
+            const int BATCH_SIZE = 50; // 每批处理50个箱子
+
+            Debug.Log($"[LootCache] 开始协程刷新缓存，共 {allLootboxesArray.Length} 个战利品箱");
+
+            foreach (var lb in allLootboxesArray)
+            {
+                if (!lb) continue;
+
+                _allLootboxes.Add(lb);
+
+                // ✅ 关键优化：使用委托快速访问 inventoryReference 字段
+                try
+                {
+                    var inv = _getInventoryRefDelegate(lb);
+
+                    if (inv != null)
+                    {
+                        _lootboxByInv[inv] = lb;
+                        initializedCount++;
+                    }
+                    else
+                    {
+                        uninitializedCount++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[LootCache] 跳过战利品箱: {lb.name}, Error: {ex.Message}");
+                    uninitializedCount++;
+                }
+
+                processedCount++;
+
+                // ✅ 每处理 BATCH_SIZE 个箱子后让出控制权，分散到下一帧
+                if (processedCount % BATCH_SIZE == 0)
+                {
+                    yield return null;
+                }
+            }
+
+            _lastRefreshTime = Time.time;
+            Debug.Log($"[LootCache] 协程刷新缓存完成，找到 {_allLootboxes.Count} 个战利品箱，映射 {initializedCount} 个 Inventory，跳过 {uninitializedCount} 个未初始化箱子");
         }
         finally
         {
@@ -651,6 +874,17 @@ public class LootObjectCache
         {
             ListPool<Inventory>.Return(invalidInvs);
         }
+    }
+
+    /// <summary>
+    /// ✅ 清空缓存（场景卸载时调用）
+    /// </summary>
+    public void ClearCache()
+    {
+        _allLootboxes.Clear();
+        _lootboxByInv.Clear();
+        _lastRefreshTime = 0f;
+        _isRefreshing = false; // 重置递归保护标志
     }
 }
 

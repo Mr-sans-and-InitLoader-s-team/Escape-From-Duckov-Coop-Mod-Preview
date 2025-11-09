@@ -59,6 +59,17 @@ public class Destructible
         else _clientDestructibles[id] = hs;
     }
 
+    /// <summary>
+    /// ✅ 清理可破坏物数据（场景卸载时调用）
+    /// </summary>
+    public void ClearDestructibles()
+    {
+        _serverDestructibles.Clear();
+        _clientDestructibles.Clear();
+        _deadDestructibleIds.Clear();
+        _dangerDestructibleIds.Clear();
+    }
+
     // 容错：找不到就全局扫一遍（场景切换后第一次命中时也能兜底）
     public HealthSimpleBase FindDestructible(uint id)
     {
@@ -431,6 +442,9 @@ public class Destructible
             }
     }
 
+    /// <summary>
+    /// ✅ 优化：使用 DestructibleCache，避免重复的 FindObjectsOfType 调用
+    /// </summary>
     public void BuildDestructibleIndex()
     {
         // —— 兜底清空，防止跨图脏状态 —— //
@@ -443,8 +457,31 @@ public class Destructible
         // 【优化】重置扫描标志
         _scanScheduled = false;
 
+        // ✅ 优化：先刷新 DestructibleCache，只执行一次 FindObjectsOfType
+        var cacheManager = Utils.GameObjectCacheManager.Instance;
+        if (cacheManager != null)
+        {
+            Debug.Log("[Destructible] 使用 DestructibleCache 构建索引");
+            cacheManager.Destructibles.RefreshCache();
+        }
+
+        // ✅ 优化：从缓存中获取所有可破坏物，避免再次调用 FindObjectsOfType
+        // 降级方案：如果缓存不可用，使用原始方法
+        HealthSimpleBase[] all = null;
+        if (cacheManager != null)
+        {
+            // 从缓存中获取所有已索引的可破坏物
+            all = cacheManager.Destructibles.GetAllDestructibles();
+        }
+
+        // 降级方案：缓存不可用时使用 FindObjectsOfType
+        if (all == null || all.Length == 0)
+        {
+            Debug.LogWarning("[Destructible] DestructibleCache 不可用，降级使用 FindObjectsOfType");
+            all = Object.FindObjectsOfType<HealthSimpleBase>(true);
+        }
+
         // 遍历所有 HSB（包含未激活物体，避免漏 index）
-        var all = Object.FindObjectsOfType<HealthSimpleBase>(true);
         for (var i = 0; i < all.Length; i++)
         {
             var hs = all[i];
@@ -471,8 +508,10 @@ public class Destructible
             RegisterDestructible(tag.id, hs);
         }
 
-        // —— 仅主机：扫描一遍“初始即已破坏”的目标，写进 _deadDestructibleIds —— //
-        if (IsServer) // ⇦ 这里用你项目中判断“是否为主机”的字段/属性；若无则换成你原有判断
+        Debug.Log($"[Destructible] 索引构建完成，共注册 {_serverDestructibles.Count + _clientDestructibles.Count} 个可破坏物");
+
+        // —— 仅主机：扫描一遍"初始即已破坏"的目标，写进 _deadDestructibleIds —— //
+        if (IsServer) // ⇦ 这里用你项目中判断"是否为主机"的字段/属性；若无则换成你原有判断
             ScanAndMarkInitiallyDeadDestructibles();
     }
 }

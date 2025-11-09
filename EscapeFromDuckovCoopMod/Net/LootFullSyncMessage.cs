@@ -90,7 +90,8 @@ public static class LootFullSyncMessage
     }
 
     /// <summary>
-    /// 主机：在SCENE_GATE_RELEASE后收集并发送所有战利品箱数据
+    /// ✅ 主机：在SCENE_GATE_RELEASE后收集并**分批异步**发送所有战利品箱数据
+    /// 修复：一次性发送大量数据（660个箱子）会阻塞网络IO，导致主线程卡死
     /// </summary>
     public static void Host_SendLootFullSync(NetPeer peer)
     {
@@ -106,21 +107,79 @@ public static class LootFullSyncMessage
             // 收集所有战利品箱数据
             var lootBoxes = CollectAllLootBoxes();
 
-            var data = new LootBoxData
+            if (lootBoxes.Length == 0)
             {
-                lootBoxes = lootBoxes,
-                timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")
-            };
+                Debug.Log($"[LootFullSync] 没有战利品箱需要同步 → {peer.EndPoint}");
+                return;
+            }
 
-            // 发送JSON消息
-            JsonMessage.SendToPeer(peer, data, DeliveryMethod.ReliableOrdered);
+            // ✅ 如果战利品箱数量较少（<50），直接发送
+            if (lootBoxes.Length < 50)
+            {
+                var data = new LootBoxData
+                {
+                    lootBoxes = lootBoxes,
+                    timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")
+                };
 
-            Debug.Log($"[LootFullSync] 发送战利品箱全量同步: {lootBoxes.Length} 个箱子 → {peer.EndPoint}");
+                JsonMessage.SendToPeer(peer, data, DeliveryMethod.ReliableOrdered);
+                Debug.Log($"[LootFullSync] 发送战利品箱全量同步: {lootBoxes.Length} 个箱子 → {peer.EndPoint}");
+            }
+            else
+            {
+                // ✅ 如果战利品箱数量较多（>=50），启动协程分批发送
+                Debug.Log($"[LootFullSync] 启动分批发送: {lootBoxes.Length} 个箱子 → {peer.EndPoint}");
+                ModBehaviourF.Instance.StartCoroutine(SendLootBoxesInBatches(peer, lootBoxes));
+            }
         }
         catch (System.Exception ex)
         {
             Debug.LogError($"[LootFullSync] 发送失败: {ex.Message}\n{ex.StackTrace}");
         }
+    }
+
+    /// <summary>
+    /// ✅ 协程：分批发送战利品箱数据，避免阻塞主线程和网络IO
+    /// </summary>
+    private static System.Collections.IEnumerator SendLootBoxesInBatches(NetPeer peer, LootBoxInfo[] allLootBoxes)
+    {
+        const int BATCH_SIZE = 50; // 每批发送50个箱子
+        int totalBatches = (allLootBoxes.Length + BATCH_SIZE - 1) / BATCH_SIZE;
+
+        Debug.Log($"[LootFullSync] 开始分批发送: 总计 {allLootBoxes.Length} 个箱子，分 {totalBatches} 批");
+
+        for (int batchIndex = 0; batchIndex < totalBatches; batchIndex++)
+        {
+            int startIndex = batchIndex * BATCH_SIZE;
+            int count = System.Math.Min(BATCH_SIZE, allLootBoxes.Length - startIndex);
+
+            // 提取当前批次的数据
+            var batch = new LootBoxInfo[count];
+            System.Array.Copy(allLootBoxes, startIndex, batch, 0, count);
+
+            try
+            {
+                var data = new LootBoxData
+                {
+                    lootBoxes = batch,
+                    timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")
+                };
+
+                // 发送当前批次
+                JsonMessage.SendToPeer(peer, data, DeliveryMethod.ReliableOrdered);
+
+                Debug.Log($"[LootFullSync] 发送批次 {batchIndex + 1}/{totalBatches}: {count} 个箱子 → {peer.EndPoint}");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[LootFullSync] 发送批次 {batchIndex + 1} 失败: {ex.Message}");
+            }
+
+            // ✅ 每发送一批后等待1帧，让网络缓冲区有时间处理，避免阻塞主线程
+            yield return null;
+        }
+
+        Debug.Log($"[LootFullSync] 分批发送完成: 总计 {allLootBoxes.Length} 个箱子 → {peer.EndPoint}");
     }
 
     /// <summary>
@@ -165,44 +224,56 @@ public static class LootFullSyncMessage
     }
 
     /// <summary>
-    /// 收集场景中所有战利品箱的数据
+    /// ✅ 收集场景中所有战利品箱的数据（优化版：避免 O(n²) 复杂度和未初始化箱子的阻塞）
     /// </summary>
     private static LootBoxInfo[] CollectAllLootBoxes()
     {
         var lootBoxList = new List<LootBoxInfo>();
+        var lootManager = LootManager.Instance;
 
-        // 查找场景中所有的InteractableLootbox
-        var allLootBoxes = UnityEngine.Object.FindObjectsOfType<InteractableLootbox>();
-
-        Debug.Log($"[LootFullSync] 找到 {allLootBoxes.Length} 个战利品箱");
-
-        foreach (var lootBox in allLootBoxes)
+        if (lootManager == null || lootManager._srvLootByUid == null)
         {
-            if (lootBox == null)
+            Debug.LogWarning("[LootFullSync] LootManager 或 _srvLootByUid 为空");
+            return lootBoxList.ToArray();
+        }
+
+        Debug.Log($"[LootFullSync] 开始收集战利品箱，共 {lootManager._srvLootByUid.Count} 个已注册的箱子");
+
+        // ✅ 优化：直接遍历 _srvLootByUid，避免 O(n²) 复杂度
+        // ✅ 关键：只同步已初始化的箱子，避免触发 Setup() 导致主线程阻塞
+        int successCount = 0;
+        int failCount = 0;
+        int skippedUninitialized = 0;
+
+        foreach (var kv in lootManager._srvLootByUid)
+        {
+            int lootUid = kv.Key;
+            var inventory = kv.Value;
+
+            if (inventory == null)
+            {
+                failCount++;
                 continue;
+            }
 
             try
             {
-                var inventory = lootBox.Inventory;
-                if (inventory == null)
+                // ✅ 使用 LootManager 的缓存查找战利品箱（不会触发初始化）
+                var lootBox = lootManager.FindLootboxByInventory(inventory);
+
+                if (lootBox == null)
                 {
-                    Debug.LogWarning($"[LootFullSync] 战利品箱 {lootBox.name} 没有Inventory");
+                    // 如果缓存中找不到，跳过（可能是动态生成的箱子尚未初始化）
+                    skippedUninitialized++;
                     continue;
                 }
 
-                // 获取lootUid（从_srvLootByUid反查）
-                int lootUid = -1;
-                var lootManager = LootManager.Instance;
-                if (lootManager != null && lootManager._srvLootByUid != null)
+                // ✅ 检查箱子是否已经初始化完成（避免访问未初始化箱子的 Inventory 属性触发 Setup）
+                // 如果 Inventory 还在加载中，跳过（避免同步不完整的数据）
+                if (inventory.Loading)
                 {
-                    foreach (var kv in lootManager._srvLootByUid)
-                    {
-                        if (kv.Value == inventory)
-                        {
-                            lootUid = kv.Key;
-                            break;
-                        }
-                    }
+                    skippedUninitialized++;
+                    continue;
                 }
 
                 // 获取aiId（暂时设为0，AI关联信息待实现）
@@ -222,14 +293,16 @@ public static class LootFullSyncMessage
                 };
 
                 lootBoxList.Add(boxInfo);
-
-                Debug.Log($"[LootFullSync] 收集战利品箱: lootUid={lootUid}, aiId={aiId}, pos={lootBox.transform.position}, items={items.Length}");
+                successCount++;
             }
             catch (System.Exception ex)
             {
-                Debug.LogError($"[LootFullSync] 收集战利品箱失败: {ex.Message}");
+                Debug.LogError($"[LootFullSync] 收集战利品箱失败 (lootUid={lootUid}): {ex.Message}");
+                failCount++;
             }
         }
+
+        Debug.Log($"[LootFullSync] 收集完成: 成功={successCount}, 跳过未初始化={skippedUninitialized}, 失败={failCount}");
 
         return lootBoxList.ToArray();
     }

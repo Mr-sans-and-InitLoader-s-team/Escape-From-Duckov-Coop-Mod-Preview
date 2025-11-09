@@ -208,37 +208,158 @@ public static class LootboxDetectUtil
         return false;
     }
 
+    // ✅ 性能优化：缓存墓碑/临时箱子的 Inventory，避免重复的 GetComponent 调用
+    private static readonly HashSet<Inventory> _tombInventories = new HashSet<Inventory>();
+    private static readonly HashSet<Inventory> _validLootboxInventories = new HashSet<Inventory>();
+    private static float _lastCacheClearTime = 0f;
+    private static readonly object _cacheLock = new object();
+
+    // ✅ 性能统计
+    private static int _totalChecks = 0;
+    private static int _cacheHits = 0;
+    private static int _tombDetections = 0;
+
+    /// <summary>
+    /// ✅ 关键修复：区分普通箱子和墓碑，使用缓存避免重复检查
+    /// 普通箱子：Inventory 在独立的 GameObject 上（通过 GetOrCreateInventory 创建）
+    /// 墓碑：Inventory 直接在墓碑 GameObject 上（通过 CreateLocalInventory 创建）
+    /// </summary>
     public static bool IsLootboxInventory(Inventory inv)
     {
+        _totalChecks++;
+
         if (inv == null) return false;
+
         // 排除私有库存（仓库/宠物包）
         if (IsPrivateInventory(inv)) return false;
 
-        // 【修复】场景切换时 LevelManager.LootBoxInventories 可能为 null，需要保护
+        // ✅ 性能优化：定期清理缓存（每30秒），避免内存泄漏
+        if (Time.time - _lastCacheClearTime > 30f)
+        {
+            lock (_cacheLock)
+            {
+                if (Time.time - _lastCacheClearTime > 30f) // 双重检查
+                {
+                    // 输出性能统计
+                    if (_totalChecks > 0)
+                    {
+                        float cacheHitRate = (_cacheHits / (float)_totalChecks) * 100f;
+                        Debug.Log($"[LootManager] 性能统计 - 总检查: {_totalChecks}, 缓存命中: {_cacheHits} ({cacheHitRate:F1}%), 墓碑检测: {_tombDetections}");
+                    }
+
+                    _tombInventories.Clear();
+                    _validLootboxInventories.Clear();
+                    _lastCacheClearTime = Time.time;
+
+                    // 重置统计
+                    _totalChecks = 0;
+                    _cacheHits = 0;
+                    _tombDetections = 0;
+                }
+            }
+        }
+
+        // ✅ 性能优化：优先检查缓存
+        lock (_cacheLock)
+        {
+            if (_tombInventories.Contains(inv))
+            {
+                _cacheHits++;
+                return false; // 已知是墓碑，直接返回
+            }
+            if (_validLootboxInventories.Contains(inv))
+            {
+                _cacheHits++;
+                return true; // 已知是有效箱子，直接返回
+            }
+        }
+
+        // ✅ 关键：检查 Inventory 是否在独立的 GameObject 上
+        // 墓碑的 Inventory 直接挂在墓碑 GameObject 上，可以通过这个特征识别
+        try
+        {
+            var lootbox = inv.GetComponent<InteractableLootbox>();
+            if (lootbox != null)
+            {
+                // ✅ Inventory 和 InteractableLootbox 在同一个 GameObject 上
+                // 这说明是墓碑（通过 CreateLocalInventory 创建）
+                lock (_cacheLock)
+                {
+                    bool isNewTomb = _tombInventories.Add(inv); // ✅ 加入墓碑缓存
+
+                    if (isNewTomb)
+                    {
+                        _tombDetections++;
+                        // ✅ 性能优化：只在第一次检测到墓碑时输出日志（带时间戳）
+                        Debug.Log($"[LootManager] [{System.DateTime.Now:HH:mm:ss.fff}] 排除墓碑 Inventory: {inv.gameObject.name}（首次检测，总计 {_tombDetections} 个墓碑）");
+                    }
+                }
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[LootManager] 检查墓碑失败: {ex.Message}");
+        }
+
+        // ✅ 关键优化：先检查 GameObject 名称，快速排除角色/宠物 Inventory
+        // 角色 Inventory 的 GameObject 名称不会包含 "Inventory_" 前缀
+        try
+        {
+            var objName = inv.gameObject.name;
+
+            // 场景中的箱子 Inventory 都有 "Inventory_" 前缀（由 GetOrCreateInventory 创建）
+            // 角色/宠物/临时 Inventory 没有这个前缀
+            if (!objName.StartsWith("Inventory_"))
+            {
+                // 不是场景箱子，直接返回 false（避免遍历字典）
+                return false;
+            }
+        }
+        catch
+        {
+            // GameObject.name 访问失败，继续使用字典检查
+        }
+
+        // ✅ 然后检查 LootBoxInventories 字典（只有可能是箱子的才会走到这里）
         try
         {
             var dict = InteractableLootbox.Inventories;
             if (dict != null)
+            {
                 foreach (var kv in dict)
+                {
                     if (kv.Value == inv)
-                        return true;
+                    {
+                        lock (_cacheLock)
+                        {
+                            _validLootboxInventories.Add(inv); // ✅ 加入有效箱子缓存
+                        }
+                        return true; // ✅ 在字典中且不是墓碑，是可同步的箱子
+                    }
+                }
+            }
         }
         catch
         {
             // 场景初始化期间，LootBoxInventories 可能为 null，忽略错误
         }
 
-        // 降级方案：查找所有 InteractableLootbox
-        // ✅ 优化：使用缓存管理器，避免 FindObjectsOfType
-        IEnumerable<InteractableLootbox> boxes = Utils.GameObjectCacheManager.Instance != null
-            ? Utils.GameObjectCacheManager.Instance.Loot.GetAllLootboxes()
-            : Object.FindObjectsOfType<InteractableLootbox>(true);
-
-        foreach (var b in boxes)
-            if (b && b.Inventory == inv)
-                return true;
-
+        // ✅ 不在字典中的 Inventory 一律返回 false
         return false;
+    }
+
+    /// <summary>
+    /// ✅ 清理 Inventory 缓存（场景卸载时调用）
+    /// </summary>
+    public static void ClearInventoryCaches()
+    {
+        lock (_cacheLock)
+        {
+            _tombInventories.Clear();
+            _validLootboxInventories.Clear();
+            _lastCacheClearTime = Time.time;
+        }
     }
 }
 
@@ -250,6 +371,12 @@ public class LootManager : MonoBehaviour
 
     // 客户端：uid -> inv
     public readonly Dictionary<int, Inventory> _cliLootByUid = new();
+
+    // ✅ 性能优化：反向索引缓存（Inventory -> uid），避免遍历字典
+    private readonly Dictionary<Inventory, int> _invToUidCache = new();
+
+    // ✅ 性能优化：反向索引缓存（Inventory -> posKey），避免遍历 Inventories 字典
+    private readonly Dictionary<Inventory, int> _invToPosKeyCache = new();
 
 
     public readonly Dictionary<uint, (Inventory inv, int pos)> _cliPendingReorder = new();
@@ -346,17 +473,37 @@ public class LootManager : MonoBehaviour
         var posKey = -1;
         var instanceId = -1;
 
-        // ✅ 修复：场景切换时 InteractableLootbox.Inventories 可能为空，添加保护
+        // ✅ 修复：场景切换时 LevelManager 或 Inventories 可能为空，添加多层保护
         try
         {
-            var dict = InteractableLootbox.Inventories;
-            if (inv != null && dict != null)
-                foreach (var kv in dict)
-                    if (kv.Value == inv)
-                    {
-                        posKey = kv.Key;
-                        break;
-                    }
+            // 先检查 LevelManager 是否存在
+            if (LevelManager.Instance == null)
+            {
+                // 场景切换时 LevelManager 可能已销毁，直接跳过
+                w.Put(posKey);
+                w.Put(instanceId);
+                w.Put(scene);
+                return;
+            }
+
+            // ✅ 优化：使用反向索引缓存，避免遍历 Inventories 字典
+            if (inv != null && _invToPosKeyCache.TryGetValue(inv, out var cachedPosKey))
+            {
+                posKey = cachedPosKey; // 从缓存中快速获取（O(1)）
+            }
+            else
+            {
+                // 缓存未命中，降级到遍历（仅第一次）
+                var dict = InteractableLootbox.Inventories;
+                if (inv != null && dict != null)
+                    foreach (var kv in dict)
+                        if (kv.Value == inv)
+                        {
+                            posKey = kv.Key;
+                            _invToPosKeyCache[inv] = posKey; // 更新缓存
+                            break;
+                        }
+            }
         }
         catch (Exception ex)
         {
@@ -382,27 +529,37 @@ public class LootManager : MonoBehaviour
             }
         }
 
-        // 稳定 ID（仅死亡箱子会命中，其它容器写 -1）
+        // ✅ 优化：稳定 ID 使用反向索引缓存，避免遍历字典
         var lootUid = -1;
-        if (IsServer)
+        if (inv != null && _invToUidCache.TryGetValue(inv, out var cachedUid))
         {
-            // 主机：从 _srvLootByUid 反查
-            foreach (var kv in _srvLootByUid)
-                if (kv.Value == inv)
-                {
-                    lootUid = kv.Key;
-                    break;
-                }
+            lootUid = cachedUid; // 从缓存中快速获取（O(1)）
         }
-        else
+        else if (inv != null)
         {
-            // 客户端：从 _cliLootByUid 反查（关键修复）
-            foreach (var kv in _cliLootByUid)
-                if (kv.Value == inv)
-                {
-                    lootUid = kv.Key;
-                    break;
-                }
+            // 缓存未命中，降级到遍历（仅第一次）
+            if (IsServer)
+            {
+                // 主机：从 _srvLootByUid 反查
+                foreach (var kv in _srvLootByUid)
+                    if (kv.Value == inv)
+                    {
+                        lootUid = kv.Key;
+                        _invToUidCache[inv] = lootUid; // 更新缓存
+                        break;
+                    }
+            }
+            else
+            {
+                // 客户端：从 _cliLootByUid 反查
+                foreach (var kv in _cliLootByUid)
+                    if (kv.Value == inv)
+                    {
+                        lootUid = kv.Key;
+                        _invToUidCache[inv] = lootUid; // 更新缓存
+                        break;
+                    }
+            }
         }
 
         w.Put(scene);
@@ -470,7 +627,7 @@ public class LootManager : MonoBehaviour
     /// <summary>
     /// ✅ 优化：快速查找 InteractableLootbox，使用缓存避免 FindObjectsOfType
     /// </summary>
-    private InteractableLootbox FindLootboxByInventory(Inventory inv)
+    public InteractableLootbox FindLootboxByInventory(Inventory inv)
     {
         if (!inv) return null;
 
@@ -917,6 +1074,8 @@ public class LootManager : MonoBehaviour
     public void ClearCaches()
     {
         _invToLootboxCache.Clear();
+        _invToUidCache.Clear(); // ✅ 同步清理反向索引缓存
+        _invToPosKeyCache.Clear(); // ✅ 同步清理 posKey 缓存
         _pendingBroadcastInvs.Clear();
         _hasPendingBroadcasts = false;
         _lastLootboxCacheUpdate = 0f;

@@ -42,10 +42,10 @@ namespace EscapeFromDuckovCoopMod.Utils
         private readonly Queue<QueuedMessage> _messageQueue = new Queue<QueuedMessage>();
         private readonly object _queueLock = new object();
 
-        // 处理速率控制
-        private int _messagesPerFrame = 30; // 正常模式：每帧处理 30 个消息（优化后）
-        private const int BULK_MODE_MESSAGES_PER_FRAME = 100; // 批量模式：每帧处理 100 个消息（大幅提升）
-        private const float BULK_MODE_DURATION = 20f; // 批量模式持续 20 秒（延长以覆盖整个场景加载）
+        // 处理速率控制（✅ 进一步优化：配合协程异步处理）
+        private int _messagesPerFrame = 50; // 正常模式：每帧处理 50 个消息
+        private const int BULK_MODE_MESSAGES_PER_FRAME = 200; // 批量模式：每帧处理 200 个消息（配合协程异步，大幅提升）
+        private const float BULK_MODE_DURATION = 30f; // 批量模式持续 30 秒（覆盖整个场景加载和初期同步）
 
         private bool _bulkMode = false; // ✅ 默认禁用，在 Op.SCENE_BEGIN_LOAD 时启用
         private float _bulkModeEndTime = 0f;
@@ -163,9 +163,10 @@ namespace EscapeFromDuckovCoopMod.Utils
 
                 processed++;
 
-                // ✅ 优化：单帧时间预算增加到 10ms（批量模式）或 8ms（正常模式）
-                // 60fps = 16.67ms/帧，留出 6-8ms 给渲染和其他逻辑
-                float timeLimit = _bulkMode ? 0.010f : 0.008f;
+                // ✅ 优化：配合协程异步处理，时间预算提高到 15ms（批量模式）或 10ms（正常模式）
+                // 启动协程的开销很小，可以处理更多消息
+                // 60fps = 16.67ms/帧，批量模式留 1.67ms 给渲染，正常模式留 6.67ms
+                float timeLimit = _bulkMode ? 0.015f : 0.010f;
                 if (Time.realtimeSinceStartup - startTime > timeLimit)
                 {
                     break;
@@ -178,6 +179,24 @@ namespace EscapeFromDuckovCoopMod.Utils
             if (_totalQueued > 0)
             {
                 Debug.Log($"[AsyncQueue] 统计 - 队列大小: {_currentQueueSize}, 已处理: {_totalProcessed}, 已入队: {_totalQueued}, 模式: {(_bulkMode ? "批量" : "正常")}");
+            }
+        }
+
+        /// <summary>
+        /// ✅ 清空消息队列（场景切换时调用，避免处理旧场景消息）
+        /// </summary>
+        public void ClearQueue()
+        {
+            lock (_queueLock)
+            {
+                int count = _messageQueue.Count;
+                _messageQueue.Clear();
+                _currentQueueSize = 0;
+
+                if (count > 0)
+                {
+                    Debug.Log($"[AsyncQueue] 清空队列，丢弃 {count} 条消息（场景切换）");
+                }
             }
         }
 

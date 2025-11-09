@@ -198,26 +198,63 @@ public class LootNet
         // ★ 容量安全阈值：防止因为误匹配把 UI 撑爆（真正根因是冲突/错配）
         capacity = Mathf.Clamp(capacity, 1, 128);
 
+        // ✅ 提取所有物品数据
+        var itemData = new List<(int pos, ItemSnapshot snap)>(count);
+        for (var k = 0; k < count; ++k)
+        {
+            var pos = r.GetInt();
+            var snap = ItemTool.ReadItemSnapshot(r);
+            itemData.Add((pos, snap));
+        }
+
+        // ✅ 启动协程异步处理（分帧执行，避免掉帧）
+        ModBehaviourF.Instance.StartCoroutine(Client_ApplyLootboxStateCoroutine(inv, capacity, itemData));
+    }
+
+    /// <summary>
+    /// ✅ 协程：分帧处理战利品箱状态更新，避免主线程阻塞导致掉帧
+    /// </summary>
+    private System.Collections.IEnumerator Client_ApplyLootboxStateCoroutine(
+        Inventory inv,
+        int capacity,
+        List<(int pos, ItemSnapshot snap)> itemData)
+    {
+        if (inv == null) yield break;
+
         _applyingLootState = true;
         try
         {
             inv.SetCapacity(capacity);
             inv.Loading = false;
 
+            // ✅ 删除旧物品（每删除 5 个物品后 yield 一次）
+            int deleteCount = 0;
             for (var i = inv.Content.Count - 1; i >= 0; --i)
             {
                 Item removed;
                 inv.RemoveAt(i, out removed);
                 if (removed) Object.Destroy(removed.gameObject);
+
+                deleteCount++;
+                if (deleteCount % 5 == 0)
+                {
+                    yield return null; // 每删除5个物品后等待1帧
+                }
             }
 
-            for (var k = 0; k < count; ++k)
+            // ✅ 添加新物品（每添加 3 个物品后 yield 一次）
+            int addCount = 0;
+            foreach (var (pos, snap) in itemData)
             {
-                var pos = r.GetInt();
-                var snap = ItemTool.ReadItemSnapshot(r);
                 var item = ItemTool.BuildItemFromSnapshot(snap);
                 if (item == null) continue;
                 inv.AddAt(item, pos);
+
+                addCount++;
+                if (addCount % 3 == 0)
+                {
+                    yield return null; // 每添加3个物品后等待1帧（物品创建比删除更耗时）
+                }
             }
         }
         finally
@@ -225,7 +262,7 @@ public class LootNet
             _applyingLootState = false;
         }
 
-
+        // ✅ 刷新 UI（如果箱子正在被查看）
         try
         {
             var lv = LootView.Instance;

@@ -43,6 +43,19 @@ public class NetService : MonoBehaviour, INetEventListener
 
     public readonly HashSet<int> _dedupeShotFrame = new(); // 本帧已发过的标记
 
+    // ===== 场景切换重连功能 =====
+    // 缓存成功连接的IP和端口，用于场景切换后自动重连
+    public string cachedConnectedIP = "";
+    public int cachedConnectedPort = 0;
+    public bool hasSuccessfulConnection = false;
+
+    // 重连防抖机制 - 防止重连触发过于频繁
+    private float lastReconnectTime = 0f;
+    private const float RECONNECT_COOLDOWN = 10f; // 10秒冷却时间
+
+    // 连接类型标记 - 区分手动连接和自动重连
+    private bool isManualConnection = false; // true: 手动连接(UI点击), false: 自动重连
+
     // 客户端：按 endPoint(玩家ID) 管理
     public readonly Dictionary<string, PlayerStatus> clientPlayerStatuses = new();
     public readonly Dictionary<string, GameObject> clientRemoteCharacters = new();
@@ -52,7 +65,7 @@ public class NetService : MonoBehaviour, INetEventListener
     public readonly Dictionary<NetPeer, GameObject> remoteCharacters = new();
     public NetPeer connectedPeer;
     public HashSet<string> hostSet = new();
-    
+
     // 🕐 P2P加入超时管理（仅服务端使用）
     private readonly Dictionary<NetPeer, float> _peerConnectionTime = new();
     private const float JOIN_TIMEOUT_SECONDS = 10f;
@@ -118,12 +131,22 @@ public class NetService : MonoBehaviour, INetEventListener
             status = CoopLocalization.Get("net.connectedTo", peer.EndPoint.ToString());
             isConnecting = false;
             Send_ClientStatus.Instance.SendClientStatusUpdate();
+
+            // ✅ 场景切换重连功能：仅在手动连接成功时缓存IP和端口
+            if (isManualConnection && peer.EndPoint is IPEndPoint ipEndPoint)
+            {
+                cachedConnectedIP = ipEndPoint.Address.ToString();
+                cachedConnectedPort = ipEndPoint.Port;
+                hasSuccessfulConnection = true;
+                isManualConnection = false; // 重置标记
+                Debug.Log($"[AUTO_RECONNECT] 缓存连接信息 - IP: {cachedConnectedIP}, Port: {cachedConnectedPort}");
+            }
         }
         else
         {
             // 🔧 主机：告诉客户端其真实网络ID
             SetIdMessage.SendSetIdToPeer(peer);
-            
+
             // 🕐 记录连接时间，开始超时计时
             _peerConnectionTime[peer] = Time.time;
             Debug.Log($"[JOIN_TIMEOUT] 玩家 {peer.EndPoint} 开始加入，超时时限: {JOIN_TIMEOUT_SECONDS}秒");
@@ -225,7 +248,7 @@ public class NetService : MonoBehaviour, INetEventListener
         }
 
         if (connectedPeer == peer) connectedPeer = null;
-        
+
         // 🕐 清理超时记录
         if (IsServer && _peerConnectionTime.ContainsKey(peer))
         {
@@ -487,6 +510,9 @@ public class NetService : MonoBehaviour, INetEventListener
 
     public void ConnectToHost(string ip, int port)
     {
+        // ✅ 标记为手动连接（由UI点击触发）
+        isManualConnection = true;
+
         // 基础校验
         if (string.IsNullOrWhiteSpace(ip))
         {
@@ -571,16 +597,16 @@ public class NetService : MonoBehaviour, INetEventListener
     public bool IsSelfId(string id)
     {
         if (string.IsNullOrEmpty(id)) return false;
-        
+
         var mine = localPlayerStatus?.EndPoint;
-        
+
         // 1. 检查本地ID（SetId消息会更新这个值为主机告知的真实网络ID）
         if (!string.IsNullOrEmpty(mine) && id == mine)
         {
             Debug.Log($"[IsSelfId] ✓ 匹配本地ID: {id}");
             return true;
         }
-        
+
         // 2. 如果是客户端，检查连接的Peer地址（兜底检查）
         if (!IsServer && connectedPeer != null)
         {
@@ -591,7 +617,7 @@ public class NetService : MonoBehaviour, INetEventListener
                 return true;
             }
         }
-        
+
         return false;
     }
 
@@ -608,14 +634,14 @@ public class NetService : MonoBehaviour, INetEventListener
             return st.EndPoint;
         return peer.EndPoint.ToString();
     }
-    
+
     /// <summary>
     /// 🕐 标记玩家已成功进入游戏，清除加入超时计时
     /// </summary>
     public void MarkPlayerJoinedSuccessfully(NetPeer peer)
     {
         if (!IsServer || peer == null) return;
-        
+
         if (_peerConnectionTime.ContainsKey(peer))
         {
             var elapsed = Time.time - _peerConnectionTime[peer];
@@ -623,7 +649,7 @@ public class NetService : MonoBehaviour, INetEventListener
             Debug.Log($"[JOIN_TIMEOUT] 玩家 {peer.EndPoint} 成功加入游戏，耗时: {elapsed:F2}秒");
         }
     }
-    
+
     /// <summary>
     /// 🕐 检查并踢出超时未进入游戏的玩家（仅服务端调用）
     /// 应在主循环中定期调用
@@ -631,23 +657,23 @@ public class NetService : MonoBehaviour, INetEventListener
     public void CheckJoinTimeouts()
     {
         if (!IsServer || _peerConnectionTime.Count == 0) return;
-        
+
         var now = Time.time;
         var timeoutPeers = new List<NetPeer>();
-        
+
         foreach (var kv in _peerConnectionTime)
         {
             var peer = kv.Key;
             var connectTime = kv.Value;
             var elapsed = now - connectTime;
-            
+
             if (elapsed > JOIN_TIMEOUT_SECONDS)
             {
                 timeoutPeers.Add(peer);
                 Debug.LogWarning($"[JOIN_TIMEOUT] 玩家 {peer.EndPoint} 加入超时 ({elapsed:F2}秒 > {JOIN_TIMEOUT_SECONDS}秒)，即将踢出");
             }
         }
-        
+
         // 踢出超时玩家
         foreach (var peer in timeoutPeers)
         {
@@ -661,5 +687,50 @@ public class NetService : MonoBehaviour, INetEventListener
                 Debug.LogError($"[JOIN_TIMEOUT] 踢出玩家时出错: {ex.Message}");
             }
         }
+    }
+
+    /// <summary>
+    /// ✅ 场景切换自动重连功能
+    /// 自动重连到上次成功连接的主机
+    /// </summary>
+    public void TryAutoReconnect()
+    {
+        // 防抖检查：距离上次重连必须超过冷却时间
+        float timeSinceLastReconnect = Time.time - lastReconnectTime;
+        if (timeSinceLastReconnect < RECONNECT_COOLDOWN)
+        {
+            Debug.LogWarning($"[AUTO_RECONNECT] 重连请求被拒绝：冷却中 (剩余 {RECONNECT_COOLDOWN - timeSinceLastReconnect:F1} 秒)");
+            return;
+        }
+
+        // 检查是否有缓存的连接信息
+        if (!hasSuccessfulConnection || string.IsNullOrEmpty(cachedConnectedIP) || cachedConnectedPort == 0)
+        {
+            Debug.LogWarning("[AUTO_RECONNECT] 无缓存的连接信息，跳过自动重连");
+            return;
+        }
+
+        // 检查当前是否已经连接
+        if (connectedPeer != null && connectedPeer.ConnectionState == ConnectionState.Connected)
+        {
+            Debug.Log("[AUTO_RECONNECT] 已经连接，跳过自动重连");
+            return;
+        }
+
+        // 检查是否正在连接
+        if (isConnecting)
+        {
+            Debug.LogWarning("[AUTO_RECONNECT] 正在连接中，跳过自动重连");
+            return;
+        }
+
+        // 更新重连时间
+        lastReconnectTime = Time.time;
+
+        // ⚠️ 重要：不设置 isManualConnection，因为这是自动重连，不应该更新缓存
+        Debug.Log($"[AUTO_RECONNECT] 尝试自动重连到: {cachedConnectedIP}:{cachedConnectedPort}");
+
+        // 执行连接
+        ConnectToHost(cachedConnectedIP, cachedConnectedPort);
     }
 }

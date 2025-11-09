@@ -584,6 +584,25 @@ public class AIHandle
     }
 
     /// <summary>
+    /// ✅ 清理AI装备同步追踪数据（场景卸载时调用）
+    /// </summary>
+    public void ClearAiLoadoutTracking()
+    {
+        _clientAiLoadoutsReceived = 0;
+        _clientLastAiLoadoutTime = 0f;
+
+        if (_clientAiLoadoutTimeoutCoroutine != null && ModBehaviourF.Instance != null)
+        {
+            try
+            {
+                ModBehaviourF.Instance.StopCoroutine(_clientAiLoadoutTimeoutCoroutine);
+            }
+            catch { }
+            _clientAiLoadoutTimeoutCoroutine = null;
+        }
+    }
+
+    /// <summary>
     /// ✅ 客户端：收到AI装备消息时调用
     /// </summary>
     public void Client_OnAiLoadoutReceived()

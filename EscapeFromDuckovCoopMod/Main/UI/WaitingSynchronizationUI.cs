@@ -44,6 +44,15 @@ public class WaitingSynchronizationUI : MonoBehaviour
     // 淡出协程引用
     private Coroutine _fadeOutCoroutine = null;
 
+    // 自动进度增长（75%后启用）
+    private bool _autoProgressEnabled = false;
+    private float _autoProgressPercent = 0f;
+    private float _lastAutoProgressTime = 0f;
+
+    // 无敌状态管理
+    private Health _invincibilityTargetHealth = null;
+    private bool? _originalInvincibleState = null;
+
     public class SyncTaskStatus
     {
         public string Name;
@@ -142,6 +151,9 @@ public class WaitingSynchronizationUI : MonoBehaviour
         titleRect.anchorMax = new Vector2(1, 1);
         titleRect.anchoredPosition = new Vector2(0, -80);
         titleRect.sizeDelta = new Vector2(0, 80);
+
+        // ========== 右上角关闭按钮 ==========
+        CreateCloseButton();
 
         // ========== 左侧玩家列表 ==========
         _playerListContainer = new GameObject("PlayerListContainer");
@@ -302,6 +314,40 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
             // 计算百分比
             float percent = (float)completed / total * 100f;
+
+            // ✅ 启用自动进度增长（达到75%后）
+            if (percent >= 75f && !_autoProgressEnabled)
+            {
+                _autoProgressEnabled = true;
+                _autoProgressPercent = percent;
+                _lastAutoProgressTime = Time.time;
+                Debug.Log($"[SYNC_UI] 启用自动进度增长，当前进度: {percent:F0}%");
+            }
+
+            // ✅ 自动进度增长逻辑（每秒+1%）
+            if (_autoProgressEnabled)
+            {
+                float timeSinceLastUpdate = Time.time - _lastAutoProgressTime;
+                if (timeSinceLastUpdate >= 1f)
+                {
+                    _autoProgressPercent += 1f;
+                    _lastAutoProgressTime = Time.time;
+                    Debug.Log($"[SYNC_UI] 自动进度增长: {_autoProgressPercent:F0}%");
+                }
+
+                // 使用自动进度（但不超过100%）
+                percent = Mathf.Min(_autoProgressPercent, 100f);
+
+                // ✅ 达到100%时立即关闭
+                if (percent >= 100f)
+                {
+                    Debug.Log("[SYNC_UI] 进度达到100%，立即关闭UI");
+                    _syncStatusText.text = "加载完成！";
+                    Close(); // 立即关闭，无淡出效果
+                    return;
+                }
+            }
+
             _syncPercentText.text = $"{percent:F0}%";
 
             // 根据进度改变颜色
@@ -319,15 +365,22 @@ public class WaitingSynchronizationUI : MonoBehaviour
             }
 
             // 显示当前正在执行的任务
-            var currentTask = _syncTasks.FirstOrDefault(t => !t.Value.IsCompleted);
-            if (currentTask.Value != null)
+            if (_autoProgressEnabled)
             {
-                string detail = string.IsNullOrEmpty(currentTask.Value.Details) ? "" : $" - {currentTask.Value.Details}";
-                _syncStatusText.text = $"{currentTask.Value.Name}{detail}";
+                _syncStatusText.text = "即将完成...";
             }
             else
             {
-                _syncStatusText.text = "同步完成！";
+                var currentTask = _syncTasks.FirstOrDefault(t => !t.Value.IsCompleted);
+                if (currentTask.Value != null)
+                {
+                    string detail = string.IsNullOrEmpty(currentTask.Value.Details) ? "" : $" - {currentTask.Value.Details}";
+                    _syncStatusText.text = $"{currentTask.Value.Name}{detail}";
+                }
+                else
+                {
+                    _syncStatusText.text = "同步完成！";
+                }
             }
         }
         catch (Exception ex)
@@ -585,6 +638,56 @@ public class WaitingSynchronizationUI : MonoBehaviour
         image.sprite = sprite;
 
         return loadingObj;
+    }
+
+    /// <summary>
+    /// 创建右上角关闭按钮
+    /// </summary>
+    private void CreateCloseButton()
+    {
+        var closeButtonObj = new GameObject("CloseButton");
+        closeButtonObj.transform.SetParent(_panel.transform);
+
+        var buttonRect = closeButtonObj.AddComponent<RectTransform>();
+        buttonRect.anchorMin = new Vector2(1, 1);
+        buttonRect.anchorMax = new Vector2(1, 1);
+        buttonRect.pivot = new Vector2(1, 1);
+        buttonRect.anchoredPosition = new Vector2(-30, -30); // 距离右上角 30 像素
+        buttonRect.sizeDelta = new Vector2(60, 60); // 60x60 的按钮
+
+        var button = closeButtonObj.AddComponent<Button>();
+        var buttonImage = closeButtonObj.AddComponent<Image>();
+        buttonImage.color = new Color(0.8f, 0.2f, 0.2f, 0.8f); // 半透明红色
+
+        // 直接在按钮上添加文字
+        var textObj = new GameObject("Text");
+        textObj.transform.SetParent(closeButtonObj.transform);
+        var textRect = textObj.AddComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.sizeDelta = Vector2.zero;
+        textRect.anchoredPosition = Vector2.zero;
+
+        var text = textObj.AddComponent<TextMeshProUGUI>();
+        text.text = "X";
+        text.fontSize = 40;
+        text.fontStyle = FontStyles.Bold;
+        text.color = Color.white;
+        text.alignment = TextAlignmentOptions.Center;
+
+        // 按钮点击事件
+        button.onClick.AddListener(() =>
+        {
+            Debug.Log("[SYNC_UI] 用户点击关闭按钮");
+            Close(); // 立即关闭，无淡出效果
+        });
+
+        // 悬停效果
+        var colors = button.colors;
+        colors.normalColor = new Color(0.8f, 0.2f, 0.2f, 0.8f);
+        colors.highlightedColor = new Color(1f, 0.3f, 0.3f, 1f);
+        colors.pressedColor = new Color(0.6f, 0.1f, 0.1f, 1f);
+        button.colors = colors;
     }
 
 
@@ -974,6 +1077,14 @@ public class WaitingSynchronizationUI : MonoBehaviour
         _syncTasks.Clear();
         _allTasksCompleted = false;
 
+        // ✅ 重置自动进度状态
+        _autoProgressEnabled = false;
+        _autoProgressPercent = 0f;
+        _lastAutoProgressTime = 0f;
+
+        // ✅ 启用角色无敌
+        EnableCharacterInvincibility();
+
         Debug.Log("[SYNC_UI] 显示同步等待界面完成");
     }
 
@@ -982,6 +1093,9 @@ public class WaitingSynchronizationUI : MonoBehaviour
     /// </summary>
     public void Hide()
     {
+        // ✅ 强制解除角色无敌
+        DisableCharacterInvincibility();
+
         if (_panel != null && _panel.activeSelf)
         {
             // 停止之前的淡出协程（如果有）
@@ -999,6 +1113,40 @@ public class WaitingSynchronizationUI : MonoBehaviour
         }
 
         Debug.Log("[SYNC_UI] 开始淡出隐藏同步等待界面");
+    }
+
+    /// <summary>
+    /// 立即关闭同步等待界面（无淡出效果）
+    /// </summary>
+    public void Close()
+    {
+        // ✅ 强制解除角色无敌
+        DisableCharacterInvincibility();
+
+        // 停止淡出协程（如果有）
+        if (_fadeOutCoroutine != null)
+        {
+            StopCoroutine(_fadeOutCoroutine);
+            _fadeOutCoroutine = null;
+        }
+
+        // 立即隐藏
+        if (_canvasGroup != null)
+        {
+            _canvasGroup.alpha = 0f;
+        }
+
+        if (_panel != null)
+        {
+            _panel.SetActive(false);
+        }
+
+        if (_canvas != null)
+        {
+            _canvas.enabled = false;
+        }
+
+        Debug.Log("[SYNC_UI] 立即关闭同步等待界面");
     }
 
     /// <summary>
@@ -1122,6 +1270,85 @@ public class WaitingSynchronizationUI : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogWarning($"[SYNC_UI] 更新玩家列表失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 启用角色无敌状态
+    /// </summary>
+    private void EnableCharacterInvincibility()
+    {
+        try
+        {
+            var character = CharacterMainControl.Main;
+            if (character == null)
+            {
+                Debug.LogWarning("[SYNC_UI] 无法启用无敌：角色为空");
+                return;
+            }
+
+            var health = character.Health;
+            if (health == null)
+            {
+                Debug.LogWarning("[SYNC_UI] 无法启用无敌：Health组件为空");
+                return;
+            }
+
+            // 如果已经在追踪其他Health对象，先恢复
+            if (_invincibilityTargetHealth != null && _invincibilityTargetHealth != health)
+            {
+                DisableCharacterInvincibility();
+            }
+
+            // 保存原始状态
+            if (_originalInvincibleState == null)
+            {
+                _originalInvincibleState = health.Invincible;
+                Debug.Log($"[SYNC_UI] 保存原始无敌状态: {_originalInvincibleState.Value}");
+            }
+
+            // 启用无敌
+            if (!health.Invincible)
+            {
+                health.SetInvincible(true);
+                Debug.Log("[SYNC_UI] ✅ 已启用角色无敌");
+            }
+            else
+            {
+                Debug.Log("[SYNC_UI] 角色已处于无敌状态");
+            }
+
+            _invincibilityTargetHealth = health;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[SYNC_UI] 启用无敌失败: {ex.Message}\n{ex.StackTrace}");
+        }
+    }
+
+    /// <summary>
+    /// 解除角色无敌状态（恢复原始状态）
+    /// </summary>
+    private void DisableCharacterInvincibility()
+    {
+        try
+        {
+            if (_invincibilityTargetHealth != null && _originalInvincibleState != null)
+            {
+                _invincibilityTargetHealth.SetInvincible(_originalInvincibleState.Value);
+                Debug.Log($"[SYNC_UI] ✅ 已恢复角色无敌状态为: {_originalInvincibleState.Value}");
+            }
+            else if (_invincibilityTargetHealth == null && _originalInvincibleState != null)
+            {
+                Debug.LogWarning("[SYNC_UI] Health对象已失效，无法恢复无敌状态");
+            }
+
+            _invincibilityTargetHealth = null;
+            _originalInvincibleState = null;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[SYNC_UI] 解除无敌失败: {ex.Message}\n{ex.StackTrace}");
         }
     }
 }

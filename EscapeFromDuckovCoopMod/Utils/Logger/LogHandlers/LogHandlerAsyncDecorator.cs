@@ -27,7 +27,7 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
     /// asyncHandler.Dispose(); // 等待所有日志写入完成
     /// </code>
     /// </example>
-    public class LogHandlerAsyncDecorator : ILogHandler, IDisposable
+    public class LogHandlerAsyncDecorator : ILogHandler, IDisposable, IDecorator<ILogHandler>
     {
         /// <summary>
         /// 队列溢出时的处理策略
@@ -54,6 +54,8 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
         /// 被装饰的日志处理器
         /// </summary>
         public ILogHandler LogHandler { get; }
+
+        public ILogHandler Inner => LogHandler;
 
         /// <summary>
         /// 队列溢出策略
@@ -84,7 +86,7 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
         /// </summary>
         public int DroppedCount => _droppedCount;
 
-        private readonly BlockingCollection<Action> _logQueue;
+        private readonly BlockingCollection<AsyncLog> _logQueue;
 
         private readonly Thread _consumerThread;
 
@@ -103,7 +105,13 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
         /// <param name="threadName">后台线程名称，用于调试</param>
         /// <exception cref="ArgumentNullException">logHandler 为 null</exception>
         /// <exception cref="ArgumentOutOfRangeException">queueCapacity 小于 1</exception>
-        public LogHandlerAsyncDecorator(ILogHandler logHandler, int queueCapacity = 1000, OverflowStrategy strategy = OverflowStrategy.Block, string threadName = "AsyncLogWorker")
+        public static LogHandlerAsyncDecorator CreateDecorator<TLogHandler>(TLogHandler logHandler, int queueCapacity = 1000, OverflowStrategy strategy = OverflowStrategy.Block, string threadName = "AsyncLogWorker")
+            where TLogHandler : ILogHandler, ILogHandler<AsyncLog>
+        {
+            return new LogHandlerAsyncDecorator(logHandler, queueCapacity, strategy, threadName);
+        }
+
+        private LogHandlerAsyncDecorator(ILogHandler logHandler, int queueCapacity, OverflowStrategy strategy, string threadName)
         {
             if (queueCapacity < 1) throw new ArgumentOutOfRangeException(nameof(queueCapacity), "队列容量必须至少为 1");
             LogHandler = logHandler ?? throw new ArgumentNullException(nameof(logHandler));
@@ -112,7 +120,7 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
             Strategy = strategy;
 
             // 使用 BlockingCollection 包装 ConcurrentQueue 以支持阻塞操作
-            _logQueue = new BlockingCollection<Action>(new ConcurrentQueue<Action>(), queueCapacity);
+            _logQueue = new BlockingCollection<AsyncLog>(new ConcurrentQueue<AsyncLog>(), queueCapacity);
 
             // 启动后台消费线程
             _consumerThread = new Thread(ProcessQueue)
@@ -141,18 +149,18 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
             var logCopy = log;
 
             // 创建异步执行的委托
-            Action logAction = () =>
+            Action<ILogHandler> logAction = (handler) =>
             {
                 try
                 {
                     // 优先调用特化版本
-                    if (LogHandler is ILogHandler<TLog> typedHandler)
+                    if (handler is ILogHandler<TLog> typedHandler)
                     {
                         typedHandler.Log(logCopy);
                     }
                     else
                     {
-                        LogHandler.Log(logCopy);
+                        handler.Log(logCopy);
                     }
                 }
                 catch (Exception ex)
@@ -168,7 +176,7 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
                 case OverflowStrategy.Block:
                     try
                     {
-                        _logQueue.Add(logAction); // 阻塞直到队列有空间
+                        _logQueue.Add(new AsyncLog(logAction)); // 阻塞直到队列有空间
                     }
                     catch (InvalidOperationException)
                     {
@@ -177,14 +185,14 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
                     break;
 
                 case OverflowStrategy.DropNew:
-                    if (!_logQueue.TryAdd(logAction))
+                    if (!_logQueue.TryAdd(new AsyncLog(logAction)))
                     {
                         Interlocked.Increment(ref _droppedCount);
                     }
                     break;
 
                 case OverflowStrategy.DropOldest:
-                    while (!_logQueue.TryAdd(logAction))
+                    while (!_logQueue.TryAdd(new AsyncLog(logAction)))
                     {
                         // 尝试移除最旧的元素
                         if (_logQueue.TryTake(out _))
@@ -207,10 +215,11 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
         {
             try
             {
+                ILogHandler<AsyncLog> asyncLogHandler = LogHandler as ILogHandler<AsyncLog>;
                 // 持续从队列中取出并执行日志操作
-                foreach (var action in _logQueue.GetConsumingEnumerable())
+                foreach (var asyncLog in _logQueue.GetConsumingEnumerable())
                 {
-                    action.Invoke();
+                    asyncLogHandler.Log(asyncLog);
                 }
             }
             catch (Exception ex)
@@ -302,7 +311,25 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
             Dispose(false);
         }
 
+        public struct AsyncLog : ILog
+        {
+            public LogLevel Level => LogLevel.Custom;
 
+            public DateTime Timestamp { get; }
+
+            public Action<ILogHandler> LogAction { get; }
+
+            public AsyncLog(Action<ILogHandler> logAction)
+            {
+                LogAction = logAction;
+                Timestamp = DateTime.Now;
+            }
+
+            public string ParseToString()
+            {
+                return String.Empty;
+            }
+        }
     }
 
     /// <summary>
@@ -312,7 +339,7 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
     /// <remarks>
     /// 功能与 <see cref="LogHandlerAsyncDecorator"/> 相同，但仅处理特定类型的日志
     /// </remarks>
-    public class LogHandlerAsyncDecorator<TLog> : ILogHandler<TLog>, IDisposable
+    public class LogHandlerAsyncDecorator<TLog> : ILogHandler<TLog>, IDisposable, IDecorator<ILogHandler<TLog>>
         where TLog : struct, ILog
     {
         /// <summary>
@@ -340,6 +367,8 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
         /// 被装饰的日志处理器
         /// </summary>
         public ILogHandler<TLog> LogHandler { get; }
+
+        public ILogHandler<TLog> Inner => LogHandler;
 
         /// <summary>
         /// 队列溢出策略
@@ -370,7 +399,7 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
         /// </summary>
         public int DroppedCount => _droppedCount;
 
-        private readonly BlockingCollection<TLog> _logQueue;
+        private readonly BlockingCollection<AsyncLog> _logQueue;
 
         private readonly Thread _consumerThread;
 
@@ -389,7 +418,13 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
         /// <param name="threadName">后台线程名称，用于调试</param>
         /// <exception cref="ArgumentNullException">logHandler 为 null</exception>
         /// <exception cref="ArgumentOutOfRangeException">queueCapacity 小于 1</exception>
-        public LogHandlerAsyncDecorator(ILogHandler<TLog> logHandler, int queueCapacity = 1000, OverflowStrategy strategy = OverflowStrategy.Block, string threadName = "AsyncLogWorker")
+        public static LogHandlerAsyncDecorator<TLog> CreateDecorator<TLogHandler>(TLogHandler logHandler, int queueCapacity = 1000, OverflowStrategy strategy = OverflowStrategy.Block, string threadName = "AsyncLogWorker")
+            where TLogHandler : ILogHandler<TLog>, ILogHandler<AsyncLog>
+        {
+            return new LogHandlerAsyncDecorator<TLog>(logHandler, queueCapacity, strategy, threadName);
+        }
+
+        private LogHandlerAsyncDecorator(ILogHandler<TLog> logHandler, int queueCapacity, OverflowStrategy strategy, string threadName)
         {
             if (queueCapacity < 1) throw new ArgumentOutOfRangeException(nameof(queueCapacity), "队列容量必须至少为 1");
             LogHandler = logHandler ?? throw new ArgumentNullException(nameof(logHandler));
@@ -398,7 +433,7 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
             Strategy = strategy;
 
             // 使用 BlockingCollection 包装 ConcurrentQueue 以支持阻塞操作
-            _logQueue = new BlockingCollection<TLog>(new ConcurrentQueue<TLog>(), queueCapacity);
+            _logQueue = new BlockingCollection<AsyncLog>(new ConcurrentQueue<AsyncLog>(), queueCapacity);
 
             // 启动后台消费者线程
             _consumerThread = new Thread(ProcessQueue)
@@ -428,7 +463,7 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
                 case OverflowStrategy.Block:
                     try
                     {
-                        _logQueue.Add(log); // 阻塞直到队列有空间
+                        _logQueue.Add(new AsyncLog(log)); // 阻塞直到队列有空间
                     }
                     catch (InvalidOperationException)
                     {
@@ -437,14 +472,14 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
                     break;
 
                 case OverflowStrategy.DropNew:
-                    if (!_logQueue.TryAdd(log))
+                    if (!_logQueue.TryAdd(new AsyncLog(log)))
                     {
                         Interlocked.Increment(ref _droppedCount);
                     }
                     break;
 
                 case OverflowStrategy.DropOldest:
-                    while (!_logQueue.TryAdd(log))
+                    while (!_logQueue.TryAdd(new AsyncLog(log)))
                     {
                         // 尝试移除最旧的元素
                         if (_logQueue.TryTake(out _))
@@ -467,12 +502,14 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
         {
             try
             {
+                ILogHandler<AsyncLog> asyncLogHandler = LogHandler as ILogHandler<AsyncLog>;
+
                 // 持续从队列中取出并执行日志操作
                 foreach (var log in _logQueue.GetConsumingEnumerable())
                 {
                     try
                     {
-                        LogHandler.Log(log);
+                        asyncLogHandler.Log(log);
                     }
                     catch (Exception ex)
                     {
@@ -567,6 +604,26 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
         ~LogHandlerAsyncDecorator()
         {
             Dispose(false);
+        }
+
+        public struct AsyncLog : ILog
+        {
+            public LogLevel Level => LogLevel.Custom;
+
+            public DateTime Timestamp { get; }
+
+            public TLog InternalLog { get; }
+
+            public AsyncLog(TLog log)
+            {
+                InternalLog = log;
+                Timestamp = DateTime.Now;
+            }
+
+            public string ParseToString()
+            {
+                return String.Empty;
+            }
         }
     }
 }

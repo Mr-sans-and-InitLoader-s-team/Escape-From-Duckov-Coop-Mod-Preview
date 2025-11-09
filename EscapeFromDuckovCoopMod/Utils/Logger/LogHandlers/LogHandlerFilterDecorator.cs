@@ -4,11 +4,13 @@ using ILogHandler = EscapeFromDuckovCoopMod.Utils.Logger.Core.ILogHandler;
 
 namespace EscapeFromDuckovCoopMod.Utils.Logger.LogHandlers
 {
-    public class LogHandlerFilterDecorator : ILogHandler
+    public class LogHandlerFilterDecorator : ILogHandler, IDecorator<ILogHandler>
     {
         public LogFilter Filter { get; }
 
         public ILogHandler LogHandler { get; }
+
+        public ILogHandler Inner => LogHandler;
 
         public LogHandlerFilterDecorator(ILogHandler logHandler)
         {

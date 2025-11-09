@@ -14,7 +14,10 @@ namespace EscapeFromDuckovCoopMod.Utils.Logger.Tools
             new Lazy<LogHandlers.Logger>(() =>
             {
                 var logger = new LogHandlers.Logger();
-                var asyncConsoleHandler = new LogHandlerAsyncDecorator(new ConsoleLogHandler());
+
+                FileLogHandlerForConsoleMod.Init(logger);
+
+                var asyncConsoleHandler = LogHandlerAsyncDecorator.CreateDecorator(new ConsoleLogHandler());
                 logger.AddHandler(asyncConsoleHandler);
 
                 // 打印标签日志示例：

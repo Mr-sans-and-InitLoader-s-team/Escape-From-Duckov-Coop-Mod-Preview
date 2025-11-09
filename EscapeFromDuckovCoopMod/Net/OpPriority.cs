@@ -125,6 +125,7 @@ public static class OpPriority
             Op.DEAD_LOOT_SPAWN => PacketPriority.Normal,
             Op.DEAD_LOOT_DESPAWN => PacketPriority.Normal,
             Op.LOOT_STATE => PacketPriority.Normal,
+            Op.AUDIO_EVENT => PacketPriority.Normal,
 
             // AI 相关
             Op.AI_SEED_SNAPSHOT => PacketPriority.Normal,

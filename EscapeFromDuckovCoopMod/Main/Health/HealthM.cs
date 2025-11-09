@@ -87,6 +87,46 @@ public class HealthM : MonoBehaviour
         // 节流：20Hz
         if (!force && Time.time < _cliNextSendHp) return;
 
+        // 🔍 JSON日志：血量上报（简化版，避免循环）
+        Debug.Log($"[HP_REPORT] max={max:F1}, cur={cur:F1}, force={force}");
+        
+        // 🔍 详细调试：反射读取Health内部状态
+        try
+        {
+            var debugData = new Dictionary<string, object>
+            {
+                ["event"] = "Client_SendSelfHealth_Debug",
+                ["maxHealth"] = max,
+                ["currentHealth"] = cur,
+                ["force"] = force,
+                ["time"] = Time.time
+            };
+            
+            try
+            {
+                var defaultMax = HealthTool.FI_defaultMax?.GetValue(h);
+                var lastMax = HealthTool.FI_lastMax?.GetValue(h);
+                var _current = HealthTool.FI__current?.GetValue(h);
+                
+                debugData["defaultMaxHealth"] = defaultMax;
+                debugData["lastMaxHealth"] = lastMax;
+                debugData["_currentHealth"] = _current;
+                debugData["autoInit"] = h.autoInit;
+                debugData["gameObjectName"] = h.gameObject?.name ?? "null";
+                debugData["gameObjectActive"] = h.gameObject?.activeSelf ?? false;
+            }
+            catch (Exception e)
+            {
+                debugData["reflectionError"] = e.Message;
+            }
+            
+            Debug.Log($"[HP_REPORT_DEBUG] {Newtonsoft.Json.JsonConvert.SerializeObject(debugData, Newtonsoft.Json.Formatting.Indented)}");
+        }
+        catch
+        {
+            // 静默失败，避免影响正常流程
+        }
+
         var w = new NetDataWriter();
         w.Put((byte)Op.PLAYER_HEALTH_REPORT);
         w.Put(max);
@@ -220,6 +260,34 @@ public class HealthM : MonoBehaviour
         {
         }
 
+        // 🔍 JSON日志：初始血量上报
+        var sceneId = "unknown";
+        try
+        {
+            sceneId = localPlayerStatus?.SceneId ?? "null";
+        }
+        catch
+        {
+        }
+        
+        var logData = new Dictionary<string, object>
+        {
+            ["event"] = "Client_ReportSelfHealth_IfReadyOnce",
+            ["maxHealth"] = max,
+            ["currentHealth"] = cur,
+            ["sceneId"] = sceneId,
+            ["time"] = Time.time,
+            ["isValid"] = max > 0f && cur > 0f
+        };
+        Debug.Log($"[HP_REPORT_INIT] {Newtonsoft.Json.JsonConvert.SerializeObject(logData)}");
+
+        // ⚠️ 检查血量是否有效
+        if (max <= 0f || cur <= 0f)
+        {
+            Debug.LogWarning($"[HP_REPORT_INIT] ⚠️ 血量未初始化，延迟上报: max={max}, cur={cur}");
+            return; // 不上报，等待下一帧重试
+        }
+
         var w = new NetDataWriter();
         w.Put((byte)Op.PLAYER_HEALTH_REPORT);
         w.Put(max);
@@ -227,6 +295,7 @@ public class HealthM : MonoBehaviour
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
 
         HealthTool._cliInitHpReported = true;
+        Debug.Log($"[HP_REPORT_INIT] ✓ 初始血量上报成功");
     }
 
     public void Server_OnHealthChanged(NetPeer ownerPeer, Health h)

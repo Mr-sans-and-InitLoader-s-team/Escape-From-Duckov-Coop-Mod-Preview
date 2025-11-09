@@ -35,7 +35,8 @@ public class WaitingSynchronizationUI : MonoBehaviour
     private float _loadingRotation = 0f;
 
     // 同步任务状态
-    private Dictionary<string, SyncTaskStatus> _syncTasks = new Dictionary<string, SyncTaskStatus>();
+    private Dictionary<string, SyncTaskStatus> _syncTasks =
+        new Dictionary<string, SyncTaskStatus>();
     private bool _allTasksCompleted = false;
 
     // Steam头像缓存
@@ -212,7 +213,12 @@ public class WaitingSynchronizationUI : MonoBehaviour
         timeRect.sizeDelta = new Vector2(0, 35);
 
         // 天气信息
-        _weatherInfoText = CreateSimpleText("WeatherInfo", infoPanel.transform, 24, FontStyles.Normal);
+        _weatherInfoText = CreateSimpleText(
+            "WeatherInfo",
+            infoPanel.transform,
+            24,
+            FontStyles.Normal
+        );
         _weatherInfoText.text = "天气: 未知";
         _weatherInfoText.alignment = TextAlignmentOptions.Center;
         _weatherInfoText.color = new Color(0.7f, 0.9f, 1f, 1f);
@@ -256,7 +262,12 @@ public class WaitingSynchronizationUI : MonoBehaviour
         textVerticalLayout.childForceExpandWidth = true;
 
         // 同步状态文本
-        _syncStatusText = CreateSimpleText("SyncStatus", textContainer.transform, 28, FontStyles.Normal);
+        _syncStatusText = CreateSimpleText(
+            "SyncStatus",
+            textContainer.transform,
+            28,
+            FontStyles.Normal
+        );
         _syncStatusText.text = "初始化中...";
         _syncStatusText.alignment = TextAlignmentOptions.Left;
         _syncStatusText.color = new Color(0.9f, 0.9f, 0.9f, 1f);
@@ -264,7 +275,12 @@ public class WaitingSynchronizationUI : MonoBehaviour
         statusRect.sizeDelta = new Vector2(0, 40);
 
         // 百分比文本
-        _syncPercentText = CreateSimpleText("SyncPercent", textContainer.transform, 32, FontStyles.Bold);
+        _syncPercentText = CreateSimpleText(
+            "SyncPercent",
+            textContainer.transform,
+            32,
+            FontStyles.Bold
+        );
         _syncPercentText.text = "0%";
         _syncPercentText.alignment = TextAlignmentOptions.Left;
         _syncPercentText.color = new Color(0.5f, 1f, 0.5f, 1f);
@@ -278,7 +294,8 @@ public class WaitingSynchronizationUI : MonoBehaviour
         if (_loadingAnimation != null && _loadingAnimation.activeSelf)
         {
             _loadingRotation += 360f * Time.deltaTime; // 每秒旋转360度
-            if (_loadingRotation >= 360f) _loadingRotation -= 360f;
+            if (_loadingRotation >= 360f)
+                _loadingRotation -= 360f;
             _loadingAnimation.transform.rotation = Quaternion.Euler(0, 0, -_loadingRotation);
         }
 
@@ -297,8 +314,10 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
     private void UpdateProgressDisplay()
     {
-        if (_syncStatusText == null || _syncPercentText == null) return;
-        if (!_panel.activeSelf) return;
+        if (_syncStatusText == null || _syncPercentText == null)
+            return;
+        if (!_panel.activeSelf)
+            return;
 
         try
         {
@@ -374,7 +393,9 @@ public class WaitingSynchronizationUI : MonoBehaviour
                 var currentTask = _syncTasks.FirstOrDefault(t => !t.Value.IsCompleted);
                 if (currentTask.Value != null)
                 {
-                    string detail = string.IsNullOrEmpty(currentTask.Value.Details) ? "" : $" - {currentTask.Value.Details}";
+                    string detail = string.IsNullOrEmpty(currentTask.Value.Details)
+                        ? ""
+                        : $" - {currentTask.Value.Details}";
                     _syncStatusText.text = $"{currentTask.Value.Name}{detail}";
                 }
                 else
@@ -391,8 +412,10 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
     private void UpdateMapAndWeatherInfo()
     {
-        if (_mapInfoText == null || _timeInfoText == null || _weatherInfoText == null) return;
-        if (!_panel.activeSelf) return;
+        if (_mapInfoText == null || _timeInfoText == null || _weatherInfoText == null)
+            return;
+        if (!_panel.activeSelf)
+            return;
 
         try
         {
@@ -441,22 +464,43 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
     private string GetMapDisplayName(string sceneName)
     {
-        // 地图名称映射
-        switch (sceneName)
+        // 🌏 使用统一的场景名称映射工具
+        // 首先尝试从场景名称提取场景ID
+        string sceneId = ExtractSceneId(sceneName);
+
+        // 使用 SceneNameMapper 获取中文名称
+        return Utils.SceneNameMapper.GetDisplayName(sceneId);
+    }
+
+    /// <summary>
+    /// 从Unity场景名称提取场景ID
+    /// 例如: "Base_Scenev2" -> "Base", "Level_Factory_Main" -> "Factory"
+    /// </summary>
+    private string ExtractSceneId(string sceneName)
+    {
+        if (string.IsNullOrEmpty(sceneName))
+            return sceneName;
+
+        // 处理 "Base_Scenev2" 格式
+        if (sceneName.StartsWith("Base"))
+            return "Base";
+
+        // 处理 "Level_XXX_Main" 格式
+        if (sceneName.StartsWith("Level_"))
         {
-            case "Level_GroundZero_Main": return "零号地区";
-            case "Level_Factory_Main": return "工厂";
-            case "Level_Hospital_Main": return "医院";
-            case "Level_Suburb_Main": return "郊区";
-            case "Level_Downtown_Main": return "市区";
-            case "Base": return "避难所";
-            default: return sceneName;
+            var parts = sceneName.Split('_');
+            if (parts.Length >= 2)
+                return parts[1]; // 返回 "Factory", "Custom" 等
         }
+
+        // 直接返回原始名称
+        return sceneName;
     }
 
     private void CheckAndHideIfComplete()
     {
-        if (_syncTasks.Count == 0) return;
+        if (_syncTasks.Count == 0)
+            return;
 
         bool allComplete = _syncTasks.All(t => t.Value.IsCompleted);
         if (allComplete)
@@ -477,7 +521,9 @@ public class WaitingSynchronizationUI : MonoBehaviour
         try
         {
             // 获取模组目录路径
-            var modPath = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location);
+            var modPath = Path.GetDirectoryName(
+                System.Reflection.Assembly.GetExecutingAssembly().Location
+            );
             var bgPath = Path.Combine(modPath, "Assets", "bg.png");
 
             Debug.Log($"[SYNC_UI] 尝试加载背景图片: {bgPath}");
@@ -525,7 +571,12 @@ public class WaitingSynchronizationUI : MonoBehaviour
         }
     }
 
-    private TMP_Text CreateSimpleText(string name, Transform parent, int fontSize, FontStyles fontStyle)
+    private TMP_Text CreateSimpleText(
+        string name,
+        Transform parent,
+        int fontSize,
+        FontStyles fontStyle
+    )
     {
         var textObj = new GameObject(name);
         textObj.transform.SetParent(parent);
@@ -690,7 +741,6 @@ public class WaitingSynchronizationUI : MonoBehaviour
         button.colors = colors;
     }
 
-
     // ========== 以下方法已移除，不再需要 ==========
 
     private GameObject CreatePlayerAvatar(ulong steamId = 0)
@@ -830,7 +880,8 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
         if (avatarHandle > 0)
         {
-            uint width, height;
+            uint width,
+                height;
             if (SteamUtils.GetImageSize(avatarHandle, out width, out height))
             {
                 Debug.Log($"[SYNC_UI] Steam头像尺寸: {width}x{height}");
@@ -839,7 +890,12 @@ public class WaitingSynchronizationUI : MonoBehaviour
                     byte[] imageData = new byte[width * height * 4];
                     if (SteamUtils.GetImageRGBA(avatarHandle, imageData, (int)(width * height * 4)))
                     {
-                        Texture2D texture = new Texture2D((int)width, (int)height, TextureFormat.RGBA32, false);
+                        Texture2D texture = new Texture2D(
+                            (int)width,
+                            (int)height,
+                            TextureFormat.RGBA32,
+                            false
+                        );
                         texture.LoadRawTextureData(imageData);
                         texture.Apply();
 
@@ -855,7 +911,11 @@ public class WaitingSynchronizationUI : MonoBehaviour
                         }
                         texture.Apply();
 
-                        Sprite sprite = Sprite.Create(texture, new Rect(0, 0, width, height), new Vector2(0.5f, 0.5f));
+                        Sprite sprite = Sprite.Create(
+                            texture,
+                            new Rect(0, 0, width, height),
+                            new Vector2(0.5f, 0.5f)
+                        );
                         _steamAvatarCache[steamId.m_SteamID] = sprite;
 
                         if (targetImage != null)
@@ -926,12 +986,15 @@ public class WaitingSynchronizationUI : MonoBehaviour
                             steamUsername = SteamFriends.GetFriendPersonaName(cSteamId);
                             if (string.IsNullOrEmpty(steamUsername) || steamUsername == "[unknown]")
                             {
-                                steamUsername = $"Player_{steamId.ToString().Substring(Math.Max(0, steamId.ToString().Length - 4))}";
+                                steamUsername =
+                                    $"Player_{steamId.ToString().Substring(Math.Max(0, steamId.ToString().Length - 4))}";
                             }
                         }
 
                         // 判断是否是主机
-                        var lobbyOwner = SteamMatchmaking.GetLobbyOwner(lobbyManager.CurrentLobbyId);
+                        var lobbyOwner = SteamMatchmaking.GetLobbyOwner(
+                            lobbyManager.CurrentLobbyId
+                        );
                         bool isHost = (steamId == lobbyOwner.m_SteamID);
                         string prefix = isHost ? "HOST" : "CLIENT";
                         displayName = $"{prefix}_{steamUsername}";
@@ -949,7 +1012,10 @@ public class WaitingSynchronizationUI : MonoBehaviour
                         else
                         {
                             steamUsername = SteamFriends.GetFriendPersonaName(cSteamId);
-                            if (!string.IsNullOrEmpty(steamUsername) && steamUsername != "[unknown]")
+                            if (
+                                !string.IsNullOrEmpty(steamUsername)
+                                && steamUsername != "[unknown]"
+                            )
                             {
                                 displayName = $"CLIENT_{steamUsername}";
                             }
@@ -983,7 +1049,8 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
     private ulong GetSteamIdFromEndPoint(string endPoint)
     {
-        if (string.IsNullOrEmpty(endPoint)) return 0;
+        if (string.IsNullOrEmpty(endPoint))
+            return 0;
 
         // Steam P2P模式下，EndPoint包含SteamID信息
         // 尝试从SceneNet的玩家列表中获取SteamID
@@ -1046,7 +1113,9 @@ public class WaitingSynchronizationUI : MonoBehaviour
     /// </summary>
     public void Show()
     {
-        Debug.Log($"[SYNC_UI] Show() 被调用，_panel={(_panel != null ? "存在" : "null")}, _canvas={(_canvas != null ? "存在" : "null")}");
+        Debug.Log(
+            $"[SYNC_UI] Show() 被调用，_panel={(_panel != null ? "存在" : "null")}, _canvas={(_canvas != null ? "存在" : "null")}"
+        );
 
         // ✅ 停止正在进行的淡出协程（如果有）
         if (_fadeOutCoroutine != null)
@@ -1194,7 +1263,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
             {
                 Name = taskName,
                 IsCompleted = false,
-                Details = ""
+                Details = "",
             };
             Debug.Log($"[SYNC_UI] 注册任务: {taskName}");
         }
@@ -1209,7 +1278,9 @@ public class WaitingSynchronizationUI : MonoBehaviour
         {
             task.IsCompleted = isCompleted;
             task.Details = details;
-            Debug.Log($"[SYNC_UI] 任务状态更新: {task.Name} - {(isCompleted ? "完成" : "进行中")} {details}");
+            Debug.Log(
+                $"[SYNC_UI] 任务状态更新: {task.Name} - {(isCompleted ? "完成" : "进行中")} {details}"
+            );
         }
     }
 
@@ -1226,7 +1297,8 @@ public class WaitingSynchronizationUI : MonoBehaviour
     /// </summary>
     public void UpdatePlayerList()
     {
-        if (_playerListContainer == null) return;
+        if (_playerListContainer == null)
+            return;
 
         try
         {
@@ -1240,7 +1312,12 @@ public class WaitingSynchronizationUI : MonoBehaviour
             var mod = ModBehaviourF.Instance;
             if (mod == null || mod.playerStatuses == null)
             {
-                var emptyText = CreateSimpleText("Empty", _playerListContainer.transform, 20, FontStyles.Italic);
+                var emptyText = CreateSimpleText(
+                    "Empty",
+                    _playerListContainer.transform,
+                    20,
+                    FontStyles.Italic
+                );
                 emptyText.text = "正在获取玩家列表...";
                 emptyText.color = new Color(0.6f, 0.6f, 0.6f, 1f);
                 emptyText.alignment = TextAlignmentOptions.Center;
@@ -1352,4 +1429,3 @@ public class WaitingSynchronizationUI : MonoBehaviour
         }
     }
 }
-

@@ -37,6 +37,7 @@ public static class SceneVoteMessage
         public string playerId; // 玩家网络ID（如 "Host:9050" 或 "192.168.1.1:9050"）
         public string playerName; // 玩家名称
         public string steamId; // Steam ID（如果有）
+        public string steamName; // 🆕 Steam 用户名
         public bool ready; // 是否准备
     }
 
@@ -56,8 +57,10 @@ public static class SceneVoteMessage
     public class VoteStateData
     {
         public string type = "sceneVote";
+        public int voteId; // 🆕 投票ID，每次投票自增，用于识别过期投票
         public bool active; // 投票是否激活
         public string targetSceneId; // 目标场景ID
+        public string targetSceneDisplayName; // 🆕 目标场景显示名称（中文）
         public string curtainGuid; // 过场GUID
         public string locationName; // 位置名称
         public bool notifyEvac; // 是否通知撤离
@@ -65,6 +68,8 @@ public static class SceneVoteMessage
         public bool useLocation; // 是否使用位置
         public string hostSceneId; // 主机当前场景ID
         public PlayerList playerList; // 🔧 使用包装类，Unity JsonUtility 才能正确序列化
+        public int totalPlayers; // 🆕 总玩家数
+        public int readyPlayers; // 🆕 已准备玩家数
         public string timestamp; // 时间戳
     }
 
@@ -129,6 +134,9 @@ public static class SceneVoteMessage
     private static float _lastBroadcastTime = 0f;
     private const float BROADCAST_INTERVAL = 1.0f; // 每秒广播一次
 
+    // 🆕 投票ID计数器（主机端）
+    private static int _nextVoteId = 1;
+
     /// <summary>
     /// 主机：开始投票
     /// </summary>
@@ -160,12 +168,14 @@ public static class SceneVoteMessage
         var hostId = service.GetPlayerId(null);
         var hostName = service.localPlayerStatus?.PlayerName ?? "Host";
         var hostSteamId = GetSteamId(null); // 主机的SteamID
+        var hostSteamName = GetSteamName(null); // 🆕 主机的Steam用户名
         players.Add(
             new PlayerInfo
             {
                 playerId = hostId,
                 playerName = hostName,
                 steamId = hostSteamId,
+                steamName = hostSteamName,
                 ready = false,
             }
         );
@@ -181,12 +191,14 @@ public static class SceneVoteMessage
                     continue;
 
                 var clientSteamId = GetSteamId(peer); // 客户端的SteamID
+                var clientSteamName = GetSteamName(peer); // 🆕 客户端的Steam用户名
                 players.Add(
                     new PlayerInfo
                     {
                         playerId = status.EndPoint,
                         playerName = status.PlayerName ?? "Player",
                         steamId = clientSteamId,
+                        steamName = clientSteamName,
                         ready = false,
                     }
                 );
@@ -198,11 +210,19 @@ public static class SceneVoteMessage
             $"[SceneVote] 主机构建玩家列表: {string.Join(", ", players.Select(p => $"{p.playerName}({p.playerId})"))}"
         );
 
+        // 🆕 获取场景显示名称（中文）
+        var targetSceneDisplayName = Utils.SceneNameMapper.GetDisplayName(targetSceneId);
+
+        // 🆕 分配新的投票ID
+        var currentVoteId = _nextVoteId++;
+
         // 创建投票状态
         _hostVoteState = new VoteStateData
         {
+            voteId = currentVoteId, // 🆕 设置投票ID
             active = true,
             targetSceneId = targetSceneId,
+            targetSceneDisplayName = targetSceneDisplayName, // 🆕 添加显示名称
             curtainGuid = curtainGuid,
             locationName = locationName,
             notifyEvac = notifyEvac,
@@ -210,8 +230,12 @@ public static class SceneVoteMessage
             useLocation = useLocation,
             hostSceneId = hostSceneId,
             playerList = new PlayerList { items = players.ToArray() }, // 🔧 使用包装类
+            totalPlayers = players.Count, // 🆕 总玩家数
+            readyPlayers = 0, // 🆕 初始化为0
             timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
         };
+
+        LoggerHelper.Log($"[SceneVote] 主机发起投票，voteId={currentVoteId}");
 
         // 🔧 同步更新 SceneNet 的状态，让主机UI能正确显示
         var sceneNet = SceneNet.Instance;
@@ -235,6 +259,9 @@ public static class SceneVoteMessage
             }
 
             sceneNet.localReady = false;
+
+            // 🆕 主机端也缓存投票数据（在 _hostVoteState 创建后同步）
+            sceneNet.cachedVoteData = _hostVoteState;
 
             LoggerHelper.Log(
                 $"[SceneVote] ✓ 已同步更新 SceneNet 状态，参与者: {sceneNet.sceneParticipantIds.Count}"
@@ -333,9 +360,13 @@ public static class SceneVoteMessage
             LoggerHelper.Log($"[SceneVote] 已同步更新 SceneNet.sceneReady");
         }
 
+        // 🆕 更新已准备玩家数
+        _hostVoteState.readyPlayers = _hostVoteState.playerList?.items?.Count(p => p.ready) ?? 0;
+        _hostVoteState.totalPlayers = _hostVoteState.playerList?.items?.Length ?? 0;
+
         // 立即广播更新
         Host_BroadcastVoteState();
-        LoggerHelper.Log($"[SceneVote] 已广播更新的投票状态");
+        LoggerHelper.Log($"[SceneVote] 已广播更新的投票状态 ({_hostVoteState.readyPlayers}/{_hostVoteState.totalPlayers})");
 
         // 检查是否全员准备
         bool allReady =
@@ -510,14 +541,15 @@ public static class SceneVoteMessage
         if (_hostVoteState == null)
             return;
 
+        var cancelledVoteId = _hostVoteState.voteId;
         _hostVoteState.active = false;
 
-        // 广播取消状态
+        // 🆕 广播取消状态（只需要发送一次，客户端会更新 expiredVoteId）
         Host_BroadcastVoteState();
 
         _hostVoteState = null;
 
-        LoggerHelper.Log("[SceneVote] 主机取消投票");
+        LoggerHelper.Log($"[SceneVote] 主机取消投票，voteId={cancelledVoteId}");
     }
 
     /// <summary>
@@ -546,12 +578,22 @@ public static class SceneVoteMessage
             if (sceneNet == null)
                 return;
 
+            // 🆕 检查投票ID是否过期
+            if (data.voteId <= sceneNet.expiredVoteId)
+            {
+                LoggerHelper.Log($"[SceneVote] 忽略过期投票: voteId={data.voteId}, expiredVoteId={sceneNet.expiredVoteId}");
+                return;
+            }
+
             // 如果投票已取消
             if (!data.active)
             {
+                // 🆕 更新过期ID，避免后续收到旧的投票包
+                sceneNet.expiredVoteId = data.voteId;
+                LoggerHelper.Log($"[SceneVote] 收到投票取消通知，voteId={data.voteId}，更新 expiredVoteId={sceneNet.expiredVoteId}");
+
                 if (sceneNet.sceneVoteActive)
                 {
-                    LoggerHelper.Log("[SceneVote] 收到投票取消通知");
                     sceneNet.sceneVoteActive = false;
                     sceneNet.sceneReady.Clear();
                     sceneNet.localReady = false;
@@ -633,8 +675,11 @@ public static class SceneVoteMessage
                 LoggerHelper.LogWarning("[SceneVote] 收到的投票状态没有玩家信息");
             }
 
+            // 🆕 缓存完整的投票数据到 SceneNet，供 UI 使用
+            sceneNet.cachedVoteData = data;
+
             LoggerHelper.Log(
-                $"[SceneVote] 更新投票状态: {data.targetSceneId}, 参与者: {sceneNet.sceneParticipantIds.Count}"
+                $"[SceneVote] 更新投票状态: {data.targetSceneId}, 参与者: {sceneNet.sceneParticipantIds.Count}, 已准备: {data.readyPlayers}/{data.totalPlayers}"
             );
             LoggerHelper.Log($"[SceneVote] 参与者列表: {string.Join(", ", sceneNet.sceneParticipantIds)}");
         }
@@ -866,33 +911,127 @@ public static class SceneVoteMessage
     }
 
     /// <summary>
-    /// 获取玩家的 Steam ID
+    /// 🆕 获取玩家的 Steam 用户名
     /// </summary>
-    private static string GetSteamId(NetPeer peer)
+    private static string GetSteamName(NetPeer peer)
     {
         try
         {
-            // 如果有 Steam 支持，尝试获取 SteamID
-            if (SteamManager.Initialized && SteamEndPointMapper.Instance != null)
+            if (!SteamManager.Initialized)
             {
-                if (peer == null)
+                return "";
+            }
+
+            if (peer == null)
+            {
+                // 主机自己的 Steam 用户名
+                return Steamworks.SteamFriends.GetPersonaName();
+            }
+
+            // 🔧 从 SteamID 获取用户名
+            var steamIdStr = GetSteamId(peer);
+            if (!string.IsNullOrEmpty(steamIdStr) && ulong.TryParse(steamIdStr, out var steamIdValue))
+            {
+                var steamId = new Steamworks.CSteamID(steamIdValue);
+                var steamName = Steamworks.SteamFriends.GetFriendPersonaName(steamId);
+                if (!string.IsNullOrEmpty(steamName) && steamName != "[unknown]")
                 {
-                    // 主机自己的 SteamID
-                    return Steamworks.SteamUser.GetSteamID().ToString();
-                }
-                else
-                {
-                    // 客户端的 SteamID
-                    if (SteamEndPointMapper.Instance.TryGetSteamID(peer.EndPoint, out var steamId))
-                    {
-                        return steamId.ToString();
-                    }
+                    return steamName;
                 }
             }
         }
         catch (System.Exception ex)
         {
-            LoggerHelper.LogWarning($"[SceneVote] 获取SteamID失败: {ex.Message}");
+            LoggerHelper.LogWarning($"[SceneVote] 获取Steam用户名失败: {ex.Message}");
+        }
+
+        return "";
+    }
+
+    /// <summary>
+    /// 获取玩家的 Steam ID（使用与 MModUI 相同的逻辑）
+    /// </summary>
+    private static string GetSteamId(NetPeer peer)
+    {
+        try
+        {
+            if (!SteamManager.Initialized)
+            {
+                return "";
+            }
+
+            if (peer == null)
+            {
+                // 主机自己的 SteamID
+                return Steamworks.SteamUser.GetSteamID().ToString();
+            }
+
+            // 🔧 从 PlayerStatus 获取 EndPoint，然后使用与 MModUI 相同的逻辑
+            var service = NetService.Instance;
+            if (service == null || service.playerStatuses == null)
+            {
+                return "";
+            }
+
+            if (!service.playerStatuses.TryGetValue(peer, out var status))
+            {
+                LoggerHelper.LogWarning($"[SceneVote] 找不到 PlayerStatus: {peer.EndPoint}");
+                return "";
+            }
+
+            // 🔧 使用与 MModUI.GetSteamIdFromStatus 相同的逻辑
+            var endPoint = status.EndPoint;
+
+            // 如果是 "Steam:xxx" 格式（从Lobby直接获取的），直接解析SteamID
+            if (endPoint.StartsWith("Steam:"))
+            {
+                var steamIdStr = endPoint.Substring(6); // 去掉 "Steam:" 前缀
+                if (ulong.TryParse(steamIdStr, out ulong steamId))
+                {
+                    LoggerHelper.Log($"[SceneVote] 从 Steam: 格式获取 SteamID: {endPoint} -> {steamId}");
+                    return steamId.ToString();
+                }
+            }
+
+            // 如果是 "Host:xxx" 格式，返回房间所有者的SteamID
+            if (endPoint.StartsWith("Host:"))
+            {
+                if (SteamLobbyManager.Instance != null && SteamLobbyManager.Instance.IsInLobby)
+                {
+                    var lobbyOwner = Steamworks.SteamMatchmaking.GetLobbyOwner(
+                        SteamLobbyManager.Instance.CurrentLobbyId
+                    );
+                    LoggerHelper.Log($"[SceneVote] 从 Host: 格式获取 SteamID: {endPoint} -> {lobbyOwner.m_SteamID}");
+                    return lobbyOwner.m_SteamID.ToString();
+                }
+            }
+
+            // 🔧 尝试从虚拟IP EndPoint获取（直连模式）
+            var parts = endPoint.Split(':');
+            if (
+                parts.Length == 2
+                && System.Net.IPAddress.TryParse(parts[0], out var ipAddr)
+                && int.TryParse(parts[1], out var port)
+            )
+            {
+                var ipEndPoint = new System.Net.IPEndPoint(ipAddr, port);
+                if (
+                    SteamEndPointMapper.Instance != null
+                    && SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out var cSteamId)
+                )
+                {
+                    LoggerHelper.Log($"[SceneVote] 从虚拟 IP 获取 SteamID: {endPoint} -> {cSteamId.m_SteamID}");
+                    return cSteamId.m_SteamID.ToString();
+                }
+                else
+                {
+                    LoggerHelper.LogWarning($"[SceneVote] 无法从虚拟 IP 获取 SteamID: {endPoint}");
+                }
+            }
+        }
+        catch (System.Exception ex)
+        {
+            LoggerHelper.LogWarning($"[SceneVote] 获取SteamID失败: {ex.Message}\n{ex.StackTrace}");
         }
 
         return ""; // 如果没有 Steam 或获取失败，返回空字符串

@@ -215,7 +215,10 @@ public static class ItemTool
     }
 
     // 读快照
-    public static ItemSnapshot ReadItemSnapshot(NetPacketReader r)
+    /// <summary>
+    /// ✅ 重载：接受 NetDataReader（用于异步消息队列）
+    /// </summary>
+    public static ItemSnapshot ReadItemSnapshot(NetDataReader r)
     {
         ItemSnapshot s;
         s.typeId = r.GetInt();
@@ -242,6 +245,12 @@ public static class ItemTool
         }
 
         return s;
+    }
+
+    public static ItemSnapshot ReadItemSnapshot(NetPacketReader r)
+    {
+        // NetPacketReader 继承自 NetDataReader，直接调用重载方法
+        return ReadItemSnapshot((NetDataReader)r);
     }
 
     // 用快照构建实例（递归）

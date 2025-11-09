@@ -49,32 +49,26 @@ public class Door
     public global::Door FindDoorByKey(int key)
     {
         if (key == 0) return null;
-        var doors = Object.FindObjectsOfType<global::Door>(true);
-        var fCache = AccessTools.Field(typeof(global::Door), "doorClosedDataKeyCached");
-        var mGetKey = AccessTools.Method(typeof(global::Door), "GetKey");
 
+        // ✅ 优化：优先使用缓存管理器查找
+        if (Utils.GameObjectCacheManager.Instance != null)
+        {
+            var cachedDoor = Utils.GameObjectCacheManager.Instance.Environment.FindDoorByKey(key);
+            if (cachedDoor) return cachedDoor;
+        }
+
+        // 兜底：全量扫描（直接使用 ComputeDoorKey 计算，避免访问私有字段）
+        var doors = Object.FindObjectsOfType<global::Door>(true);
         foreach (var d in doors)
         {
             if (!d) continue;
-            var k = 0;
-            try
-            {
-                k = (int)fCache.GetValue(d);
-            }
-            catch
-            {
-            }
 
-            if (k == 0)
-                try
-                {
-                    k = (int)mGetKey.Invoke(d, null);
-                }
-                catch
-                {
-                }
-
-            if (k == key) return d;
+            // 直接使用本地的 ComputeDoorKey 方法计算 key
+            var k = ComputeDoorKey(d.transform);
+            if (k == key)
+            {
+                return d;
+            }
         }
 
         return null;

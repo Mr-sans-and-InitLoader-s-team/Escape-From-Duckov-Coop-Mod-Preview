@@ -125,7 +125,20 @@ public class LootNet
     }
 
 
+    /// <summary>
+    /// ✅ 包装方法：接受 NetDataReader（用于异步队列处理）
+    /// </summary>
+    public void Client_ApplyLootboxState(NetDataReader r)
+    {
+        Client_ApplyLootboxStateInternal(r);
+    }
+
     public void Client_ApplyLootboxState(NetPacketReader r)
+    {
+        Client_ApplyLootboxStateInternal(r);
+    }
+
+    private void Client_ApplyLootboxStateInternal(NetDataReader r)
     {
         var scene = r.GetInt();
         var posKey = r.GetInt();
@@ -787,7 +800,11 @@ public class LootNet
                 core.inLevelData[kv.Key] = kv.Value; // 没有就加，有就覆盖
 
             // 刷新当前场景已存在的 LootBoxLoader 显示
-            var loaders = Object.FindObjectsOfType<LootBoxLoader>(true);
+            // ✅ 优化：使用缓存管理器获取 LootBoxLoader，避免 FindObjectsOfType
+            IEnumerable<LootBoxLoader> loaders = Utils.GameObjectCacheManager.Instance != null
+                ? Utils.GameObjectCacheManager.Instance.Environment.GetAllLoaders()
+                : Object.FindObjectsOfType<LootBoxLoader>(true);
+
             foreach (var l in loaders)
                 try
                 {

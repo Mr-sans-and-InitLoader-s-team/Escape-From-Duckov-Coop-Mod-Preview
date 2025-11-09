@@ -307,17 +307,36 @@ internal static class Patch_ServerBroadcast_OnSlotPlug
         if (m == null || !m.networkStarted || !m.IsServer) return;
         if (!__result || COOPManager.LootNet._serverApplyingLoot) return;
 
+        // ✅ 修复：场景切换时 LevelManager 可能正在初始化，跳过同步避免崩溃
+        try
+        {
+            if (LevelManager.Instance == null || LevelManager.LootBoxInventories == null)
+            {
+                return; // 场景初始化中，跳过
+            }
+        }
+        catch
+        {
+            return; // 访问 LootBoxInventories 失败，说明场景正在切换
+        }
+
         var master = __instance?.Master;
         var inv = master ? master.InInventory : null;
         if (!inv) return;
         if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
 
-        if (LootManager.Instance.Server_IsLootMuted(inv)) return; // ★ 新增
-        COOPManager.LootNet.Server_SendLootboxState(null, inv);
+        if (LootManager.Instance.Server_IsLootMuted(inv)) return; // ★ 静音期跳过
+
+        // ✅ 优化：延迟到帧结束时执行，减少场景加载时的性能压力
+        DeferedRunner.EndOfFrame(() =>
+        {
+            if (!inv || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
+            COOPManager.LootNet.Server_SendLootboxState(null, inv);
+        });
     }
 }
 
-// Slot.Unplug 主机在“容器里的武器”上拆配件
+// Slot.Unplug 主机在"容器里的武器"上拆配件
 [HarmonyPatch(typeof(Slot), nameof(Slot.Unplug))]
 internal static class Patch_ServerBroadcast_OnSlotUnplug
 {
@@ -327,11 +346,29 @@ internal static class Patch_ServerBroadcast_OnSlotUnplug
         if (m == null || !m.networkStarted || !m.IsServer) return;
         if (COOPManager.LootNet._serverApplyingLoot) return;
 
+        // ✅ 修复：场景切换时 LevelManager 可能正在初始化，跳过同步避免崩溃
+        try
+        {
+            if (LevelManager.Instance == null || LevelManager.LootBoxInventories == null)
+            {
+                return; // 场景初始化中，跳过
+            }
+        }
+        catch
+        {
+            return; // 访问 LootBoxInventories 失败，说明场景正在切换
+        }
+
         var master = __instance?.Master;
         var inv = master ? master.InInventory : null;
         if (!inv) return;
         if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
 
-        COOPManager.LootNet.Server_SendLootboxState(null, inv);
+        // ✅ 优化：延迟到帧结束时执行，减少场景加载时的性能压力
+        DeferedRunner.EndOfFrame(() =>
+        {
+            if (!inv || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
+            COOPManager.LootNet.Server_SendLootboxState(null, inv);
+        });
     }
 }

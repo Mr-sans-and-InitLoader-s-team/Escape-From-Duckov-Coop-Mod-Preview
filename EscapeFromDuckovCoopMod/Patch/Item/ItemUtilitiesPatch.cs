@@ -190,11 +190,28 @@ internal static class Patch_ItemUtilities_AddAndMerge_LootPut
         if (!__result || COOPManager.LootNet._serverApplyingLoot)
             return;
 
-        var isLootInv =
-            LootboxDetectUtil.IsLootboxInventory(inventory)
-            && !LootboxDetectUtil.IsPrivateInventory(inventory);
-        if (isLootInv)
-            COOPManager.LootNet.Server_SendLootboxState(null, inventory);
+        // ✅ 修复：场景切换时 LevelManager 可能正在初始化，跳过同步避免崩溃
+        try
+        {
+            if (LevelManager.Instance == null || LevelManager.LootBoxInventories == null)
+            {
+                return; // 场景初始化中，跳过
+            }
+        }
+        catch
+        {
+            return; // 访问 LootBoxInventories 失败，说明场景正在切换
+        }
+
+        // ✅ 优化：延迟到帧结束时执行，减少场景加载时的性能压力
+        DeferedRunner.EndOfFrame(() =>
+        {
+            var isLootInv =
+                LootboxDetectUtil.IsLootboxInventory(inventory)
+                && !LootboxDetectUtil.IsPrivateInventory(inventory);
+            if (isLootInv)
+                COOPManager.LootNet.Server_SendLootboxState(null, inventory);
+        });
     }
 }
 

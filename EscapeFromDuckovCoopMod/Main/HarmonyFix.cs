@@ -299,7 +299,7 @@ internal static class Patch_Paused_AlwaysFalse
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true;
 
-        __result = false;
+        __result = mod.Pausebool;
 
         return false;
     }

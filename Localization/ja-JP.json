@@ -121,6 +121,28 @@
     { "key": "ui.manualConnect.hint", "value": "ヒント: 接続するにはレベルに入る必要があります" },
     { "key": "ui.actions.quickActions", "value": "クイックアクション" },
     { "key": "ui.debug.lootBoxCount", "value": "{0}個のルートボックスが出力されました" },
-    { "key": "ui.hint.toggleUI", "value": "{0} 表示/非表示" }
+    { "key": "ui.hint.toggleUI", "value": "{0} 表示/非表示" },
+
+    { "key": "ui.sync.initializing", "value": "初期化中..." },
+    { "key": "ui.sync.loadComplete", "value": "読み込み完了！" },
+    { "key": "ui.sync.almostDone", "value": "まもなく完了..." },
+    { "key": "ui.sync.syncComplete", "value": "同期完了！" },
+    { "key": "ui.sync.loadingScene", "value": "シーン読み込み中..." },
+    { "key": "ui.sync.fetchingPlayers", "value": "プレイヤーリスト取得中..." },
+
+    { "key": "ui.sync.task.weather", "value": "環境同期" },
+    { "key": "ui.sync.task.playerHealth", "value": "プレイヤー状態同期" },
+    { "key": "ui.sync.task.aiLoadoutsReceive", "value": "AI装備受信" },
+    { "key": "ui.sync.task.aiSeeds", "value": "AIシード同期" },
+    { "key": "ui.sync.task.aiLoadouts", "value": "AI装備同期" },
+    { "key": "ui.sync.task.destructible", "value": "破壊可能オブジェクトスキャン" },
+    { "key": "ui.sync.task.aiNames", "value": "AI名前初期化" },
+
+    { "key": "ui.sync.map", "value": "マップ: " },
+    { "key": "ui.sync.map.loading", "value": "読み込み中..." },
+    { "key": "ui.sync.time", "value": "時刻: " },
+    { "key": "ui.sync.time.format", "value": "{0}日目 {1}:{2}" },
+    { "key": "ui.sync.weather", "value": "天候: " },
+    { "key": "ui.sync.weather.unknown", "value": "不明" }
   ]
 }

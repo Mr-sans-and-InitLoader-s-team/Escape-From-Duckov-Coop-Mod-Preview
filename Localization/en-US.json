@@ -121,6 +121,28 @@
     { "key": "ui.manualConnect.hint", "value": "Hint: Must be in a level to connect" },
     { "key": "ui.actions.quickActions", "value": "Quick Actions" },
     { "key": "ui.debug.lootBoxCount", "value": "Printed {0} loot boxes" },
-    { "key": "ui.hint.toggleUI", "value": "{0} Show/Hide" }
+    { "key": "ui.hint.toggleUI", "value": "{0} Show/Hide" },
+
+    { "key": "ui.sync.initializing", "value": "Initializing..." },
+    { "key": "ui.sync.loadComplete", "value": "Loading Complete!" },
+    { "key": "ui.sync.almostDone", "value": "Almost Done..." },
+    { "key": "ui.sync.syncComplete", "value": "Synchronization Complete!" },
+    { "key": "ui.sync.loadingScene", "value": "Loading Scene..." },
+    { "key": "ui.sync.fetchingPlayers", "value": "Fetching Player List..." },
+
+    { "key": "ui.sync.task.weather", "value": "Environment Sync" },
+    { "key": "ui.sync.task.playerHealth", "value": "Player State Sync" },
+    { "key": "ui.sync.task.aiLoadoutsReceive", "value": "AI Loadout Receiving" },
+    { "key": "ui.sync.task.aiSeeds", "value": "AI Seed Sync" },
+    { "key": "ui.sync.task.aiLoadouts", "value": "AI Loadout Sync" },
+    { "key": "ui.sync.task.destructible", "value": "Destructible Object Scan" },
+    { "key": "ui.sync.task.aiNames", "value": "AI Name Initialization" },
+
+    { "key": "ui.sync.map", "value": "Map: " },
+    { "key": "ui.sync.map.loading", "value": "Loading..." },
+    { "key": "ui.sync.time", "value": "Time: " },
+    { "key": "ui.sync.time.format", "value": "Day {0} {1}:{2}" },
+    { "key": "ui.sync.weather", "value": "Weather: " },
+    { "key": "ui.sync.weather.unknown", "value": "Unknown" }
   ]
 }

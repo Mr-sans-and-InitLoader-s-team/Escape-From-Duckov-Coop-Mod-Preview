@@ -34,6 +34,7 @@ public class MModUIComponents
     // 输入字段
     public TMP_InputField IpInputField;
     public TMP_InputField PortInputField;
+    public TMP_InputField JsonInputField;  // 🆕 JSON 消息输入框
 
     // 文本组件
     public TMP_Text StatusText;

@@ -172,6 +172,63 @@ public class ModBehaviourF : MonoBehaviour
         LoggerHelper.LogWarning("【测试】Warning 等级日志 - 警告颜色");
         LoggerHelper.LogError("【测试】Error 等级日志 - 错误颜色");
         LoggerHelper.LogFatal("【测试】Fatal 等级日志 - 致命错误颜色");
+
+        // 初始化玩家信息数据库
+        InitializePlayerDatabase();
+    }
+
+    /// <summary>
+    /// 初始化玩家信息数据库
+    /// </summary>
+    private void InitializePlayerDatabase()
+    {
+        try
+        {
+            var playerDb = Utils.Database.PlayerInfoDatabase.Instance;
+
+            // 获取当前玩家的 Steam 信息
+            if (Steamworks.SteamAPI.IsSteamRunning())
+            {
+                var steamId = Steamworks.SteamUser.GetSteamID().ToString();
+                var playerName = Steamworks.SteamFriends.GetPersonaName();
+
+                // 获取头像 URL（大头像）
+                var avatarHandle = Steamworks.SteamFriends.GetLargeFriendAvatar(Steamworks.SteamUser.GetSteamID());
+                string avatarUrl = null;
+
+                if (avatarHandle > 0)
+                {
+                    // Steam 头像 URL 格式
+                    avatarUrl = $"https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/{avatarHandle:x2}/{avatarHandle:x16}_full.jpg";
+                }
+
+                // 添加到数据库
+                playerDb.AddOrUpdatePlayer(
+                    steamId: steamId,
+                    playerName: playerName,
+                    avatarUrl: avatarUrl,
+                    isLocal: true,
+                    lastUpdate: DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")
+                );
+
+                Debug.Log($"[PlayerDB] 本地玩家信息已缓存:");
+                Debug.Log($"  SteamID: {steamId}");
+                Debug.Log($"  名字: {playerName}");
+                Debug.Log($"  头像URL: {avatarUrl ?? "未获取"}");
+
+                // 导出 JSON 到日志（调试用）
+                var json = playerDb.ExportToJsonWithStats(indented: true);
+                Debug.Log($"[PlayerDB] 玩家数据库:\n{json}");
+            }
+            else
+            {
+                Debug.LogWarning("[PlayerDB] Steam 未初始化，无法获取玩家信息");
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[PlayerDB] 初始化玩家数据库失败: {ex.Message}\n{ex.StackTrace}");
+        }
     }
 
     private void Update()
@@ -1172,7 +1229,7 @@ public class ModBehaviourF : MonoBehaviour
 
             case Op.JSON:
                 // 处理JSON消息 - 使用路由器根据type字段分发
-                JsonMessageRouter.HandleJsonMessage(reader);
+                JsonMessageRouter.HandleJsonMessage(reader, peer);
                 break;
 
             case Op.GRENADE_THROW_REQUEST:
@@ -1305,9 +1362,9 @@ public class ModBehaviourF : MonoBehaviour
                                 remoteCharacters != null && remoteCharacters.ContainsKey(peer),
                             ["time"] = Time.time,
                         };
-                        Debug.Log(
-                            $"[HP_RECEIVE] {Newtonsoft.Json.JsonConvert.SerializeObject(logData)}"
-                        );
+                        // Debug.Log(
+                        //     $"[HP_RECEIVE] {Newtonsoft.Json.JsonConvert.SerializeObject(logData)}"
+                        // );
 
                         if (max <= 0f)
                         {
@@ -1324,7 +1381,7 @@ public class ModBehaviourF : MonoBehaviour
                             && go
                         )
                         {
-                            Debug.Log($"[HP_RECEIVE] ✓ 应用血量到远程角色: 玩家={playerId}");
+                            // Debug.Log($"[HP_RECEIVE] ✓ 应用血量到远程角色: 玩家={playerId}");
                             // 主机本地先写实自己能立刻看到
                             HealthM.Instance.ApplyHealthAndEnsureBar(go, max, cur);
 

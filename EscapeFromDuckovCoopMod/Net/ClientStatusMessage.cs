@@ -25,6 +25,10 @@ namespace EscapeFromDuckovCoopMod.Net;
 /// </summary>
 public static class ClientStatusMessage
 {
+    // 🆕 添加 SteamID -> SteamName 的映射缓存
+    private static System.Collections.Generic.Dictionary<string, string> _steamIdToNameMap = 
+        new System.Collections.Generic.Dictionary<string, string>();
+
     /// <summary>
     /// 客户端状态数据结构
     /// </summary>
@@ -117,6 +121,21 @@ public static class ClientStatusMessage
     }
 
     /// <summary>
+    /// 🆕 获取缓存的 Steam 名字（供 SceneVoteMessage 调用）
+    /// </summary>
+    public static string GetSteamNameFromSteamId(string steamId)
+    {
+        if (string.IsNullOrEmpty(steamId))
+            return "";
+
+        if (_steamIdToNameMap.TryGetValue(steamId, out var steamName))
+        {
+            return steamName;
+        }
+        return "";
+    }
+
+    /// <summary>
     /// 主机：处理客户端状态更新
     /// </summary>
     public static void Host_HandleClientStatus(NetPeer fromPeer, string json)
@@ -139,6 +158,15 @@ public static class ClientStatusMessage
             LoggerHelper.Log(
                 $"[ClientStatus] 收到客户端状态: EndPoint={data.endPoint}, SteamID={data.steamId}, SteamName={data.steamName}, Name={data.playerName}"
             );
+
+            // 🆕 缓存 SteamID -> SteamName 映射
+            if (!string.IsNullOrEmpty(data.steamId) && !string.IsNullOrEmpty(data.steamName))
+            {
+                _steamIdToNameMap[data.steamId] = data.steamName;
+                LoggerHelper.Log(
+                    $"[ClientStatus] ✓ 已缓存 Steam 名字映射: {data.steamId} -> {data.steamName}"
+                );
+            }
 
             // 🔧 建立 SteamID 和 EndPoint 的映射
             if (

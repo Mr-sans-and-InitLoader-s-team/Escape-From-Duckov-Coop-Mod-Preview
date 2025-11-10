@@ -183,6 +183,23 @@ public static class ClientStatusMessage
 
                         if (steamToEndPoint != null && endPointToSteam != null)
                         {
+                            // 🔧 检查是否已存在相同 SteamID 但不同 EndPoint 的映射（端口变化）
+                            if (steamToEndPoint.TryGetValue(steamId, out var oldEndPoint))
+                            {
+                                if (!oldEndPoint.Equals(ipEndPoint))
+                                {
+                                    // 🔧 移除旧的 EndPoint 映射
+                                    endPointToSteam.Remove(oldEndPoint);
+                                    LoggerHelper.Log(
+                                        $"[ClientStatus] 🔄 检测到端口变化: {oldEndPoint} -> {ipEndPoint} (SteamID={data.steamId})"
+                                    );
+                                    
+                                    // 🔧 同时更新 NetService 中的玩家记录
+                                    UpdatePlayerStatusEndPoint(oldEndPoint.ToString(), data.endPoint, data.steamId, data.steamName);
+                                }
+                            }
+
+                            // 🔧 注册新的映射（或更新现有映射）
                             steamToEndPoint[steamId] = ipEndPoint;
                             endPointToSteam[ipEndPoint] = steamId;
                             LoggerHelper.Log(
@@ -223,5 +240,91 @@ public static class ClientStatusMessage
         // 从 64 位 SteamID 提取账户 ID
         ulong accountId = steamId.m_SteamID & 0xFFFFFFFF;
         return accountId.ToString();
+    }
+
+    /// <summary>
+    /// 更新 NetService 中的玩家记录（端口变化时）
+    /// </summary>
+    private static void UpdatePlayerStatusEndPoint(
+        string oldEndPoint,
+        string newEndPoint,
+        string steamId,
+        string steamName
+    )
+    {
+        var service = NetService.Instance;
+        if (service == null || !service.IsServer)
+            return;
+
+        try
+        {
+            // 🔧 在 clientPlayerStatuses 中查找并更新
+            if (service.clientPlayerStatuses.TryGetValue(oldEndPoint, out var oldStatus))
+            {
+                // 移除旧的记录
+                service.clientPlayerStatuses.Remove(oldEndPoint);
+
+                // 更新 EndPoint
+                oldStatus.EndPoint = newEndPoint;
+
+                // 添加到新的 EndPoint
+                service.clientPlayerStatuses[newEndPoint] = oldStatus;
+
+                LoggerHelper.Log(
+                    $"[ClientStatus] ✓ 已更新 clientPlayerStatuses: {oldEndPoint} -> {newEndPoint}"
+                );
+            }
+
+            // 🔧 在 clientRemoteCharacters 中查找并更新
+            if (service.clientRemoteCharacters.TryGetValue(oldEndPoint, out var character))
+            {
+                // 移除旧的记录
+                service.clientRemoteCharacters.Remove(oldEndPoint);
+
+                // 添加到新的 EndPoint
+                service.clientRemoteCharacters[newEndPoint] = character;
+
+                LoggerHelper.Log(
+                    $"[ClientStatus] ✓ 已更新 clientRemoteCharacters: {oldEndPoint} -> {newEndPoint}"
+                );
+            }
+
+            // 🔧 更新投票系统中的玩家列表
+            var sceneNet = SceneNet.Instance;
+            if (sceneNet != null && sceneNet.sceneVoteActive)
+            {
+                // 更新参与者列表
+                if (sceneNet.sceneParticipantIds.Contains(oldEndPoint))
+                {
+                    sceneNet.sceneParticipantIds.Remove(oldEndPoint);
+                    sceneNet.sceneParticipantIds.Add(newEndPoint);
+                    LoggerHelper.Log(
+                        $"[ClientStatus] ✓ 已更新投票参与者: {oldEndPoint} -> {newEndPoint}"
+                    );
+                }
+
+                // 更新准备状态
+                if (sceneNet.sceneReady.TryGetValue(oldEndPoint, out var readyState))
+                {
+                    sceneNet.sceneReady.Remove(oldEndPoint);
+                    sceneNet.sceneReady[newEndPoint] = readyState;
+                    LoggerHelper.Log(
+                        $"[ClientStatus] ✓ 已更新投票准备状态: {oldEndPoint} -> {newEndPoint}, ready={readyState}"
+                    );
+                }
+
+                // 🔧 更新主机缓存的投票状态（如果存在）
+                if (SceneVoteMessage.HasActiveVote())
+                {
+                    SceneVoteMessage.UpdatePlayerEndPoint(oldEndPoint, newEndPoint, steamName);
+                }
+            }
+        }
+        catch (System.Exception ex)
+        {
+            LoggerHelper.LogError(
+                $"[ClientStatus] 更新玩家 EndPoint 失败: {ex.Message}\n{ex.StackTrace}"
+            );
+        }
     }
 }

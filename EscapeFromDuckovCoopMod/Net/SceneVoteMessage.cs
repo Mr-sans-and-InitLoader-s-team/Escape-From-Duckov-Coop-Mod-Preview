@@ -564,6 +564,9 @@ public static class SceneVoteMessage
         // 🔍 输出接收到的完整 JSON（单行）
         LoggerHelper.Log($"[SceneVote] 客户端收到 JSON: {json}");
 
+        // 🆕 收到投票消息时，立即上报客户端状态（确保 Steam 名字信息最新）
+        ClientStatusMessage.Client_SendStatusUpdate();
+
         try
         {
             // 🔧 使用 Newtonsoft.Json 反序列化，支持嵌套对象
@@ -1035,5 +1038,45 @@ public static class SceneVoteMessage
         }
 
         return ""; // 如果没有 Steam 或获取失败，返回空字符串
+    }
+
+    /// <summary>
+    /// 检查是否有活跃的投票
+    /// </summary>
+    public static bool HasActiveVote()
+    {
+        return _hostVoteState != null && _hostVoteState.active;
+    }
+
+    /// <summary>
+    /// 更新玩家的 EndPoint（端口变化时）
+    /// </summary>
+    public static void UpdatePlayerEndPoint(string oldEndPoint, string newEndPoint, string steamName)
+    {
+        if (_hostVoteState == null || _hostVoteState.playerList == null || _hostVoteState.playerList.items == null)
+            return;
+
+        // 查找并更新玩家信息
+        foreach (var player in _hostVoteState.playerList.items)
+        {
+            if (player.playerId == oldEndPoint)
+            {
+                player.playerId = newEndPoint;
+                
+                // 🔧 同时更新 Steam 名字（如果提供）
+                if (!string.IsNullOrEmpty(steamName))
+                {
+                    player.steamName = steamName;
+                }
+
+                LoggerHelper.Log(
+                    $"[SceneVote] ✓ 已更新投票玩家列表: {oldEndPoint} -> {newEndPoint}, steamName={steamName}"
+                );
+                
+                // 立即广播更新后的状态
+                Host_BroadcastVoteState();
+                break;
+            }
+        }
     }
 }

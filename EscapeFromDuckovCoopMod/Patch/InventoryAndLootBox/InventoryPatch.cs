@@ -544,15 +544,40 @@ internal static class Patch_Inventory_AddAt_BroadcastOnServer
             return; // 访问 LootBoxInventories 失败，说明场景正在切换
         }
 
-        if (!LootboxDetectUtil.IsLootboxInventory(__instance)) return;
+        // ✅ 性能监控：记录检查耗时
+        var checkStartTime = Time.realtimeSinceStartup;
+        bool isLootbox = LootboxDetectUtil.IsLootboxInventory(__instance);
+        bool isPrivate = LootboxDetectUtil.IsPrivateInventory(__instance);
+        var checkDuration = (Time.realtimeSinceStartup - checkStartTime) * 1000f;
 
-        if (!LootboxDetectUtil.IsLootboxInventory(__instance) || LootboxDetectUtil.IsPrivateInventory(__instance)) return;
+        if (checkDuration > 1f) // 超过1ms记录
+        {
+            Debug.LogWarning($"[InventoryPatch] IsLootboxInventory 检查耗时: {checkDuration:F2}ms, isLootbox={isLootbox}, isPrivate={isPrivate}");
+        }
+
+        // ✅ 关键：排除私有库存和非箱子 Inventory（墓碑等）
+        if (!isLootbox || isPrivate)
+        {
+            return; // 墓碑、仓库、宠物包等不同步
+        }
 
         // ✅ 优化：延迟到帧结束时执行，减少场景加载时的性能压力
         DeferedRunner.EndOfFrame(() =>
         {
-            if (!LootboxDetectUtil.IsLootboxInventory(__instance) || LootboxDetectUtil.IsPrivateInventory(__instance)) return;
+            // ✅ 二次检查：确保 Inventory 仍然有效且可同步
+            if (!LootboxDetectUtil.IsLootboxInventory(__instance) || LootboxDetectUtil.IsPrivateInventory(__instance))
+            {
+                return;
+            }
+
+            var broadcastStartTime = Time.realtimeSinceStartup;
             COOPManager.LootNet.Server_SendLootboxState(null, __instance);
+            var broadcastDuration = (Time.realtimeSinceStartup - broadcastStartTime) * 1000f;
+
+            if (broadcastDuration > 5f) // 超过5ms记录
+            {
+                Debug.LogWarning($"[InventoryPatch] 广播 LootboxState 耗时: {broadcastDuration:F2}ms");
+            }
         });
     }
 }

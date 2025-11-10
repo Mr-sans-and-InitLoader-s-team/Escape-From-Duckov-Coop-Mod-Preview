@@ -56,6 +56,13 @@ public class SceneNet : MonoBehaviour
 
     // 就绪表（key = 上面那个 pid）
     public readonly Dictionary<string, bool> sceneReady = new();
+
+    // 🆕 缓存完整的投票数据（供 UI 使用，客户端从主机接收，主机从本地构建）
+    public SceneVoteMessage.VoteStateData cachedVoteData = null;
+    
+    // 🆕 过期投票ID（客户端维护，用于过滤已取消的投票）
+    public int expiredVoteId = 0;
+    
     private readonly Dictionary<string, string> _cliServerPidToLocal = new();
     private readonly Dictionary<string, string> _cliLocalPidToServer = new();
     private float _cliGateDeadline;
@@ -601,14 +608,17 @@ public class SceneNet : MonoBehaviour
 
         Debug.Log("[SCENE] 取消投票，重置场景触发器");
 
-        // 如果是服务器，广播取消投票消息给所有客户端
+        // 🆕 如果是服务器，使用 JSON 系统取消投票
         if (IsServer && networkStarted && netManager != null)
         {
+            // 使用新的 JSON 投票系统取消投票
+            SceneVoteMessage.Host_CancelVote();
+            
+            // ❌ 旧的二进制消息系统已废弃，保留以兼容旧客户端
             var w = new NetDataWriter();
             w.Put((byte)Op.SCENE_CANCEL);
-            // 使用 SendSmart 自动选择传输方式（SCENE_CANCEL → Critical → ReliableOrdered）
             netManager.SendSmart(w, Op.SCENE_CANCEL);
-            Debug.Log("[SCENE] 服务器已广播取消投票消息");
+            Debug.Log("[SCENE] 服务器已广播取消投票消息（JSON + 二进制）");
         }
 
         // 清除投票状态

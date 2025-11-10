@@ -50,6 +50,9 @@ public static class SceneNameMapper
         { "Village", "村庄" },
         { "Village_01", "村庄1" },
         
+        // 零号区
+        { "GroundZero", "零号区" },
+        
         // 特殊
         { "Any", "任意地图" },
     };

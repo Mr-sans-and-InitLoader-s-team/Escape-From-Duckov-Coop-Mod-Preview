@@ -93,6 +93,11 @@ public static class JsonMessageRouter
                     SceneVoteMessage.Host_HandleReadyToggle(json);
                     break;
 
+                case "forceSceneLoad":
+                    // 强制场景切换（投票成功后）
+                    SceneVoteMessage.Client_HandleForceSceneLoad(json);
+                    break;
+
                 case "kick":
                     // 踢人消息
                     KickMessage.Client_HandleKickMessage(json);

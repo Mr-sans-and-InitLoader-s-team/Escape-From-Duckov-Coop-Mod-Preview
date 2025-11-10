@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -26,6 +26,7 @@ using LeTai.Asset.TranslucentImage;
 using Steamworks;
 using static BakeryLightmapGroup;
 using RenderMode = UnityEngine.RenderMode;
+using EscapeFromDuckovCoopMod.Utils.Logger.Tools;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -329,7 +330,7 @@ public class MModUI : MonoBehaviour
 
     private void OnLobbyJoined()
     {
-        Debug.Log("[MModUI] Lobby加入成功，强制刷新玩家列表");
+        LoggerHelper.Log("[MModUI] Lobby加入成功，强制刷新玩家列表");
         // 清空玩家列表缓存，强制刷新
         _displayedPlayerIds.Clear();
     }
@@ -383,7 +384,7 @@ public class MModUI : MonoBehaviour
         var mainCamera = Camera.main;
         if (mainCamera == null)
         {
-            Debug.LogWarning("主相机未找到，模糊效果将不可用");
+            LoggerHelper.LogWarning("主相机未找到，模糊效果将不可用");
             return;
         }
 
@@ -739,7 +740,7 @@ public class MModUI : MonoBehaviour
                     // 检查主机是否在游戏中
                     if (!hostStatus.IsInGame)
                     {
-                        Debug.LogWarning("服务端不在关卡内，断开连接");
+                        LoggerHelper.LogWarning("服务端不在关卡内，断开连接");
 
                         SetStatusText("[!] " + CoopLocalization.Get("ui.error.serverNotInGame"), ModernColors.Warning);
 
@@ -951,7 +952,7 @@ public class MModUI : MonoBehaviour
                         _noSteamIdWarningCount++;
                         if (_noSteamIdWarningCount == 1 || _noSteamIdWarningCount % NO_STEAMID_WARNING_INTERVAL == 0)
                         {
-                            Debug.LogWarning($"[MModUI] 添加无SteamID的玩家: {status.EndPoint} (已发生 {_noSteamIdWarningCount} 次)");
+                            LoggerHelper.LogWarning($"[MModUI] 添加无SteamID的玩家: {status.EndPoint} (已发生 {_noSteamIdWarningCount} 次)");
                         }
                     }
                 }
@@ -1053,7 +1054,7 @@ public class MModUI : MonoBehaviour
         {
             // 玩家列表变化了
             needsRebuild = true;
-            Debug.Log($"[MModUI] 玩家列表已更新，重建UI (当前: {currentPlayerIds.Count}, 之前: {_displayedPlayerIds.Count})");
+            LoggerHelper.Log($"[MModUI] 玩家列表已更新，重建UI (当前: {currentPlayerIds.Count}, 之前: {_displayedPlayerIds.Count})");
         }
         else if (isSteamMode)
         {
@@ -1222,7 +1223,7 @@ public class MModUI : MonoBehaviour
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"[MModUI] 获取Steam用户名失败: {e.Message}\n{e.StackTrace}");
+                LoggerHelper.LogError($"[MModUI] 获取Steam用户名失败: {e.Message}\n{e.StackTrace}");
                 steamUsername = $"Player_{(steamId > 0 ? steamId.ToString().Substring(Math.Max(0, steamId.ToString().Length - 4)) : "????")}";
             }
 
@@ -1271,7 +1272,7 @@ public class MModUI : MonoBehaviour
                 var kickButton = CreateIconButton("KickBtn", infoRow.transform, "踢", () =>
                 {
                     // 确认踢人
-                    Debug.Log($"[MModUI] 主机踢出玩家: SteamID={targetSteamId}");
+                    LoggerHelper.Log($"[MModUI] 主机踢出玩家: SteamID={targetSteamId}");
                     KickMessage.Server_KickPlayer(targetSteamId, "被主机踢出");
                 }, 50, ModernColors.Error);
             }
@@ -1347,7 +1348,7 @@ public class MModUI : MonoBehaviour
 
         if (!needsRebuild) return;
 
-        //Debug.Log($"[MModUI] 重建投票面板: {rebuildReason}");
+        //LoggerHelper.Log($"[MModUI] 重建投票面板: {rebuildReason}");
 
         // 更新缓存
         _lastVoteActive = active;
@@ -1532,7 +1533,7 @@ public class MModUI : MonoBehaviour
                 }
                 catch (System.Exception ex)
                 {
-                    Debug.LogWarning($"[MModUI] Steam API 调用失败（可能在直连模式下错误调用）: {ex.Message}");
+                    LoggerHelper.LogWarning($"[MModUI] Steam API 调用失败（可能在直连模式下错误调用）: {ex.Message}");
                     // 使用默认的 EndPoint 显示
                 }
             }
@@ -1567,7 +1568,7 @@ public class MModUI : MonoBehaviour
         // 调用取消投票方法
         SceneNet.Instance.CancelVote();
         SetStatusText("[OK] 已取消投票", ModernColors.Success);
-        Debug.Log("[MModUI] 房主取消了投票");
+        LoggerHelper.Log("[MModUI] 房主取消了投票");
     }
 
     private void UpdateSpectatorPanel()
@@ -1674,7 +1675,7 @@ public class MModUI : MonoBehaviour
         }
         catch (System.Exception e)
         {
-            Debug.LogWarning($"TranslucentImage 初始化失败，使用普通背景: {e.Message}");
+            LoggerHelper.LogWarning($"TranslucentImage 初始化失败，使用普通背景: {e.Message}");
             if (translucentImage != null)
             {
                 Destroy(translucentImage);
@@ -1724,7 +1725,7 @@ public class MModUI : MonoBehaviour
             }
             catch (System.Exception e)
             {
-                Debug.LogWarning($"TranslucentImage 参数设置失败: {e.Message}");
+                LoggerHelper.LogWarning($"TranslucentImage 参数设置失败: {e.Message}");
             }
         }
     }
@@ -2523,7 +2524,7 @@ public class MModUI : MonoBehaviour
 
             SetStatusText("[OK] " + CoopLocalization.Get("ui.server.closed"), ModernColors.Info);
 
-            Debug.Log("主机已关闭，网络已完全停止");
+            LoggerHelper.Log("主机已关闭，网络已完全停止");
         }
         else
         {
@@ -2536,14 +2537,14 @@ public class MModUI : MonoBehaviour
 
                 SetStatusText("[OK] " + CoopLocalization.Get("ui.server.created", serverPort), ModernColors.Success);
 
-                Debug.Log($"主机创建成功，使用端口: {serverPort}");
+                LoggerHelper.Log($"主机创建成功，使用端口: {serverPort}");
             }
             else
             {
                 // 端口格式错误
                 SetStatusText("[" + CoopLocalization.Get("ui.error") + "] " + CoopLocalization.Get("ui.manualConnect.portError"), ModernColors.Error);
 
-                Debug.LogError($"端口格式错误: {manualPort}");
+                LoggerHelper.LogError($"端口格式错误: {manualPort}");
                 return;
             }
         }
@@ -2572,11 +2573,11 @@ public class MModUI : MonoBehaviour
         if (!isInGame)
         {
             SetStatusText("[!] " + CoopLocalization.Get("ui.error.mustInLevel"), ModernColors.Warning);
-            Debug.LogWarning("无法连接：客户端未在游戏关卡中");
+            LoggerHelper.LogWarning("无法连接：客户端未在游戏关卡中");
             return false;
         }
 
-        Debug.Log($"客户端关卡检查通过，当前场景: {sceneId}");
+        LoggerHelper.Log($"客户端关卡检查通过，当前场景: {sceneId}");
         return true;
     }
 
@@ -2606,7 +2607,7 @@ public class MModUI : MonoBehaviour
     {
         if (LevelManager.LootBoxInventories == null)
         {
-            Debug.LogWarning("LootBoxInventories is null. Make sure you are in a game level.");
+            LoggerHelper.LogWarning("LootBoxInventories is null. Make sure you are in a game level.");
             SetStatusText("[!] " + CoopLocalization.Get("ui.error.mustInLevel"), ModernColors.Warning);
             return;
         }
@@ -2616,16 +2617,16 @@ public class MModUI : MonoBehaviour
         {
             try
             {
-                Debug.Log($"Name {i.Value.name} DisplayNameKey {i.Value.DisplayNameKey} Key {i.Key}");
+                LoggerHelper.Log($"Name {i.Value.name} DisplayNameKey {i.Value.DisplayNameKey} Key {i.Key}");
                 count++;
             }
             catch (Exception ex)
             {
-                Debug.LogError($"Error printing loot box: {ex.Message}");
+                LoggerHelper.LogError($"Error printing loot box: {ex.Message}");
             }
         }
 
-        Debug.Log($"Total LootBoxes: {count}");
+        LoggerHelper.Log($"Total LootBoxes: {count}");
         SetStatusText($"[OK] " + CoopLocalization.Get("ui.debug.lootBoxCount", count), ModernColors.Success);
     }
 
@@ -2633,7 +2634,7 @@ public class MModUI : MonoBehaviour
     {
         if (Service == null)
         {
-            Debug.LogWarning("[Debug] NetService 未初始化");
+            LoggerHelper.LogWarning("[Debug] NetService 未初始化");
             SetStatusText("[!] 网络服务未初始化", ModernColors.Warning);
             return;
         }
@@ -2641,10 +2642,10 @@ public class MModUI : MonoBehaviour
         var isServer = Service.IsServer;
         var timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
 
-        Debug.Log($"========== Network Debug Info ==========");
-        Debug.Log($"Timestamp: {timestamp}");
-        Debug.Log($"Role: {(isServer ? "主机 (Server)" : "客户端 (Client)")}");
-        Debug.Log($"========================================");
+        LoggerHelper.Log($"========== Network Debug Info ==========");
+        LoggerHelper.Log($"Timestamp: {timestamp}");
+        LoggerHelper.Log($"Role: {(isServer ? "主机 (Server)" : "客户端 (Client)")}");
+        LoggerHelper.Log($"========================================");
 
         var debugData = new Dictionary<string, object>
         {
@@ -3203,36 +3204,36 @@ public class MModUI : MonoBehaviour
         }
 
         // === 输出格式化日志 ===
-        Debug.Log($"--- Summary ---");
-        Debug.Log($"  Role: {debugData["Role"]}");
-        Debug.Log($"  NetworkStarted: {debugData["NetworkStarted"]}");
-        Debug.Log($"  LocalPlayer: {(Service.localPlayerStatus != null ? Service.localPlayerStatus.EndPoint : "null")}");
+        LoggerHelper.Log($"--- Summary ---");
+        LoggerHelper.Log($"  Role: {debugData["Role"]}");
+        LoggerHelper.Log($"  NetworkStarted: {debugData["NetworkStarted"]}");
+        LoggerHelper.Log($"  LocalPlayer: {(Service.localPlayerStatus != null ? Service.localPlayerStatus.EndPoint : "null")}");
         
         if (isServer)
         {
-            Debug.Log($"  RemoteCharacters: {Service.remoteCharacters?.Count ?? 0}");
-            Debug.Log($"  PlayerStatuses: {Service.playerStatuses?.Count ?? 0}");
-            Debug.Log($"  ConnectedPeers: {Service.netManager?.ConnectedPeerList?.Count ?? 0}");
+            LoggerHelper.Log($"  RemoteCharacters: {Service.remoteCharacters?.Count ?? 0}");
+            LoggerHelper.Log($"  PlayerStatuses: {Service.playerStatuses?.Count ?? 0}");
+            LoggerHelper.Log($"  ConnectedPeers: {Service.netManager?.ConnectedPeerList?.Count ?? 0}");
         }
         else
         {
-            Debug.Log($"  ClientRemoteCharacters: {Service.clientRemoteCharacters?.Count ?? 0}");
-            Debug.Log($"  ClientPlayerStatuses: {Service.clientPlayerStatuses?.Count ?? 0}");
-            Debug.Log($"  ConnectedPeer: {(Service.connectedPeer != null ? "Connected" : "null")}");
+            LoggerHelper.Log($"  ClientRemoteCharacters: {Service.clientRemoteCharacters?.Count ?? 0}");
+            LoggerHelper.Log($"  ClientPlayerStatuses: {Service.clientPlayerStatuses?.Count ?? 0}");
+            LoggerHelper.Log($"  ConnectedPeer: {(Service.connectedPeer != null ? "Connected" : "null")}");
         }
 
         // === 输出完整 JSON ===
         try
         {
-            var json = Newtonsoft.Json.JsonConvert.SerializeObject(debugData, Newtonsoft.Json.Formatting.Indented);
-            Debug.Log($"========== Complete Network State JSON ==========");
-            Debug.Log(json);
-            Debug.Log($"=================================================");
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(debugData, Newtonsoft.Json.Formatting.None);
+            LoggerHelper.Log($"========== Complete Network State JSON ==========");
+            LoggerHelper.Log(json);
+            LoggerHelper.Log($"=================================================");
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[Debug] JSON 序列化失败: {ex.Message}");
-            Debug.LogError($"[Debug] 堆栈: {ex.StackTrace}");
+            LoggerHelper.LogError($"[Debug] JSON 序列化失败: {ex.Message}");
+            LoggerHelper.LogError($"[Debug] 堆栈: {ex.StackTrace}");
         }
 
         var summary = isServer 
@@ -3295,7 +3296,7 @@ public class MModUI : MonoBehaviour
             return;
 
         // 列表改变了，需要重建UI
-        Debug.Log($"[MModUI] Steam房间列表已更新，重建UI (当前: {currentLobbies.Count}, 之前: {_displayedSteamLobbies.Count})");
+        LoggerHelper.Log($"[MModUI] Steam房间列表已更新，重建UI (当前: {currentLobbies.Count}, 之前: {_displayedSteamLobbies.Count})");
 
         // 清空现有列表
         foreach (Transform child in _components.SteamLobbyListContent)
@@ -3364,7 +3365,7 @@ public class MModUI : MonoBehaviour
         // 加入按钮
         var joinButton = CreateModernButton("JoinBtn", entry.transform, CoopLocalization.Get("ui.steam.joinButton"), () =>
         {
-            Debug.Log($"[MModUI] 加入按钮被点击！房间: {lobby.LobbyName}");
+            LoggerHelper.Log($"[MModUI] 加入按钮被点击！房间: {lobby.LobbyName}");
             AttemptSteamLobbyJoin(lobby);
         }, -1, ModernColors.Primary, 40, 15);
 
@@ -3373,18 +3374,18 @@ public class MModUI : MonoBehaviour
         if (joinButtonImage != null)
         {
             joinButtonImage.raycastTarget = true;  // 确保按钮背景可以接收射线
-            Debug.Log($"[MModUI] 创建加入按钮: {lobby.LobbyName}, raycastTarget={joinButtonImage.raycastTarget}");
+            LoggerHelper.Log($"[MModUI] 创建加入按钮: {lobby.LobbyName}, raycastTarget={joinButtonImage.raycastTarget}");
         }
     }
 
     private void AttemptSteamLobbyJoin(SteamLobbyManager.LobbyInfo lobby)
     {
-        Debug.Log($"[MModUI] 尝试加入Steam房间: {lobby.LobbyName} (ID: {lobby.LobbyId})");
+        LoggerHelper.Log($"[MModUI] 尝试加入Steam房间: {lobby.LobbyName} (ID: {lobby.LobbyId})");
 
         var manager = LobbyManager;
         if (manager == null)
         {
-            Debug.LogError("[MModUI] Steam Lobby Manager 未初始化");
+            LoggerHelper.LogError("[MModUI] Steam Lobby Manager 未初始化");
             SetStatusText("[!] " + CoopLocalization.Get("ui.steam.error.notInitialized"), ModernColors.Error);
             return;
         }
@@ -3392,31 +3393,31 @@ public class MModUI : MonoBehaviour
         // 检查是否在关卡内 - 必须在游戏中才能加入
         if (!CheckCanConnect())
         {
-            Debug.LogWarning("[MModUI] 关卡检查失败，无法加入房间");
+            LoggerHelper.LogWarning("[MModUI] 关卡检查失败，无法加入房间");
             return;
         }
 
-        Debug.Log("[MModUI] 关卡检查通过，准备加入房间");
+        LoggerHelper.Log("[MModUI] 关卡检查通过，准备加入房间");
 
         // 如果网络未启动，先启动客户端模式
         if (netManager == null || !netManager.IsRunning || IsServer || !networkStarted)
         {
-            Debug.Log("[MModUI] 启动客户端网络模式");
+            LoggerHelper.Log("[MModUI] 启动客户端网络模式");
             NetService.Instance?.StartNetwork(false);
         }
 
         var password = lobby.RequiresPassword ? _steamJoinPassword : string.Empty;
-        Debug.Log($"[MModUI] 调用 TryJoinLobbyWithPassword, 需要密码: {lobby.RequiresPassword}");
+        LoggerHelper.Log($"[MModUI] 调用 TryJoinLobbyWithPassword, 需要密码: {lobby.RequiresPassword}");
 
         if (manager.TryJoinLobbyWithPassword(lobby.LobbyId, password, out var error))
         {
-            Debug.Log($"[MModUI] 加入请求已发送，等待Steam响应");
+            LoggerHelper.Log($"[MModUI] 加入请求已发送，等待Steam响应");
             SetStatusText("[*] " + CoopLocalization.Get("ui.status.connecting"), ModernColors.Info);
             return;
         }
 
         // 处理错误
-        Debug.LogError($"[MModUI] 加入房间失败: {error}");
+        LoggerHelper.LogError($"[MModUI] 加入房间失败: {error}");
         string errorMsg = error switch
         {
             SteamLobbyManager.LobbyJoinError.SteamNotInitialized => "[!] " + CoopLocalization.Get("ui.steam.error.notInitialized"),

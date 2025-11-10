@@ -931,14 +931,30 @@ public static class SceneVoteMessage
                 return Steamworks.SteamFriends.GetPersonaName();
             }
 
-            // 🔧 从 SteamID 获取用户名
+            // 🆕 优先从 ClientStatusMessage 的缓存中获取
             var steamIdStr = GetSteamId(peer);
+            if (!string.IsNullOrEmpty(steamIdStr))
+            {
+                var cachedName = ClientStatusMessage.GetSteamNameFromSteamId(steamIdStr);
+                if (!string.IsNullOrEmpty(cachedName))
+                {
+                    LoggerHelper.Log(
+                        $"[SceneVote] 从缓存获取 Steam 名字: {steamIdStr} -> {cachedName}"
+                    );
+                    return cachedName;
+                }
+            }
+
+            // 🔧 备用方案：从 Steam API 获取用户名（可能失败，仅适用于好友）
             if (!string.IsNullOrEmpty(steamIdStr) && ulong.TryParse(steamIdStr, out var steamIdValue))
             {
                 var steamId = new Steamworks.CSteamID(steamIdValue);
                 var steamName = Steamworks.SteamFriends.GetFriendPersonaName(steamId);
                 if (!string.IsNullOrEmpty(steamName) && steamName != "[unknown]")
                 {
+                    LoggerHelper.Log(
+                        $"[SceneVote] 从 Steam API 获取名字: {steamIdStr} -> {steamName}"
+                    );
                     return steamName;
                 }
             }

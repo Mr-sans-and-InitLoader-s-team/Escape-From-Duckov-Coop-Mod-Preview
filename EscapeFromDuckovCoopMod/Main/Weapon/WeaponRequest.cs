@@ -40,7 +40,7 @@ public class WeaponRequest
     }
 
     // 客户端：拦截本地生成后，向主机发开火请求（带上 clientScatter / ads01）
-    public void Net_OnClientShoot(ItemAgent_Gun gun, Vector3 muzzle, Vector3 baseDir, Vector3 firstCheckStart)
+    public void Net_OnClientShoot(ItemAgent_Gun gun, Vector3 muzzle, Vector3 baseDir, Vector3 firstCheckStart, bool isAimingHead)
     {
         if (IsServer || connectedPeer == null) return;
 
@@ -96,7 +96,7 @@ public class WeaponRequest
             var bulletCritRateGain = hasBulletItem ? gun.bulletCritRateGain : 0f;
             var bulletCritDmgGain = hasBulletItem ? gun.BulletCritDamageFactorGain : 0f;
             hint.critDamageFactor = (gun.CritDamageFactor + bulletCritDmgGain) * (1f + gun.CharacterGunCritDamageGain);
-            hint.critRate = gun.CritRate * (1f + gun.CharacterGunCritRateGain + bulletCritRateGain);
+            hint.critRate = isAimingHead ? 1f : gun.CritRate * (1f + gun.CharacterGunCritRateGain + bulletCritRateGain);
 
             // 元素/破甲/爆炸/流血等（保持你原有写法）
             switch (gun.GunItemSetting.element)

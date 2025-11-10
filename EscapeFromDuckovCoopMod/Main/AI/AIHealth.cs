@@ -53,7 +53,7 @@ public class AIHealth
     /// <summary>
     ///     /////////////AI血量同步//////////////AI血量同步//////////////AI血量同步//////////////AI血量同步//////////////AI血量同步////////
     /// </summary>
-    public void Server_BroadcastAiHealth(int aiId, float maxHealth, float currentHealth)
+    public void Server_BroadcastAiHealth(int aiId, float maxHealth, float currentHealth, DamageInfo dmg)
     {
         if (!networkStarted || !IsServer) return;
         var w = new NetDataWriter();
@@ -61,11 +61,16 @@ public class AIHealth
         w.Put(aiId);
         w.Put(maxHealth);
         w.Put(currentHealth);
+        w.PutDamagePayload(
+            dmg.damageValue, dmg.armorPiercing, dmg.critDamageFactor, dmg.critRate, dmg.crit,
+            dmg.damagePoint, dmg.damageNormal, dmg.fromWeaponItemID, dmg.bleedChance, dmg.isExplosion,
+            0f
+        );
         netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
     }
 
 
-    public void Client_ApplyAiHealth(int aiId, float max, float cur)
+    public void Client_ApplyAiHealth(int aiId, float max, float cur, DamageInfo dmg)
     {
         if (IsServer) return;
 
@@ -87,24 +92,18 @@ public class AIHealth
             _cliLastAiHp.TryGetValue(aiId, out prev);
             _cliLastAiHp[aiId] = cur;
 
-            var delta = prev - cur; // 掉血为正
-            if (delta > 0.01f)
+            if (dmg.damageValue > 0f)
             {
                 var pos = cmc.transform.position + Vector3.up * 1.1f;
-                var di = new DamageInfo();
-                di.damagePoint = pos;
-                di.damageNormal = Vector3.up;
-                di.damageValue = delta;
-                // 如果运行库里有 finalDamage 字段就能显示更准的数值（A 节已经做了优先显示）
-                try
-                {
-                    di.finalDamage = delta;
-                }
-                catch
-                {
-                }
-
-                LocalHitKillFx.PopDamageText(pos, di);
+                var headArmor = h.HeadArmor;
+                var bodyArmor = h.BodyArmor;
+                var isAimingHead = LevelManager.Instance.InputManager.AimingEnemyHead;
+                var armor = isAimingHead ? headArmor : bodyArmor;
+                dmg.damagePoint = pos;
+                dmg.damageNormal = Vector3.up;
+                if (dmg.crit > 0) dmg.damageValue *= dmg.critDamageFactor;
+                dmg.damageValue *= 2f / (Mathf.Clamp(armor - dmg.armorPiercing, 0f, 999f) + 2f);
+                LocalHitKillFx.PopDamageText(pos, dmg);
             }
         }
         catch

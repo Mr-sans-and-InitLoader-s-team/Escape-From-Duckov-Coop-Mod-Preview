@@ -140,7 +140,7 @@ internal static class Patch_AIHealth_SetHealth_Broadcast
         if (!tag) return;
 
         if (ModBehaviourF.LogAiHpDebug) Debug.Log($"[AI-HP][SERVER] SetHealth => broadcast aiId={tag.aiId} cur={__instance.CurrentHealth}");
-        COOPManager.AIHealth.Server_BroadcastAiHealth(tag.aiId, __instance.MaxHealth, __instance.CurrentHealth);
+        COOPManager.AIHealth.Server_BroadcastAiHealth(tag.aiId, __instance.MaxHealth, __instance.CurrentHealth, new DamageInfo{damageValue = 0f});
     }
 }
 
@@ -168,7 +168,7 @@ internal static class Patch_AIHealth_AddHealth_Broadcast
         if (!tag) return;
 
         if (ModBehaviourF.LogAiHpDebug) Debug.Log($"[AI-HP][SERVER] AddHealth => broadcast aiId={tag.aiId} cur={__instance.CurrentHealth}");
-        COOPManager.AIHealth.Server_BroadcastAiHealth(tag.aiId, __instance.MaxHealth, __instance.CurrentHealth);
+        COOPManager.AIHealth.Server_BroadcastAiHealth(tag.aiId, __instance.MaxHealth, __instance.CurrentHealth, new DamageInfo{damageValue = 0f});
     }
 }
 

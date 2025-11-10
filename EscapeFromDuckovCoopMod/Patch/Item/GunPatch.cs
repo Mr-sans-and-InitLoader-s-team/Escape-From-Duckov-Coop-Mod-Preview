@@ -80,10 +80,11 @@ public static class Patch_ShootOneBullet_Client
         var holder = __instance.Holder;
         var isLocalMain = holder == CharacterMainControl.Main;
         var isAI = holder && holder.GetComponent<NetAiTag>() != null;
+        var isAimingHead = LevelManager.Instance.InputManager.AimingEnemyHead;
 
         if (isLocalMain)
         {
-            COOPManager.WeaponRequest.Net_OnClientShoot(__instance, _muzzlePoint, _shootDirection, firstFrameCheckStartPoint);
+            COOPManager.WeaponRequest.Net_OnClientShoot(__instance, _muzzlePoint, _shootDirection, firstFrameCheckStartPoint, isAimingHead);
             return false; // 客户端不生成，交主机
         }
 

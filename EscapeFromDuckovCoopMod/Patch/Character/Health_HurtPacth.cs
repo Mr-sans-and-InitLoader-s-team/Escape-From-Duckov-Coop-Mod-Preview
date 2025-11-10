@@ -99,7 +99,7 @@ internal static class Patch_AIHealth_Hurt_HostAuthority
 
         if (ModBehaviourF.LogAiHpDebug)
             Debug.Log($"[AI-HP][SERVER] Hurt => broadcast aiId={tag.aiId} cur={__instance.CurrentHealth}");
-        COOPManager.AIHealth.Server_BroadcastAiHealth(tag.aiId, __instance.MaxHealth, __instance.CurrentHealth);
+        COOPManager.AIHealth.Server_BroadcastAiHealth(tag.aiId, __instance.MaxHealth, __instance.CurrentHealth, damageInfo);
     }
 }
 

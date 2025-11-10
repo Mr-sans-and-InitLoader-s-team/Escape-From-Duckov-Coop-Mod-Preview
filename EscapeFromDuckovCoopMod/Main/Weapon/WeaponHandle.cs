@@ -124,19 +124,26 @@ public class WeaponHandle
             speed = gun.BulletSpeed * gunBulletSpeedMul,
             distance = gun.BulletDistance + 0.4f,
             halfDamageDistance = (gun.BulletDistance + 0.4f) * 0.5f,
-            critDamageFactor = (gun.CritDamageFactor + bulletCritDmgGain) * (1f + gun.CharacterGunCritDamageGain),
-            critRate = gun.CritRate * (1f + gun.CharacterGunCritRateGain + bulletCritRateGain),
-            armorPiercing = gun.ArmorPiercing + bulletArmorPiercingGain,
-            armorBreak = gun.ArmorBreak + bulletArmorBreakGain,
+            critDamageFactor = _hasPayloadHint ? _payloadHint.critDamageFactor : (gun.CritDamageFactor + bulletCritDmgGain) * (1f + gun.CharacterGunCritDamageGain),
+            critRate = _hasPayloadHint ? _payloadHint.critRate : gun.CritRate * (1f + gun.CharacterGunCritRateGain + bulletCritRateGain),
+            armorPiercing = _hasPayloadHint ? _payloadHint.armorPiercing : gun.ArmorPiercing + bulletArmorPiercingGain,
+            armorBreak = _hasPayloadHint ? _payloadHint.armorBreak : gun.ArmorBreak + bulletArmorBreakGain,
             explosionRange = bulletExplosionRange,
             explosionDamage = bulletExplosionDamage * gun.ExplosionDamageMultiplier,
-            bleedChance = bulletBleedChance,
+            bleedChance = _hasPayloadHint ? _payloadHint.bleedChance : bulletBleedChance,
             fromWeaponItemID = gun.Item.TypeID
         };
 
         // 伤害（和你原来的除以 ShotCount 的逻辑一致）
-        var perShotDiv = Mathf.Max(1, gun.ShotCount);
-        ctx.damage = gun.Damage * bulletDamageMul * characterDamageMultiplier / perShotDiv;
+        if (_hasPayloadHint && _payloadHint.fromWeaponItemID == gun.Item.TypeID && _payloadHint.damage > 0f)
+        {
+            ctx.damage = _payloadHint.damage;
+        }
+        else
+        {
+            var perShotDiv = Mathf.Max(1, gun.ShotCount);
+            ctx.damage = gun.Damage * bulletDamageMul * characterDamageMultiplier / perShotDiv;
+        }
         if (gun.Damage > 1f && ctx.damage < 1f) ctx.damage = 1f;
 
         // 元素
@@ -566,83 +573,7 @@ public class WeaponHandle
         writer.Put(speed);
         writer.Put(distance);
 
-        var payloadCtx = new ProjectileContext();
-        if (gun != null)
-        {
-            var hasBulletItem = false;
-            try
-            {
-                hasBulletItem = gun.BulletItem != null;
-            }
-            catch
-            {
-            }
-
-            // …（保留你原有的 payload 构造，略）…
-            try
-            {
-                var charMul = gun.CharacterDamageMultiplier;
-                var bulletMul = hasBulletItem ? Mathf.Max(0.0001f, gun.BulletDamageMultiplier) : 1f;
-                var shots = Mathf.Max(1, gun.ShotCount);
-                payloadCtx.damage = gun.Damage * bulletMul * charMul / shots;
-                if (gun.Damage > 1f && payloadCtx.damage < 1f) payloadCtx.damage = 1f;
-            }
-            catch
-            {
-                if (payloadCtx.damage <= 0f) payloadCtx.damage = 1f;
-            }
-
-            try
-            {
-                var bulletCritRateGain = hasBulletItem ? gun.bulletCritRateGain : 0f;
-                var bulletCritDmgGain = hasBulletItem ? gun.BulletCritDamageFactorGain : 0f;
-                payloadCtx.critDamageFactor = (gun.CritDamageFactor + bulletCritDmgGain) * (1f + gun.CharacterGunCritDamageGain);
-                payloadCtx.critRate = gun.CritRate * (1f + gun.CharacterGunCritRateGain + bulletCritRateGain);
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                var apGain = hasBulletItem ? gun.BulletArmorPiercingGain : 0f;
-                var abGain = hasBulletItem ? gun.BulletArmorBreakGain : 0f;
-                payloadCtx.armorPiercing = gun.ArmorPiercing + apGain;
-                payloadCtx.armorBreak = gun.ArmorBreak + abGain;
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                var setting = gun.GunItemSetting;
-                if (setting != null)
-                    switch (setting.element)
-                    {
-                        case ElementTypes.physics: payloadCtx.element_Physics = 1f; break;
-                        case ElementTypes.fire: payloadCtx.element_Fire = 1f; break;
-                        case ElementTypes.poison: payloadCtx.element_Poison = 1f; break;
-                        case ElementTypes.electricity: payloadCtx.element_Electricity = 1f; break;
-                        case ElementTypes.space: payloadCtx.element_Space = 1f; break;
-                    }
-
-                payloadCtx.explosionRange = gun.BulletExplosionRange;
-                payloadCtx.explosionDamage = gun.BulletExplosionDamage * gun.ExplosionDamageMultiplier;
-
-                if (hasBulletItem)
-                {
-                    payloadCtx.buffChance = gun.BulletBuffChanceMultiplier * gun.BuffChance;
-                    payloadCtx.bleedChance = gun.BulletBleedChance;
-                }
-
-                payloadCtx.penetrate = gun.Penetrate;
-                payloadCtx.fromWeaponItemID = gun.Item != null ? gun.Item.TypeID : 0;
-            }
-            catch
-            {
-            }
-        }
+        var payloadCtx = _payloadHint;
 
         writer.PutProjectilePayload(payloadCtx);
         netManager.SendToAll(writer, DeliveryMethod.ReliableOrdered);

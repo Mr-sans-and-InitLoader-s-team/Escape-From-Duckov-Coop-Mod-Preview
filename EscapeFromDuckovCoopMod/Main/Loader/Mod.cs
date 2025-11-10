@@ -1427,8 +1427,31 @@ public class ModBehaviourF : MonoBehaviour
                 {
                     cur = reader.GetFloat();
                 }
+                
+                if (reader.AvailableBytes >= 49)
+                {
+                    var payload = reader.GetDamagePayload();
+                    var dmg = new DamageInfo
+                    {
+                        damageValue = payload.dmg,
+                        armorPiercing = payload.ap,
+                        critDamageFactor = payload.cdf,
+                        critRate = payload.cr,
+                        crit = payload.crit,
+                        damagePoint = payload.point,
+                        damageNormal = payload.normal,
+                        fromWeaponItemID = payload.wid,
+                        bleedChance = payload.bleed,
+                        isExplosion = payload.boom,
+                        fromCharacter = null
+                    };
+                    COOPManager.AIHealth.Client_ApplyAiHealth(id, max, cur, dmg);
+                }
+                else
+                {
+                    COOPManager.AIHealth.Client_ApplyAiHealth(id, max, cur, new DamageInfo{damageValue = 0f});
+                };
 
-                COOPManager.AIHealth.Client_ApplyAiHealth(id, max, cur);
                 break;
             }
 

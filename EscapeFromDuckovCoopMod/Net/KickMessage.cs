@@ -59,6 +59,17 @@ public static class KickMessage
         var json = JsonUtility.ToJson(kickData);
         Debug.Log($"[KickMessage] 主机踢出玩家: SteamID={targetSteamId}, 原因={reason}");
 
+        // 立即从玩家数据库中删除该玩家（避免幽灵玩家）
+        var steamIdStr = targetSteamId.ToString();
+        if (Utils.Database.PlayerInfoDatabase.Instance.RemovePlayer(steamIdStr))
+        {
+            Debug.Log($"[KickMessage] ✓ 已从数据库删除玩家: {steamIdStr}");
+        }
+        else
+        {
+            Debug.LogWarning($"[KickMessage] 从数据库删除玩家失败: {steamIdStr}");
+        }
+
         // 广播踢人消息给所有客户端
         JsonMessage.BroadcastToAllClients(json, LiteNetLib.DeliveryMethod.ReliableOrdered);
     }

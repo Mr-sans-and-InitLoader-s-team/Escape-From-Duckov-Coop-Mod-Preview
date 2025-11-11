@@ -56,6 +56,15 @@ public class WaitingSynchronizationUI : MonoBehaviour
     private const float TASK_STUCK_TIMEOUT = 30f; // 单个任务卡住超时10秒
     private Dictionary<string, float> _taskLastUpdateTime = new Dictionary<string, float>();
 
+    // ✅ 帧率检测器 - 用于大型地图加载后的性能监控
+    private Queue<float> _fpsHistory = new Queue<float>(); // 帧率历史记录（最近N秒）
+    private const int FPS_HISTORY_SIZE = 60; // 保留60帧的记录（约1-2秒）
+    private const float MIN_STABLE_FPS = 30f; // 最低稳定帧率阈值（30 FPS）
+    private const float FPS_STABLE_DURATION = 3f; // 需要稳定维持的时间（3秒）
+    private float _fpsStableStartTime = 0f; // 帧率达到稳定阈值的开始时间
+    private bool _fpsIsStable = false; // 帧率是否已稳定
+    private bool _fpsCheckEnabled = false; // 是否启用帧率检查（只在客户端大型地图时启用）
+
     // 无敌状态管理
     private Health _invincibilityTargetHealth = null;
     private bool? _originalInvincibleState = null;
@@ -296,12 +305,18 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
     private void Update()
     {
+        // ✅ 帧率检测（在UI显示时监控）
+        if (_panel != null && _panel.activeSelf && _fpsCheckEnabled)
+        {
+            UpdateFPSMonitor();
+        }
+
         // ✅ 超时保护：强制关闭UI
         if (_panel != null && _panel.activeSelf)
         {
             float elapsedTime = Time.time - _uiShowTime;
 
-            // 1. 绝对超时保护（30秒）
+            // 1. 绝对超时保护（90秒）
             if (elapsedTime > MAX_UI_DISPLAY_TIME)
             {
                 Debug.LogWarning($"[SYNC_UI] ⚠️ 超时保护触发！UI已显示 {elapsedTime:F1} 秒，强制关闭");
@@ -309,7 +324,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
                 return;
             }
 
-            // 2. 任务卡住检测（某个任务10秒未更新）
+            // 2. 任务卡住检测（某个任务30秒未更新）
             CheckStuckTasks();
         }
 
@@ -521,6 +536,69 @@ public class WaitingSynchronizationUI : MonoBehaviour
     }
 
     /// <summary>
+    /// ✅ 帧率监控更新（每帧调用）
+    /// </summary>
+    private void UpdateFPSMonitor()
+    {
+        // 计算当前帧率
+        float currentFPS = 1f / Time.unscaledDeltaTime;
+
+        // 添加到历史记录
+        _fpsHistory.Enqueue(currentFPS);
+
+        // 保持队列大小
+        if (_fpsHistory.Count > FPS_HISTORY_SIZE)
+        {
+            _fpsHistory.Dequeue();
+        }
+
+        // 计算平均帧率
+        if (_fpsHistory.Count >= FPS_HISTORY_SIZE / 2) // 至少有一半的样本
+        {
+            float avgFPS = _fpsHistory.Average();
+
+            // 检查帧率是否达到稳定阈值
+            if (avgFPS >= MIN_STABLE_FPS)
+            {
+                if (!_fpsIsStable)
+                {
+                    // 首次达到阈值，记录时间
+                    if (_fpsStableStartTime == 0f)
+                    {
+                        _fpsStableStartTime = Time.time;
+                        Debug.Log($"[SYNC_UI_FPS] 📊 帧率开始恢复：当前平均 {avgFPS:F1} FPS");
+                    }
+                    // 检查是否已经稳定维持足够长时间
+                    else if (Time.time - _fpsStableStartTime >= FPS_STABLE_DURATION)
+                    {
+                        _fpsIsStable = true;
+                        Debug.Log($"[SYNC_UI_FPS] ✅ 帧率已稳定：平均 {avgFPS:F1} FPS（已维持 {FPS_STABLE_DURATION} 秒）");
+
+                        // 帧率恢复后，检查是否可以隐藏UI
+                        CheckAndHideIfComplete();
+                    }
+                }
+            }
+            else
+            {
+                // 帧率下降，重置稳定状态
+                if (_fpsStableStartTime != 0f)
+                {
+                    Debug.Log($"[SYNC_UI_FPS] ⚠️ 帧率波动：当前平均 {avgFPS:F1} FPS，重置稳定计时器");
+                }
+                _fpsStableStartTime = 0f;
+                _fpsIsStable = false;
+            }
+
+            // 每3秒输出一次当前帧率状态（用于调试）
+            if ((int)Time.time % 3 == 0 && Time.frameCount % 60 == 0)
+            {
+                Debug.Log($"[SYNC_UI_FPS] 📊 当前平均帧率: {avgFPS:F1} FPS，稳定状态: {(_fpsIsStable ? "已稳定" : "未稳定")}");
+            }
+        }
+    }
+
+    /// <summary>
     /// ✅ 检测卡住的任务并自动完成
     /// </summary>
     private void CheckStuckTasks()
@@ -562,7 +640,20 @@ public class WaitingSynchronizationUI : MonoBehaviour
         if (allComplete)
         {
             _allTasksCompleted = true;
-            Debug.Log("[SYNC_UI] ✅ 所有任务完成，1秒后隐藏");
+
+            // ✅ 帧率检查：如果启用了帧率检测，必须等待帧率稳定后才能隐藏
+            if (_fpsCheckEnabled && !_fpsIsStable)
+            {
+                Debug.Log("[SYNC_UI] ✅ 所有任务完成，但帧率未稳定（等待帧率恢复...）");
+                // 显示等待帧率恢复的提示
+                if (_syncStatusText != null)
+                {
+                    _syncStatusText.text = "所有任务完成，等待性能优化完成...";
+                }
+                return; // 不隐藏，等待帧率稳定
+            }
+
+            Debug.Log("[SYNC_UI] ✅ 所有任务完成且帧率稳定，1秒后隐藏");
             StartCoroutine(HideAfterDelay(1f)); // 1秒后隐藏
         }
     }
@@ -571,9 +662,16 @@ public class WaitingSynchronizationUI : MonoBehaviour
     {
         yield return new WaitForSeconds(delay);
 
-        // ✅ 双重保险：延迟后再次检查UI是否还在显示
+        // ✅ 三重检查：延迟后再次检查UI是否还在显示 + 帧率是否稳定
         if (_panel != null && _panel.activeSelf)
         {
+            // 如果启用了帧率检测但帧率未稳定，不隐藏
+            if (_fpsCheckEnabled && !_fpsIsStable)
+            {
+                Debug.LogWarning("[SYNC_UI] ⚠️ 延迟隐藏被阻止：帧率未稳定");
+                yield break; // 不隐藏
+            }
+
             Hide();
         }
     }
@@ -598,7 +696,13 @@ public class WaitingSynchronizationUI : MonoBehaviour
             // 2. 解除无敌
             DisableCharacterInvincibility();
 
-            // 3. 强制隐藏所有UI元素
+            // 3. 重置帧率检测状态
+            _fpsCheckEnabled = false;
+            _fpsHistory.Clear();
+            _fpsIsStable = false;
+            _fpsStableStartTime = 0f;
+
+            // 4. 强制隐藏所有UI元素
             if (_canvasGroup != null)
             {
                 _canvasGroup.alpha = 0f;
@@ -614,7 +718,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
                 _canvas.enabled = false;
             }
 
-            // 4. 重置状态
+            // 5. 重置状态
             _allTasksCompleted = true;
             _autoProgressEnabled = false;
 
@@ -1266,6 +1370,21 @@ public class WaitingSynchronizationUI : MonoBehaviour
         _taskLastUpdateTime.Clear();
         Debug.Log($"[SYNC_UI] 超时保护已启动，最大显示时间: {MAX_UI_DISPLAY_TIME} 秒");
 
+        // ✅ 启用帧率检测（只在客户端时启用）
+        _fpsCheckEnabled = NetService.Instance != null && !NetService.Instance.IsServer;
+        _fpsHistory.Clear();
+        _fpsIsStable = false;
+        _fpsStableStartTime = 0f;
+
+        if (_fpsCheckEnabled)
+        {
+            Debug.Log("[SYNC_UI_FPS] ✅ 帧率检测已启用（客户端模式）");
+        }
+        else
+        {
+            Debug.Log("[SYNC_UI_FPS] ⚠️ 帧率检测未启用（主机模式）");
+        }
+
         // ✅ 启用角色无敌
         EnableCharacterInvincibility();
 
@@ -1279,6 +1398,12 @@ public class WaitingSynchronizationUI : MonoBehaviour
     {
         // ✅ 强制解除角色无敌
         DisableCharacterInvincibility();
+
+        // ✅ 重置帧率检测状态
+        _fpsCheckEnabled = false;
+        _fpsHistory.Clear();
+        _fpsIsStable = false;
+        _fpsStableStartTime = 0f;
 
         if (_panel != null && _panel.activeSelf)
         {

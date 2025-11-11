@@ -591,6 +591,18 @@ public static class SceneVoteMessage
             // 如果投票已取消
             if (!data.active)
             {
+                // 🆕 特殊处理：voteId=0 表示这是玩家信息更新消息（不是真正的投票）
+                if (data.voteId == 0 && data.playerList != null && data.playerList.items != null)
+                {
+                    LoggerHelper.Log($"[SceneVote] 收到玩家信息更新消息 (voteId=0)，更新缓存但不激活投票UI");
+                    
+                    // 🔧 更新缓存的投票数据（供 UI 使用），但不激活投票
+                    sceneNet.cachedVoteData = data;
+                    
+                    LoggerHelper.Log($"[SceneVote] ✓ 已更新玩家信息缓存，共 {data.playerList.items.Length} 名玩家");
+                    return;
+                }
+                
                 // 🆕 更新过期ID，避免后续收到旧的投票包
                 sceneNet.expiredVoteId = data.voteId;
                 LoggerHelper.Log($"[SceneVote] 收到投票取消通知，voteId={data.voteId}，更新 expiredVoteId={sceneNet.expiredVoteId}");

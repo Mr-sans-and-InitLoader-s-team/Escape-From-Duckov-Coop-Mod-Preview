@@ -993,7 +993,7 @@ public class SceneNet : MonoBehaviour
 
         // ✅ 主机会在加载完成后立即放行，正常情况下不需要等太久
         // ✅ 150 秒超时作为保底，防止主机崩溃或网络异常导致死锁（大型地图加载可能需要更长时间）
-        _cliGateDeadline = Time.realtimeSinceStartup + 150f;
+        _cliGateDeadline = Time.realtimeSinceStartup + 1f;
 
         Debug.Log($"[GATE] 客户端等待主机放行... (超时: 150秒)");
 

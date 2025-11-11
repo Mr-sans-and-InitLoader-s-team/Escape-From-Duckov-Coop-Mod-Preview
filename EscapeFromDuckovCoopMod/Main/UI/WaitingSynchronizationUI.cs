@@ -68,6 +68,8 @@ public class WaitingSynchronizationUI : MonoBehaviour
     // 无敌状态管理
     private Health _invincibilityTargetHealth = null;
     private bool? _originalInvincibleState = null;
+    private Coroutine _invincibilityTimerCoroutine = null;
+    private const float INVINCIBILITY_DURATION = 30f; // 无敌持续时间（秒）
 
     public class SyncTaskStatus
     {
@@ -319,7 +321,9 @@ public class WaitingSynchronizationUI : MonoBehaviour
             // 1. 绝对超时保护（90秒）
             if (elapsedTime > MAX_UI_DISPLAY_TIME)
             {
-                Debug.LogWarning($"[SYNC_UI] ⚠️ 超时保护触发！UI已显示 {elapsedTime:F1} 秒，强制关闭");
+                Debug.LogWarning(
+                    $"[SYNC_UI] ⚠️ 超时保护触发！UI已显示 {elapsedTime:F1} 秒，强制关闭"
+                );
                 ForceClose("超时保护");
                 return;
             }
@@ -379,21 +383,52 @@ public class WaitingSynchronizationUI : MonoBehaviour
                 _autoProgressPercent = percent;
                 _lastAutoProgressTime = Time.time;
                 Debug.Log($"[SYNC_UI] 启用自动进度增长，当前进度: {percent:F0}%");
+
+                // ✅ 启用无敌状态
+                EnableCharacterInvincibility();
             }
 
-            // ✅ 自动进度增长逻辑（每秒+1%）
+            // ✅ 自动进度增长逻辑（分阶段增长速率）
             if (_autoProgressEnabled)
             {
                 float timeSinceLastUpdate = Time.time - _lastAutoProgressTime;
                 if (timeSinceLastUpdate >= 1f)
                 {
-                    _autoProgressPercent += 1f;
+                    // 根据当前进度决定增长速率
+                    float increment;
+                    if (_autoProgressPercent < 80f)
+                    {
+                        increment = 1f; // 75%-80%: 每秒+1%
+                    }
+                    else if (_autoProgressPercent < 90f)
+                    {
+                        increment = 0.5f; // 80%-90%: 每秒+0.5%
+                    }
+                    else
+                    {
+                        increment = 0.1f; // 90%-100%: 每秒+0.1%
+                    }
+
+                    _autoProgressPercent += increment;
                     _lastAutoProgressTime = Time.time;
-                    Debug.Log($"[SYNC_UI] 自动进度增长: {_autoProgressPercent:F0}%");
                 }
 
                 // 使用自动进度（但不超过100%）
                 percent = Mathf.Min(_autoProgressPercent, 100f);
+
+                // ✅ 在99%之前保持无敌状态
+                if (percent < 99.8f)
+                {
+                    // 确保无敌状态持续启用
+                    if (
+                        _invincibilityTargetHealth != null
+                        && !_invincibilityTargetHealth.Invincible
+                    )
+                    {
+                        _invincibilityTargetHealth.SetInvincible(true);
+                        Debug.Log($"[SYNC_UI] 重新启用无敌状态 (进度: {percent:F0}%)");
+                    }
+                }
 
                 // ✅ 达到100%时立即关闭
                 if (percent >= 100f)
@@ -603,12 +638,14 @@ public class WaitingSynchronizationUI : MonoBehaviour
     /// </summary>
     private void CheckStuckTasks()
     {
-        if (_syncTasks.Count == 0) return;
+        if (_syncTasks.Count == 0)
+            return;
 
         bool anyTaskStuck = false;
         foreach (var kv in _syncTasks.ToList()) // 使用ToList避免修改集合异常
         {
-            if (kv.Value.IsCompleted) continue;
+            if (kv.Value.IsCompleted)
+                continue;
 
             // 检查任务是否长时间未更新
             if (_taskLastUpdateTime.TryGetValue(kv.Key, out float lastUpdate))
@@ -616,7 +653,9 @@ public class WaitingSynchronizationUI : MonoBehaviour
                 float timeSinceUpdate = Time.time - lastUpdate;
                 if (timeSinceUpdate > TASK_STUCK_TIMEOUT)
                 {
-                    Debug.LogWarning($"[SYNC_UI] ⚠️ 任务卡住检测：{kv.Value.Name} 已 {timeSinceUpdate:F1} 秒未更新，自动标记为完成");
+                    Debug.LogWarning(
+                        $"[SYNC_UI] ⚠️ 任务卡住检测：{kv.Value.Name} 已 {timeSinceUpdate:F1} 秒未更新，自动标记为完成"
+                    );
                     kv.Value.IsCompleted = true;
                     kv.Value.Details = "（超时自动完成）";
                     anyTaskStuck = true;
@@ -1396,8 +1435,14 @@ public class WaitingSynchronizationUI : MonoBehaviour
     /// </summary>
     public void Hide()
     {
-        // ✅ 强制解除角色无敌
-        DisableCharacterInvincibility();
+        // ✅ 启动无敌计时器（延迟解除无敌）
+        StartInvincibilityTimer();
+
+        // ✅ 重置帧率检测状态
+        _fpsCheckEnabled = false;
+        _fpsHistory.Clear();
+        _fpsIsStable = false;
+        _fpsStableStartTime = 0f;
 
         // ✅ 重置帧率检测状态
         _fpsCheckEnabled = false;
@@ -1429,8 +1474,8 @@ public class WaitingSynchronizationUI : MonoBehaviour
     /// </summary>
     public void Close()
     {
-        // ✅ 强制解除角色无敌
-        DisableCharacterInvincibility();
+        // ✅ 启动无敌计时器（延迟解除无敌）
+        StartInvincibilityTimer();
 
         // 停止淡出协程（如果有）
         if (_fadeOutCoroutine != null)
@@ -1664,7 +1709,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
     }
 
     /// <summary>
-    /// 解除角色无敌状态（恢复原始状态）
+    /// 解除角色无敌状态（恢复原始状态并回满HP）
     /// </summary>
     private void DisableCharacterInvincibility()
     {
@@ -1672,8 +1717,14 @@ public class WaitingSynchronizationUI : MonoBehaviour
         {
             if (_invincibilityTargetHealth != null && _originalInvincibleState != null)
             {
+                // 恢复无敌状态
                 _invincibilityTargetHealth.SetInvincible(_originalInvincibleState.Value);
                 Debug.Log($"[SYNC_UI] ✅ 已恢复角色无敌状态为: {_originalInvincibleState.Value}");
+
+                // ✅ 回满HP
+                float maxHealth = _invincibilityTargetHealth.MaxHealth;
+                _invincibilityTargetHealth.CurrentHealth = maxHealth;
+                Debug.Log($"[SYNC_UI] ✅ 已恢复角色HP为最大值: {maxHealth}");
             }
             else if (_invincibilityTargetHealth == null && _originalInvincibleState != null)
             {
@@ -1686,6 +1737,98 @@ public class WaitingSynchronizationUI : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"[SYNC_UI] 解除无敌失败: {ex.Message}\n{ex.StackTrace}");
+        }
+    }
+
+    /// <summary>
+    /// 启动无敌计时器（在Hide/Close时调用，延迟解除无敌）
+    /// </summary>
+    private void StartInvincibilityTimer()
+    {
+        // 停止之前的计时器（如果有）
+        if (_invincibilityTimerCoroutine != null)
+        {
+            StopCoroutine(_invincibilityTimerCoroutine);
+            _invincibilityTimerCoroutine = null;
+        }
+
+        // 启动新的计时器
+        _invincibilityTimerCoroutine = StartCoroutine(InvincibilityTimerCoroutine());
+    }
+
+    /// <summary>
+    /// 无敌计时器协程：每帧满血+无敌，持续指定时间后解除
+    /// </summary>
+    private IEnumerator InvincibilityTimerCoroutine()
+    {
+        float elapsed = 0f;
+
+        var character = CharacterMainControl.Main;
+        if (character == null)
+        {
+            Debug.LogWarning("[SYNC_UI] 无敌计时器：角色为空，提前结束");
+            _invincibilityTimerCoroutine = null;
+            yield break;
+        }
+
+        var health = character.Health;
+        if (health == null)
+        {
+            Debug.LogWarning("[SYNC_UI] 无敌计时器：Health组件为空，提前结束");
+            _invincibilityTimerCoroutine = null;
+            yield break;
+        }
+
+        // 确保无敌状态启用
+        if (!health.Invincible)
+        {
+            health.SetInvincible(true);
+        }
+
+        // 每帧满血+无敌，持续指定时间
+        while (elapsed < INVINCIBILITY_DURATION)
+        {
+            if (health == null)
+            {
+                Debug.LogWarning("[SYNC_UI] 无敌计时器：Health对象已失效，提前结束");
+                _invincibilityTimerCoroutine = null;
+                yield break;
+            }
+
+            try
+            {
+                // 每帧满血（不输出日志）
+                health.CurrentHealth = health.MaxHealth;
+
+                // 确保无敌状态保持启用
+                if (!health.Invincible)
+                {
+                    health.SetInvincible(true);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[SYNC_UI] 无敌计时器帧更新异常: {ex.Message}");
+            }
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        // 计时器结束，解除无敌
+        Debug.Log($"[SYNC_UI] 🛡️ 无敌计时器结束（持续 {INVINCIBILITY_DURATION} 秒），解除无敌状态");
+        
+        try
+        {
+            DisableCharacterInvincibility();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[SYNC_UI] 解除无敌异常: {ex.Message}\n{ex.StackTrace}");
+        }
+        finally
+        {
+            _invincibilityTimerCoroutine = null;
         }
     }
 }

@@ -39,7 +39,8 @@ public static class JsonMessageRouter
     /// 根据type字段路由到对应的处理器
     /// </summary>
     /// <param name="reader">网络数据读取器</param>
-    public static void HandleJsonMessage(NetPacketReader reader)
+    /// <param name="fromPeer">发送消息的对等端（仅主机端有效）</param>
+    public static void HandleJsonMessage(NetPacketReader reader, NetPeer fromPeer = null)
     {
         if (reader == null)
         {
@@ -96,6 +97,11 @@ public static class JsonMessageRouter
                 case "forceSceneLoad":
                     // 强制场景切换（投票成功后）
                     SceneVoteMessage.Client_HandleForceSceneLoad(json);
+                    break;
+
+                case "updateClientStatus":
+                    // 客户端状态上报
+                    HandleClientStatusMessage(json, fromPeer);
                     break;
 
                 case "kick":
@@ -165,6 +171,11 @@ public static class JsonMessageRouter
 
             // 检查是否有自己的远程副本需要清理
             CleanupSelfDuplicate(oldId, newId);
+
+            // 🆕 SetId 处理完成后，发送客户端状态（包含 SteamID 和 EndPoint）
+            // 此时 EndPoint 已经被更新为主机分配的真实网络ID
+            ClientStatusMessage.Client_SendStatusUpdate();
+            Debug.Log("[SetId] ✓ 已发送客户端状态更新（包含 SteamID）");
         }
         catch (System.Exception ex)
         {
@@ -210,6 +221,34 @@ public static class JsonMessageRouter
         if (toRemove.Count > 0)
         {
             Debug.Log($"[SetId] ✓ 清理完成，共删除 {toRemove.Count} 个自己的远程副本");
+        }
+    }
+
+    /// <summary>
+    /// 处理客户端状态上报消息
+    /// </summary>
+    private static void HandleClientStatusMessage(string json, NetPeer fromPeer)
+    {
+        var service = NetService.Instance;
+        if (service == null || !service.IsServer)
+        {
+            Debug.LogWarning("[JsonRouter] 只有主机可以接收客户端状态消息");
+            return;
+        }
+
+        if (fromPeer == null)
+        {
+            Debug.LogWarning("[JsonRouter] fromPeer为空，无法处理客户端状态消息");
+            return;
+        }
+
+        try
+        {
+            ClientStatusMessage.Host_HandleClientStatus(fromPeer, json);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"[JsonRouter] 处理客户端状态消息失败: {ex.Message}");
         }
     }
 

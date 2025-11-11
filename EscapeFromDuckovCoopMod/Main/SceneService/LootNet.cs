@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,12 +14,12 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using System.Text;
 using Duckov.Scenes;
 using Duckov.UI;
 using Duckov.Utilities;
 using ItemStatsSystem;
 using ItemStatsSystem.Items;
+using System.Text;
 using Object = UnityEngine.Object;
 
 namespace EscapeFromDuckovCoopMod;
@@ -363,7 +363,7 @@ public class LootNet
 
 
     // 主机：处理 PUT（客户端 -> 主机）
-    public void Server_HandleLootPutRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootPutRequest(NetPeer peer, NetDataReader r)
     {
         var scene = r.GetInt();
         var posKey = r.GetInt();
@@ -447,7 +447,7 @@ public class LootNet
     }
 
 
-    public void Server_HandleLootTakeRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootTakeRequest(NetPeer peer, NetDataReader r)
     {
         var scene = r.GetInt();
         var posKey = r.GetInt();
@@ -525,7 +525,7 @@ public class LootNet
     }
 
     // 客户端：收到 PUT_OK -> 把“本地发起的那件物品”从自己背包删掉
-    public void Client_OnLootPutOk(NetPacketReader r)
+    public void Client_OnLootPutOk(NetDataReader r)
     {
         var token = r.GetUInt();
 
@@ -636,7 +636,7 @@ public class LootNet
     }
 
 
-    public void Client_OnLootTakeOk(NetPacketReader r)
+    public void Client_OnLootTakeOk(NetDataReader r)
     {
         var token = r.GetUInt();
 
@@ -858,7 +858,7 @@ public class LootNet
         }
     }
 
-    public void Server_HandleLootSlotPlugRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootSlotPlugRequest(NetPeer peer, NetDataReader r)
     {
         // 1) 容器定位
         var scene = r.GetInt();
@@ -1104,7 +1104,7 @@ public class LootNet
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
     }
 
-    public void Server_HandleLootSlotUnplugRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootSlotUnplugRequest(NetPeer peer, NetDataReader r)
     {
         // 1) 容器定位
         var scene = r.GetInt();
@@ -1232,7 +1232,7 @@ public class LootNet
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
     }
 
-    public void Server_HandleLootSplitRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootSplitRequest(NetPeer peer, NetDataReader r)
     {
         var scene = r.GetInt();
         var posKey = r.GetInt();

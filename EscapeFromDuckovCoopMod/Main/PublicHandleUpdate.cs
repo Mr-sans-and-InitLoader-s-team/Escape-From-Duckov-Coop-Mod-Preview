@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -30,7 +30,7 @@ public class PublicHandleUpdate
     private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
     private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
 
-    public void HandleEquipmentUpdate(NetPeer sender, NetPacketReader reader)
+    public void HandleEquipmentUpdate(NetPeer sender, NetDataReader reader)
     {
         var endPoint = reader.GetString();
         var slotHash = reader.GetInt();
@@ -51,7 +51,7 @@ public class PublicHandleUpdate
     }
 
 
-    public void HandleWeaponUpdate(NetPeer sender, NetPacketReader reader)
+    public void HandleWeaponUpdate(NetPeer sender, NetDataReader reader)
     {
         var endPoint = reader.GetString();
         var slotHash = reader.GetInt();
@@ -72,7 +72,7 @@ public class PublicHandleUpdate
     }
 
     // 主机接收客户端动画，并转发给其他客户端（携带来源玩家ID）
-    public void HandleClientAnimationStatus(NetPeer sender, NetPacketReader reader)
+    public void HandleClientAnimationStatus(NetPeer sender, NetDataReader reader)
     {
         var moveSpeed = reader.GetFloat();
         var moveDirX = reader.GetFloat();
@@ -132,7 +132,7 @@ public class PublicHandleUpdate
         });
     }
 
-    public void HandlePositionUpdate(NetPeer sender, NetPacketReader reader)
+    public void HandlePositionUpdate(NetPeer sender, NetDataReader reader)
     {
         var endPoint = reader.GetString();
         var position = reader.GetV3cm(); // ← 统一

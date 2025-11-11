@@ -14,12 +14,11 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using System.Collections;
-using System.Reflection;
-using Object = UnityEngine.Object;
 using EscapeFromDuckovCoopMod.Net;
-using IEnumerator = System.Collections.IEnumerator;
 using EscapeFromDuckovCoopMod.Utils; // 【修复】明确指定使用非泛型 IEnumerator
+using System.Reflection;
+using IEnumerator = System.Collections.IEnumerator;
+using Object = UnityEngine.Object;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -361,7 +360,7 @@ public class Destructible
     }
 
     // 原来的 ENV_DEAD_EVENT 入口里，改为调用内部函数并记死
-    public void Client_ApplyDestructibleDead(NetPacketReader r)
+    public void Client_ApplyDestructibleDead(NetDataReader r)
     {
         var id = r.GetUInt();
         var point = r.GetV3cm();
@@ -396,7 +395,7 @@ public class Destructible
 
     // 客户端：复现受击视觉（不改血量，不触发本地 OnHurt）
     // 客户端：复现受击视觉 + Breakable 的“危险态”显隐
-    public void Client_ApplyDestructibleHurt(NetPacketReader r)
+    public void Client_ApplyDestructibleHurt(NetDataReader r)
     {
         var id = r.GetUInt();
         var curHealth = r.GetFloat();

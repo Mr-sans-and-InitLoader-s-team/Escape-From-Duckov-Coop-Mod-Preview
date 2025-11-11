@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -30,7 +30,7 @@ public class ClientHandle
     private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
     private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
 
-    public void HandleClientStatusUpdate(NetPeer peer, NetPacketReader reader)
+    public void HandleClientStatusUpdate(NetPeer peer, NetDataReader reader)
     {
         var endPoint = reader.GetString();  // 客户端自报的EndPoint（Client:xxxxx），仅用于日志/调试
         var playerName = reader.GetString();

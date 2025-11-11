@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025 Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -13,11 +13,6 @@
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 // GNU Affero General Public License for more details.
-
-using System;
-using System.Collections.Generic;
-using LiteNetLib.Utils;
-using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod.Utils
 {
@@ -71,7 +66,7 @@ namespace EscapeFromDuckovCoopMod.Utils
         /// <summary>
         /// 将消息加入队列（接受 NetPacketReader）
         /// </summary>
-        public void EnqueueMessage(Action<NetDataReader> handler, NetPacketReader reader)
+        public void EnqueueMessage(Action<NetDataReader> handler, NetDataReader reader)
         {
             if (handler == null || reader == null) return;
 

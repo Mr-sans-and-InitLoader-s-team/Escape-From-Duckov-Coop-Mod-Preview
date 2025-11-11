@@ -547,6 +547,10 @@ public class NetService : MonoBehaviour, INetEventListener
                 Destroy(kvp.Value);
         clientRemoteCharacters.Clear();
 
+        // 🔧 清空玩家数据库
+        Utils.Database.PlayerInfoDatabase.Instance.Clear();
+        Debug.Log("[NetService] ✓ 已清空玩家数据库");
+
         ItemAgent_Gun.OnMainCharacterShootEvent -= COOPManager.WeaponHandle.Host_OnMainCharacterShoot;
     }
 

@@ -385,35 +385,68 @@ public static class ClientStatusMessage
             // 构建玩家列表
             var playerList = new System.Collections.Generic.List<SceneVoteMessage.PlayerInfo>();
 
-            // 添加主机自己
+            LoggerHelper.Log($"[ClientStatus] 🔍 开始构建玩家列表...");
+
+            // 添加主机自己（即使没有 Steam 信息也要添加）
             var (hostSteamId, hostSteamName) = GetLocalSteamInfo();
-            if (!string.IsNullOrEmpty(hostSteamId) && !string.IsNullOrEmpty(hostSteamName))
+            LoggerHelper.Log($"[ClientStatus] 🔍 本地缓存 Steam 信息: ID={hostSteamId}, Name={hostSteamName}");
+
+            // 🔧 FIX: 如果本地缓存为空，尝试实时获取 Steam 信息
+            if (string.IsNullOrEmpty(hostSteamId) && SteamManager.Initialized)
             {
-                playerList.Add(new SceneVoteMessage.PlayerInfo
+                try
                 {
-                    playerId = $"Host:{service.port}",
-                    playerName = "Host",
-                    steamId = hostSteamId,
-                    steamName = hostSteamName,
-                    ready = false
-                });
+                    var mySteamId = Steamworks.SteamUser.GetSteamID();
+                    hostSteamId = mySteamId.ToString();
+                    hostSteamName = Steamworks.SteamFriends.GetPersonaName();
+                    LoggerHelper.Log($"[ClientStatus] 🔍 实时获取 Steam 信息: ID={hostSteamId}, Name={hostSteamName}");
+                }
+                catch (System.Exception ex)
+                {
+                    LoggerHelper.LogWarning($"[ClientStatus] 获取主机 Steam 信息失败: {ex.Message}");
+                }
             }
+
+            // 🔧 FIX: 始终添加主机，即使没有 Steam 信息
+            var hostPlayerId = $"Host:{service.port}";
+            var hostPlayerName = service.localPlayerStatus?.PlayerName ?? "Host";
+            LoggerHelper.Log($"[ClientStatus] 🔍 添加主机: playerId={hostPlayerId}, playerName={hostPlayerName}, steamId={hostSteamId}, steamName={hostSteamName}");
+
+            playerList.Add(new SceneVoteMessage.PlayerInfo
+            {
+                playerId = hostPlayerId,
+                playerName = hostPlayerName,
+                steamId = hostSteamId ?? "",
+                steamName = hostSteamName ?? "",
+                ready = false
+            });
+
+            LoggerHelper.Log($"[ClientStatus] 🔍 主机已添加，当前列表大小: {playerList.Count}");
 
             // 添加所有客户端
-            foreach (var kvp in service.playerStatuses)
-            {
-                var status = kvp.Value;
-                var (clientSteamId, clientSteamName) = GetSteamInfoFromEndPoint(status.EndPoint);
+            LoggerHelper.Log($"[ClientStatus] 🔍 开始添加客户端，playerStatuses 数量: {service.playerStatuses?.Count ?? 0}");
 
-                playerList.Add(new SceneVoteMessage.PlayerInfo
+            if (service.playerStatuses != null)
+            {
+                foreach (var kvp in service.playerStatuses)
                 {
-                    playerId = status.EndPoint,
-                    playerName = status.PlayerName,
-                    steamId = clientSteamId ?? "",
-                    steamName = clientSteamName ?? "",
-                    ready = false
-                });
+                    var status = kvp.Value;
+                    var (clientSteamId, clientSteamName) = GetSteamInfoFromEndPoint(status.EndPoint);
+
+                    LoggerHelper.Log($"[ClientStatus] 🔍 添加客户端: playerId={status.EndPoint}, playerName={status.PlayerName}, steamId={clientSteamId}, steamName={clientSteamName}");
+
+                    playerList.Add(new SceneVoteMessage.PlayerInfo
+                    {
+                        playerId = status.EndPoint,
+                        playerName = status.PlayerName,
+                        steamId = clientSteamId ?? "",
+                        steamName = clientSteamName ?? "",
+                        ready = false
+                    });
+                }
             }
+
+            LoggerHelper.Log($"[ClientStatus] 🔍 玩家列表构建完成，总数: {playerList.Count}");
 
             // 构建投票数据（active=false，仅用于更新玩家信息）
             var voteData = new SceneVoteMessage.VoteStateData

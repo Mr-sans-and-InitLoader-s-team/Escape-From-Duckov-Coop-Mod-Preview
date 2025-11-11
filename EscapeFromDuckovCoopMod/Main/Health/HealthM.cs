@@ -89,7 +89,7 @@ public class HealthM : MonoBehaviour
         if (!force && Time.time < _cliNextSendHp) return;
 
         // 🔍 JSON日志：血量上报（简化版，避免循环）
-        LoggerHelper.Log($"[HP_REPORT] max={max:F1}, cur={cur:F1}, force={force}");
+        // LoggerHelper.Log($"[HP_REPORT] max={max:F1}, cur={cur:F1}, force={force}");
 
         // 🔍 详细调试：反射读取Health内部状态
         try
@@ -280,14 +280,14 @@ public class HealthM : MonoBehaviour
             ["time"] = Time.time,
             ["isValid"] = max > 0f && cur > 0f
         };
-        LoggerHelper.Log($"[HP_REPORT_INIT] {Newtonsoft.Json.JsonConvert.SerializeObject(logData)}");
+        // LoggerHelper.Log($"[HP_REPORT_INIT] {Newtonsoft.Json.JsonConvert.SerializeObject(logData)}");
 
         // ⚠️ 检查血量是否有效
-        if (max <= 0f || cur <= 0f)
-        {
-            LoggerHelper.LogWarning($"[HP_REPORT_INIT] ⚠️ 血量未初始化，延迟上报: max={max}, cur={cur}");
-            return; // 不上报，等待下一帧重试
-        }
+        // if (max <= 0f || cur <= 0f)
+        // {
+        //     LoggerHelper.LogWarning($"[HP_REPORT_INIT] ⚠️ 血量未初始化，延迟上报: max={max}, cur={cur}");
+        //     return; // 不上报，等待下一帧重试
+        // }
 
         var w = new NetDataWriter();
         w.Put((byte)Op.PLAYER_HEALTH_REPORT);

@@ -35,13 +35,13 @@ namespace EscapeFromDuckovCoopMod
         private static void Prefix(bool writeSaveTime)
         {
             _stopwatch = Stopwatch.StartNew();
-            UnityEngine.Debug.Log($"[Death-Monitor] [{DateTime.Now:HH:mm:ss.fff}] SaveFile 开始 (writeSaveTime={writeSaveTime})");
+            // UnityEngine.Debug.Log($"[Death-Monitor] [{DateTime.Now:HH:mm:ss.fff}] SaveFile 开始 (writeSaveTime={writeSaveTime})");
         }
 
         private static void Postfix()
         {
             _stopwatch?.Stop();
-            UnityEngine.Debug.Log($"[Death-Monitor] [{DateTime.Now:HH:mm:ss.fff}] SaveFile 完成，耗时: {_stopwatch?.ElapsedMilliseconds}ms");
+            // UnityEngine.Debug.Log($"[Death-Monitor] [{DateTime.Now:HH:mm:ss.fff}] SaveFile 完成，耗时: {_stopwatch?.ElapsedMilliseconds}ms");
         }
     }
 

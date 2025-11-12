@@ -84,7 +84,7 @@ public class LocalPlayerManager : MonoBehaviour
         sceneId = null;
 
         // 1) LevelManager/主角存在才算“进了关卡”
-        var lm = LevelManager.Instance;
+        var lm = FrameCache.Get(() => LevelManager.Instance);
         if (lm == null || lm.MainCharacter == null)
         {
             return false;
@@ -297,9 +297,8 @@ public class LocalPlayerManager : MonoBehaviour
             return;
         }
 
-        var bool1 = ComputeIsInGame(out var ids);
-        var currentIsInGame = bool1;
-        var levelManager = LevelManager.Instance;
+        var currentIsInGame = ComputeIsInGame(out var ids);
+        var levelManager = FrameCache.Get(() => LevelManager.Instance);
 
         if (Service.localPlayerStatus.IsInGame != currentIsInGame)
         {

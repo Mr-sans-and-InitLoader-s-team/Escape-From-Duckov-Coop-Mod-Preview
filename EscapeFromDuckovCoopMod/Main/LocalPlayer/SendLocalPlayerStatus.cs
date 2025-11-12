@@ -80,7 +80,7 @@ public class SendLocalPlayerStatus : MonoBehaviour
     {
         if (localPlayerStatus == null || !networkStarted) return;
 
-        var main = CharacterMainControl.Main;
+        var main = FrameCache.Get(() => CharacterMainControl.Main);
         if (!main) return;
 
         var tr = main.transform;
@@ -139,7 +139,7 @@ public class SendLocalPlayerStatus : MonoBehaviour
     {
         if (!networkStarted) return;
 
-        var mainControl = CharacterMainControl.Main;
+        var mainControl = FrameCache.Get(() => CharacterMainControl.Main);
         if (mainControl == null) return;
 
         var model = mainControl.modelRoot.Find("0_CharacterModel_Custom_Template(Clone)");

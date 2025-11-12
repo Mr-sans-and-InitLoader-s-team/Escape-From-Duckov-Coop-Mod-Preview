@@ -242,7 +242,7 @@ public partial class ModBehaviourF : MonoBehaviour
 
     private void Update()
     {
-        if (CharacterMainControl.Main != null && !isinit)
+        if (FrameCache.Get(() => CharacterMainControl.Main) != null && !isinit)
         {
             isinit = true;
             Traverse
@@ -288,7 +288,7 @@ public partial class ModBehaviourF : MonoBehaviour
             Cursor.lockState = CursorLockMode.None;
         }
 
-        if (CharacterMainControl.Main == null)
+        if (FrameCache.Get(() => CharacterMainControl.Main) == null)
             isinit = false;
 
         //if (ModUI.Instance != null && Input.GetKeyDown(KeyCode.Home)) ModUI.Instance.showUI = !ModUI.Instance.showUI;

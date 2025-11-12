@@ -365,7 +365,7 @@ public class HealthM : MonoBehaviour
     {
         if (!IsServer || !networkStarted) return;
 
-        var hostMain = CharacterMainControl.Main;
+        var hostMain = FrameCache.Get(() => CharacterMainControl.Main);
         if (hostMain) HealthTool.Server_HookOneHealth(null, hostMain.gameObject);
 
         if (remoteCharacters != null)

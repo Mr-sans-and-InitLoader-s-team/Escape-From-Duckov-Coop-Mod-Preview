@@ -877,6 +877,8 @@ namespace EscapeFromDuckovCoopMod.Utils.NetHelper
             // 设置默认处理器
             SetDefaultHandler((peer, reader, channelNumber, deliveryMethod) =>
             {
+                // 有未知 opcode 时给出警告，便于排查（比如双端没一起更新）
+                // Debug.LogWarning($"Unknown opcode: {(byte)op}");
                 Debug.LogWarning($"[NetMessageConsumer] 收到未处理的消息，来自: {peer.EndPoint}");
             });
 

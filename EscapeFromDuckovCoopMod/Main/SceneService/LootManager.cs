@@ -839,22 +839,28 @@ public class LootManager : MonoBehaviour
         var posHint = Vector3.zero;
         if (r.AvailableBytes >= 12) posHint = r.GetV3cm();
 
+        Debug.Log($"[LOOT-REQ] 收到客户端请求: scene={scene}, posKey={posKey}, iid={iid}, lootUid={lootUid}, posHint={posHint}");
+
         // 先用稳定ID命中（AI掉落箱优先命中这里）
         Inventory inv = null;
         if (lootUid >= 0) _srvLootByUid.TryGetValue(lootUid, out inv);
 
         if (LootboxDetectUtil.IsPrivateInventory(inv))
         {
+            Debug.LogWarning($"[LOOT-REQ] 拒绝：私有Inventory");
             COOPManager.LootNet.Server_SendLootDeny(peer, "no_inv");
             return;
         }
 
-        // 命不中再走你原有“激进解析”：三元标识 + 附近3米扫描并注册
+        // 命不中再走你原有"激进解析"：三元标识 + 附近3米扫描并注册
         if (inv == null && !Server_TryResolveLootAggressive(scene, posKey, iid, posHint, out inv))
         {
+            Debug.LogWarning($"[LOOT-REQ] 无法解析Inventory: scene={scene}, posKey={posKey}, iid={iid}");
             COOPManager.LootNet.Server_SendLootDeny(peer, "no_inv");
             return;
         }
+
+        Debug.Log($"[LOOT-REQ] 成功解析Inventory: {inv?.gameObject?.name}, 物品数={inv?.Content?.Count ?? 0}");
 
         // 只回给发起的这个 peer（不要广播）
         COOPManager.LootNet.Server_SendLootboxState(peer, inv);

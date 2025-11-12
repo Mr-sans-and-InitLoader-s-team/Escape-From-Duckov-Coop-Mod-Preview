@@ -284,16 +284,23 @@ internal static class Patch_Slot_Unplug_ClientRedirect
         if (COOPManager.LootNet.ApplyingLootState) return true;
 
         // 关键：用 Master.InInventory 判断该槽位属于哪个容器
-        var inv = __instance?.Master ? __instance.Master.InInventory : null;
+        var master = __instance?.Master;
+        var inv = master ? master.InInventory : null;
         if (inv == null) return true;
-        // 仅在“公共战利品容器且非私有”时拦截
+        // 仅在"公共战利品容器且非私有"时拦截
         if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv))
             return true;
 
-        // 统一做法：本地完全不执行 Unplug，等待我们在 AddAt/​AddAndMerge/​SendToInventory 的前缀里走网络
-        Debug.Log("[Coop] Slot.Unplug@Loot -> ignore (network-handled)");
+        // ✅ 修复：发送卸载请求给服务端，而不是直接阻断
+        var slotKey = __instance?.Key;
+        if (!string.IsNullOrEmpty(slotKey) && master != null)
+        {
+            Debug.Log($"[Coop] Slot.Unplug@Loot -> 发送卸载请求: master={master.DisplayName}, slot={slotKey}");
+            COOPManager.LootNet.Client_RequestLootSlotUnplug(inv, master, slotKey);
+        }
+
         __result = null; // 别生成本地分离物
-        return false; // 阻断原始 Unplug
+        return false; // 阻断原始 Unplug，等待服务端广播
     }
 }
 

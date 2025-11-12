@@ -128,28 +128,19 @@ internal static class PreventClientPlayerOnDeadPatch
 }
 
 /// <summary>
-/// 阻止生成墓碑，防止物品被转移到墓碑中
-/// 参考NoDeathDrops模组的实现
+/// ✅ 已移除：允许正常生成墓碑
+/// 玩家死亡时必须创建墓碑，物品正常放进墓碑里
 /// </summary>
-[HarmonyPatch(typeof(LevelConfig), "get_SpawnTomb")]
-internal static class PreventTombSpawnPatch
-{
-    [HarmonyPrefix]
-    private static bool PreventTombSpawn(ref bool __result)
-    {
-        var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted)
-        {
-            Debug.Log("[COOP] SpawnTomb - 非联机模式，允许正常执行");
-            return true;
-        }
-
-        // 在联机模式下阻止生成墓碑
-        Debug.Log("[COOP] 阻止生成墓碑，防止物品被转移");
-        __result = false;
-        return false; // 阻止原方法执行
-    }
-}
+// [HarmonyPatch(typeof(LevelConfig), "get_SpawnTomb")]
+// internal static class PreventTombSpawnPatch
+// {
+//     [HarmonyPrefix]
+//     private static bool PreventTombSpawn(ref bool __result)
+//     {
+//         // 已禁用：允许游戏正常生成墓碑
+//         return true;
+//     }
+// }
 
 /// <summary>
 /// 阻止客户端的死亡事件补发，这是联机模组触发死亡的另一个路径

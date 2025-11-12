@@ -172,6 +172,9 @@ public class AIHealth
 
         if (clampedCur <= 0f && !wasDead)
         {
+            if (ModBehaviourF.LogAiHpDebug)
+                Debug.Log($"[AI-HP][SERVER] AI死亡触发 aiId={aiId}, 准备生成战利品盒子");
+
             var di = new DamageInfo();
 
             try
@@ -223,20 +226,39 @@ public class AIHealth
             {
             }
 
-            try
-            {
-                cmc.Health.OnDeadEvent?.Invoke(di);
-            }
-            catch
-            {
-            }
+            // ★ 关键修复：设置 DeadLootSpawnContext.InOnDead 标记，让补丁能识别这是死亡路径
+            var oldContext = DeadLootSpawnContext.InOnDead;
+            DeadLootSpawnContext.InOnDead = cmc;
 
             try
             {
-                AITool.TryFireOnDead(cmc.Health, di);
+                // 触发 OnDeadEvent（UnityEvent），这会调用 CharacterMainControl.OnDead 生成战利品盒子
+                if (ModBehaviourF.LogAiHpDebug)
+                    Debug.Log($"[AI-HP][SERVER] 触发 OnDeadEvent for aiId={aiId}");
+
+                h.OnDeadEvent?.Invoke(di);
+
+                if (ModBehaviourF.LogAiHpDebug)
+                    Debug.Log($"[AI-HP][SERVER] OnDeadEvent 触发完成 for aiId={aiId}");
             }
-            catch
+            catch (Exception e)
             {
+                Debug.LogError($"[AI-HP][SERVER] OnDeadEvent.Invoke failed for aiId={aiId}: {e}");
+            }
+            finally
+            {
+                // 恢复原来的上下文
+                DeadLootSpawnContext.InOnDead = oldContext;
+            }
+
+            // 然后触发静态事件 Health.OnDead（用于其他系统的监听）
+            try
+            {
+                AITool.TryFireOnDead(h, di);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AI-HP][SERVER] TryFireOnDead failed for aiId={aiId}: {e}");
             }
         }
     }

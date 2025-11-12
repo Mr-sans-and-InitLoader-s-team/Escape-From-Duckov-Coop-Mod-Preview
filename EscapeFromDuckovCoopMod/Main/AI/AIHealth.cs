@@ -14,10 +14,9 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using System.Reflection;
 using Duckov.UI;
 using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
-using UnityEngine;
+using System.Reflection;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -126,7 +125,7 @@ public class AIHealth
             Debug.Log($"[AI-HP][CLIENT] report aiId={aiId} max={max} cur={cur}");
     }
 
-    public void HandleAiHealthReport(NetPeer sender, NetPacketReader r)
+    public void HandleAiHealthReport(NetPeer sender, NetDataReader r)
     {
         if (!networkStarted || !IsServer) return;
 

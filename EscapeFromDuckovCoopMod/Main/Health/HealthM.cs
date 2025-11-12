@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,8 +14,8 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using System.Collections;
 using EscapeFromDuckovCoopMod.Utils.Logger.Tools;
+using System.Collections;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -187,7 +187,7 @@ public class HealthM : MonoBehaviour
     }
 
 
-    public void Client_ApplySelfHurtFromServer(NetPacketReader r)
+    public void Client_ApplySelfHurtFromServer(NetDataReader r)
     {
         try
         {

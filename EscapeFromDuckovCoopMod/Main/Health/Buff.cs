@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -23,14 +23,14 @@ public class Buff_
 
     private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
 
-    public void HandlePlayerBuffSelfApply(NetPacketReader r)
+    public void HandlePlayerBuffSelfApply(NetDataReader r)
     {
         var weaponTypeId = r.GetInt(); // overrideWeaponID（通常就是武器/手雷的 Item.TypeID）
         var buffId = r.GetInt(); // 兜底的 buff id
         ApplyBuffToSelf_Client(weaponTypeId, buffId).Forget();
     }
 
-    public void HandleBuffProxyApply(NetPacketReader r)
+    public void HandleBuffProxyApply(NetDataReader r)
     {
         var hostId = r.GetString(); // e.g. "Host:9050"
         var weaponTypeId = r.GetInt();

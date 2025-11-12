@@ -14,13 +14,12 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using System.Collections;
-using System.Linq;
-using System.Reflection;
-using System.Runtime.CompilerServices;
 using Duckov.UI;
 using Duckov.Utilities;
 using ItemStatsSystem;
+using System.Collections;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using UnityEngine.SceneManagement;
 using static EscapeFromDuckovCoopMod.LootNet;
 using Object = UnityEngine.Object;
@@ -799,7 +798,7 @@ public class LootManager : MonoBehaviour
         return true;
     }
 
-    public void Server_HandleLootOpenRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootOpenRequest(NetPeer peer, NetDataReader r)
     {
         if (!IsServer) return;
 
@@ -949,7 +948,7 @@ public class LootManager : MonoBehaviour
 
 
     // 接收端：用“路径”从 inv 找回 item
-    public Item ReadItemRef(NetPacketReader r, Inventory inv)
+    public Item ReadItemRef(NetDataReader r, Inventory inv)
     {
         var rootIndex = r.GetInt();
         var keyCount = r.GetInt();

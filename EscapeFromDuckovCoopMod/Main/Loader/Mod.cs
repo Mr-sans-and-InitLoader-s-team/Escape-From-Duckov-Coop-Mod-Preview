@@ -14,11 +14,15 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+// 使用宏定义启用新的消息处理系统，方便随时回退
+#define USE_NEW_OP_NETMESSAGECONSUMER
+
 using Duckov.UI;
 using EscapeFromDuckovCoopMod.Net;
 using EscapeFromDuckovCoopMod.Utils; // 引入智能发送扩展方法
 using EscapeFromDuckovCoopMod.Utils.Logger.Core;
 using EscapeFromDuckovCoopMod.Utils.Logger.Tools;
+using EscapeFromDuckovCoopMod.Utils.NetHelper;
 using ItemStatsSystem;
 using ItemStatsSystem.Items;
 using UnityEngine.SceneManagement;
@@ -38,7 +42,7 @@ internal static class ServerTuning
 }
 
 // ===== 本人无意在此堆，只是开始想要管理好的，后来懒的开新的类了导致这个类不堪重负维护有一点点小复杂 2025/10/27 =====
-public class ModBehaviourF : MonoBehaviour
+public partial class ModBehaviourF : MonoBehaviour
 {
     private const float SELF_ACCEPT_WINDOW = 0.30f;
     private const float EnsureRemoteInterval = 1.0f; // 每秒兜底一次，够用又不吵
@@ -175,6 +179,11 @@ public class ModBehaviourF : MonoBehaviour
 
         // 初始化玩家信息数据库
         InitializePlayerDatabase();
+
+#if USE_NEW_OP_NETMESSAGECONSUMER
+        // 注册 Op 处理器
+        RegisterOpHandlers();
+#endif
     }
 
     /// <summary>
@@ -928,7 +937,10 @@ public class ModBehaviourF : MonoBehaviour
             reader.Recycle();
             return;
         }
-
+#if USE_NEW_OP_NETMESSAGECONSUMER
+        // 注意：若使用本处理方式，需要增添或修改对OP的处理逻辑，请前往与本文件同目录的 Mod_RegisterOpHandler 文件中修改 RegisterOpHandlers 方法
+        NetMessageConsumer.Instance.OnNetworkReceive(peer, reader, channelNumber, deliveryMethod);
+#else
         var op = (Op)reader.GetByte();
         //  Debug.Log($"[RECV OP] {(byte)op}, avail={reader.AvailableBytes}");
 
@@ -2385,7 +2397,7 @@ public class ModBehaviourF : MonoBehaviour
                 Debug.LogWarning($"Unknown opcode: {(byte)op}");
                 break;
         }
-
+#endif
         reader.Recycle();
     }
 

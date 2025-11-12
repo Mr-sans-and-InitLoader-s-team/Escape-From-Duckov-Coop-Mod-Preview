@@ -14,15 +14,14 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using System.Reflection;
-using Object = UnityEngine.Object;
-using Random = UnityEngine.Random;
 using EscapeFromDuckovCoopMod.Net;
-using System.Collections;
+using EscapeFromDuckovCoopMod.Utils; // 【修复】明确指定使用非泛型 IEnumerator
+using System.Reflection;
 using Unity.Collections;
 using Unity.Jobs;
 using IEnumerator = System.Collections.IEnumerator;
-using EscapeFromDuckovCoopMod.Utils; // 【修复】明确指定使用非泛型 IEnumerator
+using Object = UnityEngine.Object;
+using Random = UnityEngine.Random;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -395,7 +394,7 @@ public class AIHandle
     }
 
 
-    public void HandleAiSeedSnapshot(NetPacketReader r)
+    public void HandleAiSeedSnapshot(NetDataReader r)
     {
         var receivedSceneSeed = r.GetInt();
 
@@ -1212,7 +1211,7 @@ public class AIHandle
     }
 
     // 客户端：应用增量，不清空，直接补/改
-    public void HandleAiSeedPatch(NetPacketReader r)
+    public void HandleAiSeedPatch(NetDataReader r)
     {
         var n = r.GetInt();
         for (var i = 0; i < n; i++)

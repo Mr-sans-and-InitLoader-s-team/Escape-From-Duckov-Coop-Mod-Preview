@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,8 +14,8 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using Object = UnityEngine.Object;
 using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
+using Object = UnityEngine.Object;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -102,7 +102,7 @@ public class Door
     }
 
     // 主机：处理客户端的设门请求
-    public void Server_HandleDoorSetRequest(NetPeer peer, NetPacketReader reader)
+    public void Server_HandleDoorSetRequest(NetPeer peer, NetDataReader reader)
     {
         if (!IsServer) return;
         var key = reader.GetInt();

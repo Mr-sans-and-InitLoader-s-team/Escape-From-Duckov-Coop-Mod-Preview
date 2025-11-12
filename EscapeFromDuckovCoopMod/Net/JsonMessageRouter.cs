@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,8 +14,6 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using LiteNetLib;
-using UnityEngine;
 using EscapeFromDuckovCoopMod.Net;
 
 namespace EscapeFromDuckovCoopMod;
@@ -40,7 +38,7 @@ public static class JsonMessageRouter
     /// </summary>
     /// <param name="reader">网络数据读取器</param>
     /// <param name="fromPeer">发送消息的对等端（仅主机端有效）</param>
-    public static void HandleJsonMessage(NetPacketReader reader, NetPeer fromPeer = null)
+    public static void HandleJsonMessage(NetDataReader reader, NetPeer fromPeer = null)
     {
         if (reader == null)
         {

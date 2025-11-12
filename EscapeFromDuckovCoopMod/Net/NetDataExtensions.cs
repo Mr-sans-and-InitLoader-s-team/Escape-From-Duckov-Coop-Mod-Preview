@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -27,7 +27,7 @@ public static class NetDataExtensions
         writer.Put(vector.z);
     }
 
-    public static Vector3 GetVector3(this NetPacketReader reader)
+    public static Vector3 GetVector3(this NetDataReader reader)
     {
         return new Vector3(reader.GetFloat(), reader.GetFloat(), reader.GetFloat());
     }
@@ -65,7 +65,7 @@ public static class NetDataExtensions
         writer.Put(q.w);
     }
 
-    public static Quaternion GetQuaternion(this NetPacketReader reader)
+    public static Quaternion GetQuaternion(this NetDataReader reader)
     {
         var q = new Quaternion(reader.GetFloat(), reader.GetFloat(), reader.GetFloat(), reader.GetFloat());
         return NormalizeSafe(q);

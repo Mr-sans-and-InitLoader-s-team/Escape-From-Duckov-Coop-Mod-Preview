@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -36,7 +36,7 @@ public class ItemHandle
     private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
     private bool networkStarted => Service != null && Service.networkStarted;
 
-    public void HandleItemDropRequest(NetPeer peer, NetPacketReader r)
+    public void HandleItemDropRequest(NetPeer peer, NetDataReader r)
     {
         if (!IsServer) return;
         var token = r.GetUInt();
@@ -74,7 +74,7 @@ public class ItemHandle
         CoopTool.BroadcastReliable(w);
     }
 
-    public void HandleItemSpawn(NetPacketReader r)
+    public void HandleItemSpawn(NetDataReader r)
     {
         if (IsServer) return;
         var token = r.GetUInt();
@@ -122,7 +122,7 @@ public class ItemHandle
         if (agent && agent.gameObject) ItemTool.AddNetDropTag(agent.gameObject, id);
     }
 
-    public void HandleItemPickupRequest(NetPeer peer, NetPacketReader r)
+    public void HandleItemPickupRequest(NetPeer peer, NetDataReader r)
     {
         if (!IsServer) return;
         var id = r.GetUInt();
@@ -151,7 +151,7 @@ public class ItemHandle
         CoopTool.BroadcastReliable(w);
     }
 
-    public void HandleItemDespawn(NetPacketReader r)
+    public void HandleItemDespawn(NetDataReader r)
     {
         if (IsServer) return;
         var id = r.GetUInt();

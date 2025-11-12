@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -16,6 +16,7 @@
 
 using System.Collections;
 using ItemStatsSystem;
+using ItemStatsSystem.Items;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -170,6 +171,102 @@ internal static class Patch_Lootbox_CreateFromItem_BlockClient
         if (mod != null && mod.networkStarted && !mod.IsServer && DeadLootSpawnContext.InOnDead != null)
             return false; // 客户端处于OnDead路径→禁止本地创建
         return true;
+    }
+}
+
+// ★ 修复：在CreateFromItem之前，确保AI的装备槽能被正确读取
+[HarmonyPatch(typeof(InteractableLootbox), "CreateFromItem")]
+[HarmonyPriority(Priority.VeryHigh)]
+internal static class Patch_Lootbox_CreateFromItem_EnsureAISlots
+{
+    private static void Prefix(Item item)
+    {
+        var mod = ModBehaviourF.Instance;
+        var dead = DeadLootSpawnContext.InOnDead;
+        if (mod == null || !mod.networkStarted || !mod.IsServer) return;
+        if (dead == null || item == null) return;
+
+        try
+        {
+            // 确保characterItem的Slots引用正确指向EquipmentController的槽位
+            var equipmentController = dead.EquipmentController;
+            if (equipmentController == null) return;
+
+            // 获取characterItem的Slots
+            var itemSlots = item.Slots;
+            if (itemSlots == null || itemSlots.list == null) return;
+
+            var slotNames = new[] { "armorSlot", "helmatSlot", "faceMaskSlot", "backpackSlot", "headsetSlot" };
+
+            Debug.Log($"[AI-LOOT] 开始检查AI装备槽，characterItem={item.DisplayName}, Slots.list.Count={itemSlots.list.Count}");
+
+            // 遍历装备控制器的槽位，确保它们在characterItem.Slots中
+            foreach (var slotName in slotNames)
+            {
+                try
+                {
+                    var slotField = Traverse.Create(equipmentController).Field<Slot>(slotName);
+                    if (slotField?.Value == null) continue;
+
+                    var equipSlot = slotField.Value;
+                    var content = equipSlot.Content;
+
+                    if (content != null)
+                    {
+                        // 检查这个槽位是否已经在characterItem.Slots中
+                        bool found = false;
+                        foreach (var slot in itemSlots.list)
+                        {
+                            if (slot != null && ReferenceEquals(slot, equipSlot))
+                            {
+                                found = true;
+                                break;
+                            }
+                        }
+
+                        if (!found)
+                        {
+                            // 添加到Slots列表中
+                            itemSlots.list.Add(equipSlot);
+                            Debug.Log($"[AI-LOOT] 添加装备槽到Slots: {slotName}, 内容: {content.DisplayName}");
+                        }
+                        else
+                        {
+                            Debug.Log($"[AI-LOOT] 装备槽已存在: {slotName}, 内容: {content.DisplayName}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[AI-LOOT] 处理装备槽 {slotName} 时出错: {ex.Message}");
+                }
+            }
+
+            Debug.Log($"[AI-LOOT] 装备槽检查完成，最终Slots.list.Count={itemSlots.list.Count}");
+
+            // 同时检查Inventory中的物品
+            var itemInv = item.Inventory;
+            if (itemInv != null)
+            {
+                Debug.Log($"[AI-LOOT] characterItem.Inventory物品数量: {itemInv.Content.Count}");
+                for (int i = 0; i < itemInv.Content.Count; i++)
+                {
+                    var invItem = itemInv.GetItemAt(i);
+                    if (invItem != null)
+                    {
+                        Debug.Log($"[AI-LOOT] Inventory物品 {i}: {invItem.DisplayName}");
+                    }
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[AI-LOOT] characterItem.Inventory is null!");
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[AI-LOOT] EnsureAISlots failed: {e}");
+        }
     }
 }
 

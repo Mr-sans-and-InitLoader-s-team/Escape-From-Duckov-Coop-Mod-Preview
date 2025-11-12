@@ -23,7 +23,8 @@ namespace EscapeFromDuckovCoopMod;
 
 public class DeadLootBox : MonoBehaviour
 {
-    public const bool EAGER_BROADCAST_LOOT_STATE_ON_SPAWN = false;
+    // ★ 修复：启用立即广播，确保客户端生成盒子时就能收到物品数据
+    public const bool EAGER_BROADCAST_LOOT_STATE_ON_SPAWN = true;
     public static DeadLootBox Instance;
 
     private NetService Service => NetService.Instance;
@@ -260,7 +261,25 @@ public class DeadLootBox : MonoBehaviour
 
         yield return null; // 给原版填充时间
         yield return null;
-        if (box && box.Inventory) COOPManager.LootNet.Server_SendLootboxState(null, box.Inventory);
+
+        if (box && box.Inventory)
+        {
+            var inv = box.Inventory;
+            Debug.Log($"[DEAD-LOOT] 准备广播战利品盒子内容，物品数量: {inv.Content.Count}");
+
+            // 列出所有物品
+            for (int i = 0; i < inv.Content.Count; i++)
+            {
+                var item = inv.GetItemAt(i);
+                if (item != null)
+                {
+                    Debug.Log($"[DEAD-LOOT] 物品 {i}: {item.DisplayName} (TypeID={item.TypeID})");
+                }
+            }
+
+            COOPManager.LootNet.Server_SendLootboxState(null, inv);
+            Debug.Log($"[DEAD-LOOT] 战利品盒子内容已广播");
+        }
     }
 
 

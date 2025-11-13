@@ -16,6 +16,7 @@
 
 using Duckov.Utilities;
 using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
+using EscapeFromDuckovCoopMod.Utils;
 using Random = UnityEngine.Random;
 
 namespace EscapeFromDuckovCoopMod;
@@ -836,6 +837,56 @@ public class WeaponHandle
         if (Mathf.Abs(scale - 1f) > 1e-3f) di.damageValue = Mathf.Max(0f, di.damageValue * scale);
 
         Debug.Log($"[SERVER] melee hit -> target={best.name} raw={dmg} scaled={di.damageValue} env={!victimIsChar}");
+        var victimCtrl = best.GetComponentInParent<CharacterMainControl>(true);
+        var victimHealth = victimCtrl ? victimCtrl.Health : null;
+        var victimWasDead = false;
+        var victimIsAi = false;
+
+        if (victimCtrl)
+        {
+            victimIsAi = ComponentCache.IsAI(victimCtrl);
+
+            if (victimHealth)
+                try
+                {
+                    victimWasDead = victimHealth.IsDead;
+                }
+                catch
+                {
+                }
+        }
+
         best.Hurt(di);
+
+        if (victimIsAi && victimCtrl && victimHealth)
+        {
+            var nowDead = false;
+            try
+            {
+                nowDead = victimHealth.IsDead || victimHealth.CurrentHealth <= 0f;
+            }
+            catch
+            {
+            }
+
+            if (!victimWasDead && nowDead)
+            {
+                var aiId = 0;
+                var tag = ComponentCache.GetNetAiTag(victimCtrl);
+                if (tag != null) aiId = tag.aiId;
+
+                if (aiId == 0)
+                {
+                    foreach (var kv in AITool.aiById)
+                        if (kv.Value == victimCtrl)
+                        {
+                            aiId = kv.Key;
+                            break;
+                        }
+                }
+
+                COOPManager.AIHealth.Server_HandleAuthoritativeAiDeath(victimCtrl, victimHealth, aiId, di, true);
+            }
+        }
     }
 }

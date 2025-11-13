@@ -14,12 +14,8 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using EscapeFromDuckovCoopMod.Net;
-using EscapeFromDuckovCoopMod.Utils; // 【修复】明确指定使用非泛型 IEnumerator
+using EscapeFromDuckovCoopMod.Utils;
 using System.Reflection;
-using Unity.Collections;
-using Unity.Jobs;
-using IEnumerator = System.Collections.IEnumerator;
 using Object = UnityEngine.Object;
 using Random = UnityEngine.Random;
 
@@ -64,9 +60,6 @@ public class AIHandle
     // 客户端：AI 血量 pending（cur 已有，这里补 max）
     public readonly Dictionary<int, float> _cliPendingAiMax = new();
 
-    // 【优化】延迟装备同步队列（服务端）
-    private readonly Dictionary<int, CharacterMainControl> _pendingLoadouts = new();
-
     // 待绑定时的暂存（客户端）
     private readonly Dictionary<int, AiAnimState> _pendingAiAnims = new();
     public readonly Dictionary<int, int> aiRootSeeds = new(); // rootId -> seed
@@ -83,12 +76,6 @@ public class AIHandle
 
     public bool freezeAI = true; // 先冻结用来验证一致性
     public int sceneSeed;
-
-    // ✅ 客户端AI装备同步追踪
-    private int _clientAiLoadoutsReceived = 0;
-    private float _clientLastAiLoadoutTime = 0f;
-    private Coroutine _clientAiLoadoutTimeoutCoroutine = null;
-
     private NetService Service => NetService.Instance;
 
     private bool IsServer => Service != null && Service.IsServer;
@@ -110,10 +97,7 @@ public class AIHandle
         // 场景种子：时间戳 XOR Unity 随机
         sceneSeed = Environment.TickCount ^ Random.Range(int.MinValue, int.MaxValue);
 
-        // ✅ 优化：使用缓存管理器获取 AI Root，避免 FindObjectsOfType
-        var roots = GameObjectCacheManager.Instance != null
-            ? GameObjectCacheManager.Instance.AI.GetCharacterSpawnerRoots(forceRefresh: true)
-            : Object.FindObjectsOfType<CharacterSpawnerRoot>(true);
+        var roots = Object.FindObjectsOfType<CharacterSpawnerRoot>(true);
 
         // 先算出待发送的 (id,seed) 对；对每个 root 同时加入 “主ID(可能用guid)” 和 “兼容ID(强制忽略guid)”
         var pairs = new List<(int id, int seed)>(roots.Length * 2);
@@ -143,312 +127,25 @@ public class AIHandle
         }
 
         if (target == null) CoopTool.BroadcastReliable(w);
-        else target.SendSmart(w, Op.AI_SEED_SNAPSHOT);
+        else target.Send(w, DeliveryMethod.ReliableOrdered);
 
         Debug.Log($"[AI-SEED] 已发送 {pairs.Count} 条 Root 映射（原 Root 数={roots.Length}）目标={(target == null ? "ALL" : target.EndPoint.ToString())}");
-    }
-
-    /// <summary>
-    /// 【优化】分批发送AI种子，避免场景加载后卡顿
-    /// 使用后台线程计算，只在主线程发送网络包
-    /// </summary>
-    public IEnumerator Server_SendAiSeedsBatched(NetPeer target = null, int batchSize = 20)
-    {
-        if (!IsServer) yield break;
-
-        aiRootSeeds.Clear();
-        var currentSceneSeed = Environment.TickCount ^ Random.Range(int.MinValue, int.MaxValue);
-        sceneSeed = currentSceneSeed;
-
-        // 【步骤1】主线程：查找所有 AI Root
-        // ✅ 优化：使用缓存管理器获取 AI Root，避免 FindObjectsOfType
-        var roots = GameObjectCacheManager.Instance != null
-            ? GameObjectCacheManager.Instance.AI.GetCharacterSpawnerRoots()
-            : Object.FindObjectsOfType<CharacterSpawnerRoot>(true);
-        if (roots == null || roots.Length == 0)
-        {
-            Debug.Log("[AI-SEED] 没有找到 AI Root，跳过种子发送");
-            yield break;
-        }
-
-        Debug.Log($"[AI-SEED] 找到 {roots.Length} 个 AI Root，准备在后台线程计算种子...");
-
-        // 【步骤2】后台线程：计算所有 (id, seed) 对
-        List<(int id, int seed)> pairs = null;
-        var computeComplete = false;
-
-        var bgManager = EscapeFromDuckovCoopMod.Utils.BackgroundTaskManager.Instance;
-        if (bgManager != null)
-        {
-            bgManager.RunOnBackground(
-                // 后台工作：计算种子
-                () =>
-                {
-                    var tempPairs = new List<(int id, int seed)>(roots.Length * 2);
-                    foreach (var r in roots)
-                    {
-                        if (r == null) continue;
-
-                        var idA = AITool.StableRootId(r);
-                        var idB = AITool.StableRootId_Alt(r);
-                        var seed = AITool.DeriveSeed(currentSceneSeed, idA);
-
-                        tempPairs.Add((idA, seed));
-                        if (idB != idA) tempPairs.Add((idB, seed));
-                    }
-                    return tempPairs;
-                },
-                // 主线程回调：保存结果
-                (result) =>
-                {
-                    pairs = result;
-                    computeComplete = true;
-                },
-                "AI_Seed_Compute"
-            );
-
-            // 等待计算完成
-            while (!computeComplete)
-            {
-                yield return null;
-            }
-        }
-        else
-        {
-            // 降级：直接在主线程计算
-            pairs = new List<(int id, int seed)>(roots.Length * 2);
-            foreach (var r in roots)
-            {
-                if (r == null) continue;
-
-                var idA = AITool.StableRootId(r);
-                var idB = AITool.StableRootId_Alt(r);
-                var seed = AITool.DeriveSeed(currentSceneSeed, idA);
-
-                aiRootSeeds[idA] = seed;
-                pairs.Add((idA, seed));
-                if (idB != idA) pairs.Add((idB, seed));
-            }
-        }
-
-        // 主线程：更新 aiRootSeeds
-        foreach (var (id, seed) in pairs)
-        {
-            aiRootSeeds[id] = seed;
-        }
-
-        Debug.Log($"[AI-SEED] 种子计算完成，开始分批发送 {pairs.Count} 条映射，每批 {batchSize} 条");
-
-        // 【步骤3】主线程：分批发送网络包
-        for (int i = 0; i < pairs.Count; i += batchSize)
-        {
-            var batchEnd = Mathf.Min(i + batchSize, pairs.Count);
-            var batchCount = batchEnd - i;
-
-            var w = writer;
-            if (w == null) yield break;
-
-            w.Reset();
-            w.Put((byte)Op.AI_SEED_SNAPSHOT);
-            w.Put(sceneSeed);
-            w.Put(batchCount);
-
-            for (int j = i; j < batchEnd; j++)
-            {
-                var pr = pairs[j];
-                w.Put(pr.id);
-                w.Put(pr.seed);
-            }
-
-            if (target == null) CoopTool.BroadcastReliable(w);
-            else target.SendSmart(w, Op.AI_SEED_SNAPSHOT);
-
-            Debug.Log($"[AI-SEED] 已发送批次 {i / batchSize + 1}：{batchCount} 条数据");
-
-            yield return null;
-        }
-
-        Debug.Log($"[AI-SEED] 所有批次发送完成，共 {pairs.Count} 条");
-
-        // 【优化】通知UI任务完成
-        var syncUI = WaitingSynchronizationUI.Instance;
-        if (syncUI != null) syncUI.CompleteTask("ai_seeds", $"已发送 {pairs.Count} 条");
-    }
-
-    /// <summary>
-    /// 【优化】使用 Unity Job System 计算 AI 种子（最高性能版本）
-    /// 参考 Fika 的实现，利用 Burst 编译器和多核并行
-    /// </summary>
-    public IEnumerator Server_SendAiSeedsWithJobSystem(NetPeer target = null, int batchSize = 5)
-    {
-        if (!IsServer) yield break;
-
-        aiRootSeeds.Clear();
-        var currentSceneSeed = Environment.TickCount ^ Random.Range(int.MinValue, int.MaxValue);
-        sceneSeed = currentSceneSeed;
-
-        // 【步骤1】主线程：查找所有 AI Root
-        // ✅ 优化：使用缓存管理器获取 AI Root，避免 FindObjectsOfType
-        var roots = GameObjectCacheManager.Instance != null
-            ? GameObjectCacheManager.Instance.AI.GetCharacterSpawnerRoots()
-            : Object.FindObjectsOfType<CharacterSpawnerRoot>(true);
-        if (roots == null || roots.Length == 0)
-        {
-            Debug.Log("[AI-SEED] 没有找到 AI Root，跳过种子发送");
-            yield break;
-        }
-
-        Debug.Log($"[AI-SEED-JobSystem] 找到 {roots.Length} 个 AI Root，使用 Job System 计算...");
-
-        // 【步骤2】准备 Job 数据
-        var rootIdsA = new NativeArray<int>(roots.Length, Allocator.TempJob);
-        var rootIdsB = new NativeArray<int>(roots.Length, Allocator.TempJob);
-        var calculatedSeedsA = new NativeArray<int>(roots.Length, Allocator.TempJob);
-        var calculatedSeedsB = new NativeArray<int>(roots.Length, Allocator.TempJob);
-
-        // 填充输入数据（主线程）
-        for (int i = 0; i < roots.Length; i++)
-        {
-            if (roots[i] == null) continue;
-            rootIdsA[i] = AITool.StableRootId(roots[i]);
-            rootIdsB[i] = AITool.StableRootId_Alt(roots[i]);
-        }
-
-        // 【步骤3】调度 Job（后台线程并行计算）
-        var job = new Jobs.AISeedPairCalculationJob
-        {
-            sceneSeed = currentSceneSeed,
-            rootIdsA = rootIdsA,
-            rootIdsB = rootIdsB,
-            calculatedSeedsA = calculatedSeedsA,
-            calculatedSeedsB = calculatedSeedsB
-        };
-
-        // 【修复】IJobParallelFor 使用 Schedule 方法
-        // 并行执行，每个工作线程处理64个元素
-        var handle = job.Schedule(roots.Length, 64, default);
-
-        // 等待 Job 完成（不阻塞主线程）
-        while (!handle.IsCompleted)
-        {
-            yield return null;
-        }
-        handle.Complete();
-
-        Debug.Log($"[AI-SEED-JobSystem] Job 计算完成，准备构建映射表...");
-
-        // 【步骤4】主线程：构建 pairs 列表和更新 aiRootSeeds
-        var pairs = new List<(int id, int seed)>(roots.Length * 2);
-        for (int i = 0; i < roots.Length; i++)
-        {
-            int idA = rootIdsA[i];
-            int idB = rootIdsB[i];
-            int seedA = calculatedSeedsA[i];
-            int seedB = calculatedSeedsB[i];
-
-            aiRootSeeds[idA] = seedA;
-            pairs.Add((idA, seedA));
-
-            if (idB != idA)
-            {
-                pairs.Add((idB, seedB));
-            }
-        }
-
-        // 清理 NativeArray
-        rootIdsA.Dispose();
-        rootIdsB.Dispose();
-        calculatedSeedsA.Dispose();
-        calculatedSeedsB.Dispose();
-
-        Debug.Log($"[AI-SEED-JobSystem] 开始分批发送 {pairs.Count} 条映射，每批 {batchSize} 条");
-
-        // 【步骤5】主线程：分批发送网络包
-        for (int i = 0; i < pairs.Count; i += batchSize)
-        {
-            var batchEnd = Mathf.Min(i + batchSize, pairs.Count);
-            var batchCount = batchEnd - i;
-
-            var w = writer;
-            if (w == null) yield break;
-
-            w.Reset();
-            w.Put((byte)Op.AI_SEED_SNAPSHOT);
-            w.Put(sceneSeed);
-            w.Put(batchCount);
-
-            for (int j = i; j < batchEnd; j++)
-            {
-                var pr = pairs[j];
-                w.Put(pr.id);
-                w.Put(pr.seed);
-            }
-
-            if (target == null) CoopTool.BroadcastReliable(w);
-            else target.SendSmart(w, Op.AI_SEED_SNAPSHOT);
-
-            yield return null;
-        }
-
-        Debug.Log($"[AI-SEED-JobSystem] 所有批次发送完成，共 {pairs.Count} 条");
     }
 
 
     public void HandleAiSeedSnapshot(NetDataReader r)
     {
-        var receivedSceneSeed = r.GetInt();
-
-        // 【优化】如果是新场景种子，清空旧数据；否则是追加数据（分批接收）
-        if (sceneSeed != receivedSceneSeed)
-        {
-            sceneSeed = receivedSceneSeed;
-            aiRootSeeds.Clear();
-        }
-
+        sceneSeed = r.GetInt();
+        aiRootSeeds.Clear();
         var n = r.GetInt();
-
-        // 【优化】使用场景初始化管理器分批处理，避免一次性处理大量数据卡顿
-        var initManager = SceneInitManager.Instance;
-        if (initManager != null && n > 5)
+        for (var i = 0; i < n; i++)
         {
-            // 分批处理：每批5条（进一步降低批次大小）
-            var batchSize = 5;
-            for (var i = 0; i < n; i += batchSize)
-            {
-                var currentBatchSize = Mathf.Min(batchSize, n - i);
-                var batchData = new List<(int id, int seed)>(currentBatchSize);
-
-                for (var j = 0; j < currentBatchSize; j++)
-                {
-                    var id = r.GetInt();
-                    var seed = r.GetInt();
-                    batchData.Add((id, seed));
-                }
-
-                // 将每批数据添加到任务队列
-                initManager.EnqueueTask(() =>
-                {
-                    foreach (var (id, seed) in batchData)
-                    {
-                        aiRootSeeds[id] = seed;
-                    }
-                }, $"AI_Seed_Batch_{i / batchSize}");
-            }
-
-            Debug.Log($"[AI-SEED] 收到 {n} 个 Root 种子，已加入分批处理队列");
+            var id = r.GetInt();
+            var seed = r.GetInt();
+            aiRootSeeds[id] = seed;
         }
-        else
-        {
-            // 数据量小或管理器不可用，直接处理
-            for (var i = 0; i < n; i++)
-            {
-                var id = r.GetInt();
-                var seed = r.GetInt();
-                aiRootSeeds[id] = seed;
-            }
 
-            Debug.Log($"[AI-SEED] 收到 {n} 个 Root 的种子");
-        }
+        Debug.Log($"[AI-SEED] 收到 {n} 个 Root 的种子");
     }
 
 
@@ -457,7 +154,6 @@ public class AIHandle
         if (!AITool.IsRealAI(cmc)) return;
         AITool.aiById[aiId] = cmc;
 
-        // 【优化】快速路径：仅注册ID映射，其他操作延后处理
         float pendCur = -1f, pendMax = -1f;
         if (_cliPendingAiHealth.TryGetValue(aiId, out var pc))
         {
@@ -471,8 +167,7 @@ public class AIHandle
             _cliPendingAiMax.Remove(aiId);
         }
 
-        // 【优化】Health 相关操作保持同步，因为涉及游戏逻辑
-        var h = cmc?.Health;
+        var h = cmc.Health;
         if (h)
         {
             if (pendMax > 0f)
@@ -506,25 +201,12 @@ public class AIHandle
             if (pendCur >= 0f || pendMax > 0f)
             {
                 var applyMax = pendMax > 0f ? pendMax : h.MaxHealth;
-                try
-                {
-                    HealthM.Instance.ForceSetHealth(h, applyMax, Mathf.Max(0f, pendCur >= 0f ? pendCur : h.CurrentHealth));
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"[AI-REG] aiId={aiId} ForceSetHealth失败: {ex.Message}");
-                }
+                HealthM.Instance.ForceSetHealth(h, applyMax, Mathf.Max(0f, pendCur >= 0f ? pendCur : h.CurrentHealth));
             }
         }
 
-        // 【优化】不再立即发送装备同步，改为延迟批量发送
         if (IsServer && cmc)
-        {
-            lock (_pendingLoadouts)
-            {
-                _pendingLoadouts[aiId] = cmc;
-            }
-        }
+            Server_BroadcastAiLoadout(aiId, cmc);
 
         if (!IsServer && cmc)
         {
@@ -564,181 +246,6 @@ public class AIHandle
     }
 
 
-    /// <summary>
-    /// ✅ 客户端：重置AI装备同步追踪（场景切换时调用）
-    /// </summary>
-    public void Client_ResetAiLoadoutTracking()
-    {
-        _clientAiLoadoutsReceived = 0;
-        _clientLastAiLoadoutTime = Time.time; // ✅ 记录开始时间
-        if (_clientAiLoadoutTimeoutCoroutine != null)
-        {
-            ModBehaviourF.Instance.StopCoroutine(_clientAiLoadoutTimeoutCoroutine);
-            _clientAiLoadoutTimeoutCoroutine = null;
-        }
-
-        // ✅ 启动初始超时检查（10秒后如果还没收到任何消息，就认为没有AI）
-        _clientAiLoadoutTimeoutCoroutine = ModBehaviourF.Instance.StartCoroutine(Client_CheckAiLoadoutTimeout());
-        Debug.Log("[AI-LOADOUT] 客户端追踪已重置，启动10秒初始超时检查");
-    }
-
-    /// <summary>
-    /// ✅ 清理AI装备同步追踪数据（场景卸载时调用）
-    /// </summary>
-    public void ClearAiLoadoutTracking()
-    {
-        _clientAiLoadoutsReceived = 0;
-        _clientLastAiLoadoutTime = 0f;
-
-        if (_clientAiLoadoutTimeoutCoroutine != null && ModBehaviourF.Instance != null)
-        {
-            try
-            {
-                ModBehaviourF.Instance.StopCoroutine(_clientAiLoadoutTimeoutCoroutine);
-            }
-            catch { }
-            _clientAiLoadoutTimeoutCoroutine = null;
-        }
-    }
-
-    /// <summary>
-    /// ✅ 客户端：收到AI装备消息时调用
-    /// </summary>
-    public void Client_OnAiLoadoutReceived()
-    {
-        if (IsServer) return;
-
-        _clientAiLoadoutsReceived++;
-        _clientLastAiLoadoutTime = Time.time;
-
-        // 更新UI进度
-        var syncUI = WaitingSynchronizationUI.Instance;
-        if (syncUI != null)
-        {
-            syncUI.UpdateTaskStatus("ai_loadouts", false, $"已接收 {_clientAiLoadoutsReceived} 个AI");
-        }
-
-        // ✅ 不需要重启协程，只需要更新时间戳即可
-        // 协程会持续监控 _clientLastAiLoadoutTime 的变化
-        Debug.Log($"[AI-LOADOUT] 收到第 {_clientAiLoadoutsReceived} 个AI装备消息");
-    }
-
-    /// <summary>
-    /// ✅ 客户端：检查AI装备同步超时
-    /// - 初始10秒超时：如果没收到任何消息，认为场景没有AI
-    /// - 静默5秒超时：收到消息后5秒内没有新消息，认为同步完成
-    /// </summary>
-    private IEnumerator Client_CheckAiLoadoutTimeout()
-    {
-        float initialTimeout = 10f;
-        float silentTimeout = 5f;
-        float checkInterval = 0.5f;
-        float startTime = Time.time;
-
-        while (true)
-        {
-            yield return new WaitForSeconds(checkInterval);
-
-            float elapsed = Time.time - startTime;
-
-            // 如果已经收到消息，检查静默超时
-            if (_clientAiLoadoutsReceived > 0)
-            {
-                float timeSinceLastMessage = Time.time - _clientLastAiLoadoutTime;
-                if (timeSinceLastMessage >= silentTimeout)
-                {
-                    Debug.Log($"[AI-LOADOUT] ✓ 客户端同步完成（静默{silentTimeout}秒），共接收 {_clientAiLoadoutsReceived} 个AI");
-
-                    var syncUI = WaitingSynchronizationUI.Instance;
-                    if (syncUI != null)
-                    {
-                        syncUI.CompleteTask("ai_loadouts", $"已接收 {_clientAiLoadoutsReceived} 个AI");
-                    }
-
-                    _clientAiLoadoutTimeoutCoroutine = null;
-                    yield break;
-                }
-            }
-            // 如果超过初始超时还没收到任何消息，认为场景无AI
-            else if (elapsed >= initialTimeout)
-            {
-                Debug.Log($"[AI-LOADOUT] ✓ 客户端同步完成（初始超时{initialTimeout}秒，场景无AI）");
-
-                var syncUI = WaitingSynchronizationUI.Instance;
-                if (syncUI != null)
-                {
-                    syncUI.CompleteTask("ai_loadouts", "场景无AI");
-                }
-
-                _clientAiLoadoutTimeoutCoroutine = null;
-                yield break;
-            }
-        }
-    }
-
-    /// <summary>
-    /// 【优化】批量发送AI装备同步，避免场景加载后卡顿
-    /// </summary>
-    public IEnumerator Server_SendAiLoadoutsBatched(int batchSize = 2)
-    {
-        if (!IsServer) yield break;
-
-        List<(int aiId, CharacterMainControl cmc)> loadouts = null;
-        lock (_pendingLoadouts)
-        {
-            if (_pendingLoadouts.Count == 0)
-            {
-                Debug.Log("[AI-LOADOUT] 没有待同步的装备");
-                yield break;
-            }
-
-            loadouts = new List<(int, CharacterMainControl)>(_pendingLoadouts.Count);
-            foreach (var kv in _pendingLoadouts)
-            {
-                if (kv.Value != null)
-                    loadouts.Add((kv.Key, kv.Value));
-            }
-            _pendingLoadouts.Clear();
-        }
-
-        Debug.Log($"[AI-LOADOUT] 开始分批发送 {loadouts.Count} 个AI的装备，每批 {batchSize} 个");
-
-        int batchIndex = 0;
-        for (int i = 0; i < loadouts.Count; i += batchSize)
-        {
-            int count = Mathf.Min(batchSize, loadouts.Count - i);
-            batchIndex++;
-
-            for (int j = 0; j < count; j++)
-            {
-                var (aiId, cmc) = loadouts[i + j];
-                if (cmc != null)
-                {
-                    try
-                    {
-                        Server_BroadcastAiLoadout(aiId, cmc);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogError($"[AI-LOADOUT] 发送 aiId={aiId} 装备时出错: {ex.Message}");
-                    }
-                }
-            }
-
-            Debug.Log($"[AI-LOADOUT] 已发送批次 {batchIndex}：{count} 个AI");
-
-            // 【优化】让出更多时间，避免网络拥堵
-            yield return null; // 第一帧
-            yield return null; // 第二帧：进一步降低网络压力
-        }
-
-        Debug.Log($"[AI-LOADOUT] 所有批次发送完成，共 {loadouts.Count} 个AI");
-
-        // 【优化】通知UI任务完成
-        var syncUI = WaitingSynchronizationUI.Instance;
-        if (syncUI != null) syncUI.CompleteTask("ai_loadouts", $"已发送 {loadouts.Count} 个AI");
-    }
-
     public void Server_BroadcastAiLoadout(int aiId, CharacterMainControl cmc)
     {
         if (!IsServer || cmc == null) return;
@@ -749,59 +256,31 @@ public class AIHandle
         writer.Put(aiId);
 
         // ---- 装备（5 槽）----
-        var eqList = AITool.GetLocalAIEquipment(cmc);
-        if (eqList == null)
-        {
-            Debug.LogWarning($"[AI-LOADOUT] aiId={aiId} 装备列表为null，写入空列表");
-            eqList = new List<EquipmentSyncData>();
-        }
-
+        var eqList = AITool.GetLocalAIEquipment(cmc); // 新方法，已枚举 armor/helmat/faceMask/backpack/headset
         writer.Put(eqList.Count);
         foreach (var eq in eqList)
         {
-            try
-            {
-                writer.Put(eq.SlotHash);
+            writer.Put(eq.SlotHash);
 
-                // 线上的老协议依然是 int tid，这里从 string ItemId 安全转换
-                var tid = 0;
-                if (!string.IsNullOrEmpty(eq.ItemId))
-                    int.TryParse(eq.ItemId, out tid);
+            // 线上的老协议依然是 int tid，这里从 string ItemId 安全转换
+            var tid = 0;
+            if (!string.IsNullOrEmpty(eq.ItemId))
+                int.TryParse(eq.ItemId, out tid);
 
-                writer.Put(tid);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[AI-LOADOUT] aiId={aiId} 写入装备时出错: {ex.Message}");
-            }
+            writer.Put(tid);
         }
 
         // ---- 武器 ----
         var listW = new List<(int slot, int tid)>();
-        try
-        {
-            var gun = cmc?.GetGun();
-            var melee = cmc?.GetMeleeWeapon();
-            if (gun != null) listW.Add(((int)gun.handheldSocket, gun.Item ? gun.Item.TypeID : 0));
-            if (melee != null) listW.Add(((int)melee.handheldSocket, melee.Item ? melee.Item.TypeID : 0));
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[AI-LOADOUT] aiId={aiId} 获取武器时出错: {ex.Message}");
-        }
-
+        var gun = cmc.GetGun();
+        var melee = cmc.GetMeleeWeapon();
+        if (gun != null) listW.Add(((int)gun.handheldSocket, gun.Item ? gun.Item.TypeID : 0));
+        if (melee != null) listW.Add(((int)melee.handheldSocket, melee.Item ? melee.Item.TypeID : 0));
         writer.Put(listW.Count);
         foreach (var p in listW)
         {
-            try
-            {
-                writer.Put(p.slot);
-                writer.Put(p.tid);
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[AI-LOADOUT] aiId={aiId} 写入武器时出错: {ex.Message}");
-            }
+            writer.Put(p.slot);
+            writer.Put(p.tid);
         }
 
         // ---- 脸 JSON（主机权威）----

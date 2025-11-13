@@ -636,7 +636,7 @@ public partial class ModBehaviourF : MonoBehaviour
             AITool.ResetAiSerials();
             if (COOPManager.AIHandle != null)
             {
-                COOPManager.AIHandle.ClearAiLoadoutTracking();
+               // COOPManager.AIHandle.ClearAiLoadoutTracking();
             }
 
             // 2. 清理战利品缓存
@@ -779,7 +779,7 @@ public partial class ModBehaviourF : MonoBehaviour
         // ✅ 客户端重置AI装备同步追踪
         if (!IsServer)
         {
-            COOPManager.AIHandle.Client_ResetAiLoadoutTracking();
+           // COOPManager.AIHandle.Client_ResetAiLoadoutTracking();
         }
 
         // ✅ 重置场景门控状态，为下一次场景切换做准备
@@ -829,6 +829,7 @@ public partial class ModBehaviourF : MonoBehaviour
 
         SceneNet.Instance.TrySendSceneReadyOnce();
 
+
         // 【优化】使用场景初始化管理器分批延迟执行任务，避免卡顿
         var initManager = SceneInitManager.Instance;
         if (initManager != null)
@@ -857,15 +858,14 @@ public partial class ModBehaviourF : MonoBehaviour
                     {
                         // 【优化】直接使用后台线程+协程方案（最佳稳定性和性能平衡）
                         // 性能提升：75-85%，完全不阻塞主线程
-                        StartCoroutine(
-                            COOPManager.AIHandle.Server_SendAiSeedsBatched(batchSize: 5)
-                        );
+                       
+                        
 
                         var ui = WaitingSynchronizationUI.Instance;
                         if (ui != null)
                             ui.UpdateTaskStatus("ai_seeds", false, "计算中...");
                     },
-                    2.0f,
+                    1.0f,
                     "AI_Seeds"
                 );
             }
@@ -878,15 +878,15 @@ public partial class ModBehaviourF : MonoBehaviour
                     {
                         // 【优化】分批发送AI装备，每批2个，避免网络拥堵和卡顿
                         // 进一步降低批量大小，防止在 Spawning bodies 阶段造成卡顿
-                        StartCoroutine(
-                            COOPManager.AIHandle.Server_SendAiLoadoutsBatched(batchSize: 2)
-                        );
+                        //StartCoroutine(
+                        //    COOPManager.AIHandle.Server_BroadcastAiLoadout(batchSize: 2)
+                        //);
 
                         var ui = WaitingSynchronizationUI.Instance;
                         if (ui != null)
                             ui.UpdateTaskStatus("ai_loadouts", false, "发送中...");
                     },
-                    3.5f,
+                    1.0f,
                     "AI_Loadouts"
                 );
             }
@@ -895,25 +895,23 @@ public partial class ModBehaviourF : MonoBehaviour
             initManager.EnqueueDelayedTask(
                 () =>
                 {
-                    AIName.Client_ResetNameIconSeal_OnLevelInit();
+                
 
                     var ui = WaitingSynchronizationUI.Instance;
                     if (ui != null)
                         ui.CompleteTask("ai_names", "完成");
                 },
-                3.0f,
+                1.0f,
                 "AI_Names"
             );
         }
-        else
-        {
-            // 降级：如果管理器不可用，使用原始逻辑
-            if (!IsServer)
-                COOPManager.Weather.Client_RequestEnvSync();
-            if (IsServer)
-                COOPManager.AIHandle.Server_SendAiSeeds();
-            AIName.Client_ResetNameIconSeal_OnLevelInit();
-        }
+
+        // 降级：如果管理器不可用，使用原始逻辑
+        if (!IsServer)
+            COOPManager.Weather.Client_RequestEnvSync();
+        if (IsServer)
+            COOPManager.AIHandle.Server_SendAiSeeds();
+        AIName.Client_ResetNameIconSeal_OnLevelInit();
     }
 
     //arg!!!!!!!!!!!

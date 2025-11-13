@@ -16,6 +16,9 @@
 
 using Duckov.UI;
 using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
+using EscapeFromDuckovCoopMod.Utils;
+using System;
+using System.Collections.Generic;
 using System.Reflection;
 
 namespace EscapeFromDuckovCoopMod;
@@ -67,6 +70,7 @@ public class AIHealth
     private readonly Dictionary<int, float> _cliLastAiHp = new();
     private readonly Dictionary<int, float> _cliLastReportedHp = new();
     private readonly Dictionary<int, float> _cliNextReportAt = new();
+    private readonly HashSet<int> _srvDeathHandled = new();
 
     // 🛡️ 日志频率限制
     private static int _pendingAiWarningCount = 0;
@@ -170,16 +174,17 @@ public class AIHealth
 
         Server_BroadcastAiHealth(aiId, applyMax, clampedCur);
 
+        DamageInfo deathInfo = null;
         if (clampedCur <= 0f && !wasDead)
         {
             if (ModBehaviourF.LogAiHpDebug)
                 Debug.Log($"[AI-HP][SERVER] AI死亡触发 aiId={aiId}, 准备生成战利品盒子");
 
-            var di = new DamageInfo();
+            deathInfo = new DamageInfo();
 
             try
             {
-                di.damageValue = Mathf.Max(1f, applyMax > 0f ? applyMax : 1f);
+                deathInfo.damageValue = Mathf.Max(1f, applyMax > 0f ? applyMax : 1f);
             }
             catch
             {
@@ -187,7 +192,7 @@ public class AIHealth
 
             try
             {
-                di.finalDamage = di.damageValue;
+                deathInfo.finalDamage = deathInfo.damageValue;
             }
             catch
             {
@@ -195,7 +200,7 @@ public class AIHealth
 
             try
             {
-                di.damagePoint = cmc.transform.position;
+                deathInfo.damagePoint = cmc.transform.position;
             }
             catch
             {
@@ -203,7 +208,7 @@ public class AIHealth
 
             try
             {
-                di.damageNormal = Vector3.up;
+                deathInfo.damageNormal = Vector3.up;
             }
             catch
             {
@@ -211,7 +216,7 @@ public class AIHealth
 
             try
             {
-                di.toDamageReceiver = cmc.mainDamageReceiver;
+                deathInfo.toDamageReceiver = cmc.mainDamageReceiver;
             }
             catch
             {
@@ -220,26 +225,192 @@ public class AIHealth
             try
             {
                 if (playerStatuses != null && sender != null && playerStatuses.TryGetValue(sender, out var st) && st != null)
-                    di.fromCharacter = CharacterMainControl.Main;
+                    deathInfo.fromCharacter = CharacterMainControl.Main;
+            }
+            catch
+            {
+            }
+        }
+
+        if (clampedCur <= 0f)
+        {
+            Server_HandleAuthoritativeAiDeath(cmc, h, aiId, deathInfo, !wasDead);
+        }
+    }
+
+    private int Server_GetDeathHandleKey(int aiId, CharacterMainControl cmc)
+    {
+        if (aiId != 0) return aiId;
+
+        if (cmc != null)
+        {
+            try
+            {
+                var instId = cmc.GetInstanceID();
+                if (instId != 0) return -Mathf.Abs(instId);
+            }
+            catch
+            {
+            }
+        }
+
+        return int.MinValue;
+    }
+
+    private bool Server_TryMarkDeathHandled(int aiId, CharacterMainControl cmc)
+    {
+        var key = Server_GetDeathHandleKey(aiId, cmc);
+        if (key == int.MinValue) return true; // 缺少唯一 key 时直接处理但不去重
+
+        return _srvDeathHandled.Add(key);
+    }
+
+    private void Server_EnsureAiFullyDead(CharacterMainControl cmc, Health h, int aiId)
+    {
+        if (cmc == null || h == null) return;
+        if (!Server_TryMarkDeathHandled(aiId, cmc)) return;
+
+        Server_DisableAiAfterDeath(cmc, h);
+    }
+
+    private void Server_DisableAiAfterDeath(CharacterMainControl cmc, Health h)
+    {
+        if (cmc == null || h == null) return;
+
+        try
+        {
+            var ai = cmc.GetComponent<AICharacterController>();
+            if (ai) ai.enabled = false;
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            cmc.enabled = false;
+        }
+        catch
+        {
+        }
+
+        UniTask.Void(async () =>
+        {
+            try
+            {
+                await UniTask.Delay(50);
+
+                try
+                {
+                    var hb = MI_GetActiveHealthBar?.Invoke(HealthBarManager.Instance, new object[] { h }) as HealthBar;
+                    if (hb != null)
+                    {
+                        if (MI_ReleaseHealthBar != null)
+                            MI_ReleaseHealthBar.Invoke(hb, null);
+                        else
+                            hb.gameObject.SetActive(false);
+                    }
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    if (cmc != null)
+                        cmc.gameObject.SetActive(false);
+                }
+                catch
+                {
+                }
+            }
+            catch
+            {
+            }
+        });
+    }
+
+
+    public void Server_HandleAuthoritativeAiDeath(CharacterMainControl cmc, Health h, int aiId, DamageInfo di, bool triggerEvents)
+    {
+        if (!IsServer || cmc == null || h == null) return;
+
+        if (aiId == 0)
+        {
+            var tag = ComponentCache.GetNetAiTag(cmc);
+            if (tag != null) aiId = tag.aiId;
+
+            if (aiId == 0)
+            {
+                foreach (var kv in AITool.aiById)
+                    if (kv.Value == cmc)
+                    {
+                        aiId = kv.Key;
+                        break;
+                    }
+            }
+        }
+
+        var firstHandle = Server_TryMarkDeathHandled(aiId, cmc);
+
+        if (firstHandle && networkStarted)
+        {
+            float broadcastMax = 0f;
+            float broadcastCur = 0f;
+
+            try
+            {
+                broadcastMax = h.MaxHealth;
             }
             catch
             {
             }
 
-            // ★ 关键修复：设置 DeadLootSpawnContext.InOnDead 标记，让补丁能识别这是死亡路径
+            try
+            {
+                broadcastCur = Mathf.Max(0f, h.CurrentHealth);
+            }
+            catch
+            {
+            }
+
+            if (broadcastCur <= 0f)
+            {
+                if (aiId == 0)
+                {
+                    var tag = ComponentCache.GetNetAiTag(cmc);
+                    if (tag != null) aiId = tag.aiId;
+
+                    if (aiId == 0)
+                    {
+                        foreach (var kv in AITool.aiById)
+                            if (kv.Value == cmc)
+                            {
+                                aiId = kv.Key;
+                                break;
+                            }
+                    }
+                }
+
+                if (aiId != 0)
+                    Server_BroadcastAiHealth(aiId, broadcastMax, broadcastCur);
+            }
+        }
+
+        if (triggerEvents && firstHandle && di != null)
+        {
             var oldContext = DeadLootSpawnContext.InOnDead;
             DeadLootSpawnContext.InOnDead = cmc;
 
             try
             {
-                // 触发 OnDeadEvent（UnityEvent），这会调用 CharacterMainControl.OnDead 生成战利品盒子
                 if (ModBehaviourF.LogAiHpDebug)
-                    Debug.Log($"[AI-HP][SERVER] 触发 OnDeadEvent for aiId={aiId}");
+                    Debug.Log($"[AI-HP][SERVER] 触发 OnDeadEvent for aiId={aiId} (authoritative)");
 
                 h.OnDeadEvent?.Invoke(di);
 
                 if (ModBehaviourF.LogAiHpDebug)
-                    Debug.Log($"[AI-HP][SERVER] OnDeadEvent 触发完成 for aiId={aiId}");
+                    Debug.Log($"[AI-HP][SERVER] OnDeadEvent 触发完成 for aiId={aiId} (authoritative)");
             }
             catch (Exception e)
             {
@@ -247,11 +418,9 @@ public class AIHealth
             }
             finally
             {
-                // 恢复原来的上下文
                 DeadLootSpawnContext.InOnDead = oldContext;
             }
 
-            // 然后触发静态事件 Health.OnDead（用于其他系统的监听）
             try
             {
                 AITool.TryFireOnDead(h, di);
@@ -261,6 +430,9 @@ public class AIHealth
                 Debug.LogError($"[AI-HP][SERVER] TryFireOnDead failed for aiId={aiId}: {e}");
             }
         }
+
+        if (firstHandle)
+            Server_DisableAiAfterDeath(cmc, h);
     }
 
 

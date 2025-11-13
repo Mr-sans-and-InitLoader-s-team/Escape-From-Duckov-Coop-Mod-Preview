@@ -487,8 +487,58 @@ public static class LootFullSyncMessage
                     continue;
                 }
 
+                try
+                {
+                    item.Inspected = true;
+                }
+                catch
+                {
+                }
+
                 // 添加到容器
-                bool added = ItemTool.TryAddToInventory(inventory, item);
+                var added = false;
+                var preferPos = itemInfo.position;
+
+                if (preferPos >= 0)
+                {
+                    try
+                    {
+                        if (preferPos >= inventory.Capacity)
+                            preferPos = inventory.Capacity - 1;
+                    }
+                    catch
+                    {
+                    }
+
+                    if (preferPos >= 0)
+                    {
+                        try
+                        {
+                            if (inventory.GetItemAt(preferPos) == null)
+                                added = InventoryPlacementUtil.TryPlaceItemExact(inventory, item, preferPos);
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+
+                if (!added)
+                {
+                    try
+                    {
+                        var empty = inventory.GetFirstEmptyPosition();
+                        if (empty >= 0 && empty < inventory.Capacity)
+                            added = InventoryPlacementUtil.TryPlaceItemExact(inventory, item, empty);
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                if (!added)
+                    added = ItemTool.TryAddToInventory(inventory, item);
+
                 if (!added)
                 {
                     Debug.LogWarning($"[LootFullSync] 无法添加物品到容器: typeId={itemInfo.typeId}, pos={itemInfo.position}");

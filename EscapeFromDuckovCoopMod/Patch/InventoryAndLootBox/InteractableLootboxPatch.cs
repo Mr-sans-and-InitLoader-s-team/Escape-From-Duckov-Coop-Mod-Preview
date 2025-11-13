@@ -47,20 +47,13 @@ internal static class Patch_Lootbox_OnInteractStop_DisableFogWhenAllInspected
         var inv = __instance?.Inventory;
         if (inv == null) return;
 
-        // 判断是否全部已检视
-        var allInspected = true;
-        var last = inv.GetLastItemPosition();
-        for (var i = 0; i <= last; i++)
+        try
         {
-            var it = inv.GetItemAt(i);
-            if (it != null && !it.Inspected)
-            {
-                allInspected = false;
-                break;
-            }
+            inv.NeedInspection = false;
         }
-
-        if (allInspected) inv.NeedInspection = false;
+        catch
+        {
+        }
     }
 }
 
@@ -404,32 +397,20 @@ internal static class Patch_Lootbox_StartLoot_RequestState_AndPrime
 
         if (!LootboxDetectUtil.IsPrivateInventory(inv) && LootboxDetectUtil.IsLootboxInventory(inv))
         {
-            var needInspect = false;
             try
             {
-                needInspect = inv.NeedInspection;
+                inv.NeedInspection = false;
             }
             catch
             {
             }
 
-            if (!needInspect)
+            try
             {
-                var hasUninspected = false;
-                try
-                {
-                    foreach (var it in inv)
-                        if (it != null && !it.Inspected)
-                        {
-                            hasUninspected = true;
-                            break;
-                        }
-                }
-                catch
-                {
-                }
-
-                if (hasUninspected) inv.NeedInspection = true;
+                __instance.needInspect = false;
+            }
+            catch
+            {
             }
         }
     }

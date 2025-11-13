@@ -143,21 +143,9 @@ internal static class WorldLootPrime
         // 把它标记成“世界容器”（只缓存 true，避免误判成 false）
         LootSearchWorldGate.EnsureWorldFlag(inv);
 
-        // 已经是需搜索就别重复改（幂等）
-        var need = false;
         try
         {
-            need = inv.NeedInspection;
-        }
-        catch
-        {
-        }
-
-        if (need) return;
-
-        try
-        {
-            lb.needInspect = true;
+            lb.needInspect = false;
         }
         catch
         {
@@ -165,13 +153,13 @@ internal static class WorldLootPrime
 
         try
         {
-            inv.NeedInspection = true;
+            inv.NeedInspection = false;
         }
         catch
         {
         }
 
-        // 只把顶层物品置为未鉴定即可（Inventory 可 foreach）
+        // 直接标记为已检视，确保客户端没有迷雾
         try
         {
             foreach (var it in inv)
@@ -179,7 +167,7 @@ internal static class WorldLootPrime
                 if (!it) continue;
                 try
                 {
-                    it.Inspected = false;
+                    it.Inspected = true;
                 }
                 catch
                 {

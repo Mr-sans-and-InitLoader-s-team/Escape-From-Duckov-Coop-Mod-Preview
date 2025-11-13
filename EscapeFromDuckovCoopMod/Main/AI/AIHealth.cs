@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -174,7 +174,7 @@ public class AIHealth
 
         Server_BroadcastAiHealth(aiId, applyMax, clampedCur);
 
-        DamageInfo deathInfo = null;
+        DamageInfo deathInfo = new DamageInfo();
         if (clampedCur <= 0f && !wasDead)
         {
             if (ModBehaviourF.LogAiHpDebug)
@@ -397,7 +397,7 @@ public class AIHealth
             }
         }
 
-        if (triggerEvents && firstHandle && di != null)
+        if (triggerEvents && firstHandle)
         {
             var oldContext = DeadLootSpawnContext.InOnDead;
             DeadLootSpawnContext.InOnDead = cmc;

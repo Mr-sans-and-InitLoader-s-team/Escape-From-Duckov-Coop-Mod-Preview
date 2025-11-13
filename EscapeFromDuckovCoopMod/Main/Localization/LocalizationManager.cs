@@ -373,6 +373,23 @@ namespace EscapeFromDuckovCoopMod
             currentTranslations["ui.actions.quickActions"] = "Quick Actions";
             currentTranslations["ui.debug.lootBoxCount"] = "Printed {0} loot boxes";
             currentTranslations["ui.hint.toggleUI"] = "{0} Show/Hide";
+
+            // Synchronization UI
+            currentTranslations["ui.sync.initializing"] = "Initializing...";
+            currentTranslations["ui.sync.loadComplete"] = "Loading Complete!";
+            currentTranslations["ui.sync.almostDone"] = "Almost Done...";
+            currentTranslations["ui.sync.syncComplete"] = "Synchronization Complete!";
+            currentTranslations["ui.sync.loadingScene"] = "Loading Scene...";
+            currentTranslations["ui.sync.fetchingPlayers"] = "Fetching Player List...";
+
+            // Synchronization Tasks
+            currentTranslations["ui.sync.task.weather"] = "Environment Sync";
+            currentTranslations["ui.sync.task.playerHealth"] = "Player State Sync";
+            currentTranslations["ui.sync.task.aiLoadoutsReceive"] = "AI Loadout Receiving";
+            currentTranslations["ui.sync.task.aiSeeds"] = "AI Seed Sync";
+            currentTranslations["ui.sync.task.aiLoadouts"] = "AI Loadout Sync";
+            currentTranslations["ui.sync.task.destructible"] = "Destructible Object Scan";
+            currentTranslations["ui.sync.task.aiNames"] = "AI Name Initialization";
         }
 
         /// <summary>

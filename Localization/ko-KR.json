@@ -121,6 +121,28 @@
     { "key": "ui.manualConnect.hint", "value": "힌트: 연결하려면 레벨에 있어야 합니다" },
     { "key": "ui.actions.quickActions", "value": "빠른 작업" },
     { "key": "ui.debug.lootBoxCount", "value": "{0}개의 전리품 상자가 출력됨" },
-    { "key": "ui.hint.toggleUI", "value": "{0} 표시/숨기기" }
+    { "key": "ui.hint.toggleUI", "value": "{0} 표시/숨기기" },
+
+    { "key": "ui.sync.initializing", "value": "초기화 중..." },
+    { "key": "ui.sync.loadComplete", "value": "로딩 완료!" },
+    { "key": "ui.sync.almostDone", "value": "거의 완료..." },
+    { "key": "ui.sync.syncComplete", "value": "동기화 완료!" },
+    { "key": "ui.sync.loadingScene", "value": "씬 로딩 중..." },
+    { "key": "ui.sync.fetchingPlayers", "value": "플레이어 목록 가져오는 중..." },
+
+    { "key": "ui.sync.task.weather", "value": "환경 동기화" },
+    { "key": "ui.sync.task.playerHealth", "value": "플레이어 상태 동기화" },
+    { "key": "ui.sync.task.aiLoadoutsReceive", "value": "AI 장비 수신" },
+    { "key": "ui.sync.task.aiSeeds", "value": "AI 시드 동기화" },
+    { "key": "ui.sync.task.aiLoadouts", "value": "AI 장비 동기화" },
+    { "key": "ui.sync.task.destructible", "value": "파괴 가능한 오브젝트 스캔" },
+    { "key": "ui.sync.task.aiNames", "value": "AI 이름 초기화" },
+
+    { "key": "ui.sync.map", "value": "맵: " },
+    { "key": "ui.sync.map.loading", "value": "로딩 중..." },
+    { "key": "ui.sync.time", "value": "시간: " },
+    { "key": "ui.sync.time.format", "value": "{0}일 {1}:{2}" },
+    { "key": "ui.sync.weather", "value": "날씨: " },
+    { "key": "ui.sync.weather.unknown", "value": "알 수 없음" }
   ]
 }

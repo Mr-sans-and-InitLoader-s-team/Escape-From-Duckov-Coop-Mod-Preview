@@ -121,6 +121,28 @@
     { "key": "ui.manualConnect.hint", "value": "提示：必须在关卡内才能连接" },
     { "key": "ui.actions.quickActions", "value": "快捷操作" },
     { "key": "ui.debug.lootBoxCount", "value": "已输出 {0} 个战利品箱" },
-    { "key": "ui.hint.toggleUI", "value": "{0} 显示/隐藏" }
+    { "key": "ui.hint.toggleUI", "value": "{0} 显示/隐藏" },
+
+    { "key": "ui.sync.initializing", "value": "初始化中..." },
+    { "key": "ui.sync.loadComplete", "value": "加载完成！" },
+    { "key": "ui.sync.almostDone", "value": "即将完成..." },
+    { "key": "ui.sync.syncComplete", "value": "同步完成！" },
+    { "key": "ui.sync.loadingScene", "value": "正在加载场景..." },
+    { "key": "ui.sync.fetchingPlayers", "value": "正在获取玩家列表..." },
+
+    { "key": "ui.sync.task.weather", "value": "环境同步" },
+    { "key": "ui.sync.task.playerHealth", "value": "玩家状态同步" },
+    { "key": "ui.sync.task.aiLoadoutsReceive", "value": "AI装备接收" },
+    { "key": "ui.sync.task.aiSeeds", "value": "AI种子同步" },
+    { "key": "ui.sync.task.aiLoadouts", "value": "AI装备同步" },
+    { "key": "ui.sync.task.destructible", "value": "可破坏物扫描" },
+    { "key": "ui.sync.task.aiNames", "value": "AI名称初始化" },
+
+    { "key": "ui.sync.map", "value": "地图: " },
+    { "key": "ui.sync.map.loading", "value": "加载中..." },
+    { "key": "ui.sync.time", "value": "时间: " },
+    { "key": "ui.sync.time.format", "value": "第{0}天 {1}:{2}" },
+    { "key": "ui.sync.weather", "value": "天气: " },
+    { "key": "ui.sync.weather.unknown", "value": "未知" }
   ]
 }

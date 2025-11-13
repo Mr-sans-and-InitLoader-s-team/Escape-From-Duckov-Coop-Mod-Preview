@@ -162,7 +162,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
         // ========== 顶部标题 ==========
         _titleText = CreateSimpleText("Title", _panel.transform, 56, FontStyles.Bold);
-        _titleText.text = "正在加载场景...";
+        _titleText.text = CoopLocalization.Get("ui.sync.loadingScene");
         _titleText.alignment = TextAlignmentOptions.Center;
         var titleRect = _titleText.GetComponent<RectTransform>();
         titleRect.anchorMin = new Vector2(0, 1);
@@ -215,7 +215,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
         // 地图信息
         _mapInfoText = CreateSimpleText("MapInfo", infoPanel.transform, 28, FontStyles.Bold);
-        _mapInfoText.text = "地图: 加载中...";
+        _mapInfoText.text = CoopLocalization.Get("ui.sync.map") + CoopLocalization.Get("ui.sync.map.loading");
         _mapInfoText.alignment = TextAlignmentOptions.Center;
         _mapInfoText.color = new Color(0.9f, 0.9f, 0.5f, 1f);
         var mapRect = _mapInfoText.GetComponent<RectTransform>();
@@ -223,7 +223,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
         // 游戏时间
         _timeInfoText = CreateSimpleText("TimeInfo", infoPanel.transform, 24, FontStyles.Normal);
-        _timeInfoText.text = "时间: --:--";
+        _timeInfoText.text = CoopLocalization.Get("ui.sync.time") + "--:--";
         _timeInfoText.alignment = TextAlignmentOptions.Center;
         _timeInfoText.color = new Color(0.7f, 0.9f, 1f, 1f);
         var timeRect = _timeInfoText.GetComponent<RectTransform>();
@@ -236,7 +236,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
             24,
             FontStyles.Normal
         );
-        _weatherInfoText.text = "天气: 未知";
+        _weatherInfoText.text = CoopLocalization.Get("ui.sync.weather") + CoopLocalization.Get("ui.sync.weather.unknown");
         _weatherInfoText.alignment = TextAlignmentOptions.Center;
         _weatherInfoText.color = new Color(0.7f, 0.9f, 1f, 1f);
         var weatherRect = _weatherInfoText.GetComponent<RectTransform>();
@@ -285,7 +285,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
             28,
             FontStyles.Normal
         );
-        _syncStatusText.text = "初始化中...";
+        _syncStatusText.text = CoopLocalization.Get("ui.sync.initializing");
         _syncStatusText.alignment = TextAlignmentOptions.Left;
         _syncStatusText.color = new Color(0.9f, 0.9f, 0.9f, 1f);
         var statusRect = _syncStatusText.GetComponent<RectTransform>();
@@ -368,7 +368,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
             if (total == 0)
             {
-                _syncStatusText.text = "初始化中...";
+                _syncStatusText.text = CoopLocalization.Get("ui.sync.initializing");
                 _syncPercentText.text = "0%";
                 return;
             }
@@ -434,7 +434,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
                 if (percent >= 100f)
                 {
                     Debug.Log("[SYNC_UI] 进度达到100%，立即关闭UI");
-                    _syncStatusText.text = "加载完成！";
+                    _syncStatusText.text = CoopLocalization.Get("ui.sync.loadComplete");
                     Close(); // 立即关闭，无淡出效果
                     return;
                 }
@@ -459,7 +459,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
             // 显示当前正在执行的任务
             if (_autoProgressEnabled)
             {
-                _syncStatusText.text = "即将完成...";
+                _syncStatusText.text = CoopLocalization.Get("ui.sync.almostDone");
             }
             else
             {
@@ -473,7 +473,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
                 }
                 else
                 {
-                    _syncStatusText.text = "同步完成！";
+                    _syncStatusText.text = CoopLocalization.Get("ui.sync.syncComplete");
                 }
             }
         }
@@ -494,7 +494,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
         {
             // 更新地图信息
             var currentScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
-            _mapInfoText.text = $"地图: {GetMapDisplayName(currentScene.name)}";
+            _mapInfoText.text = CoopLocalization.Get("ui.sync.map") + GetMapDisplayName(currentScene.name);
 
             // 更新游戏时间 - 使用 GameClock
             try
@@ -503,11 +503,11 @@ public class WaitingSynchronizationUI : MonoBehaviour
                 var timeOfDay = GameClock.TimeOfDay;
                 var hours = timeOfDay.Hours;
                 var minutes = timeOfDay.Minutes;
-                _timeInfoText.text = $"时间: 第{day}天 {hours:D2}:{minutes:D2}";
+                _timeInfoText.text = CoopLocalization.Get("ui.sync.time") + string.Format(CoopLocalization.Get("ui.sync.time.format"), day, hours.ToString("D2"), minutes.ToString("D2"));
             }
             catch
             {
-                _timeInfoText.text = "时间: --:--";
+                _timeInfoText.text = CoopLocalization.Get("ui.sync.time") + "--:--";
             }
 
             // 更新天气信息 - 使用 TimeOfDayController
@@ -517,16 +517,16 @@ public class WaitingSynchronizationUI : MonoBehaviour
                 {
                     var currentWeather = TimeOfDayController.Instance.CurrentWeather;
                     var weatherName = TimeOfDayController.GetWeatherNameByWeather(currentWeather);
-                    _weatherInfoText.text = $"天气: {weatherName}";
+                    _weatherInfoText.text = CoopLocalization.Get("ui.sync.weather") + weatherName;
                 }
                 else
                 {
-                    _weatherInfoText.text = "天气: 未知";
+                    _weatherInfoText.text = CoopLocalization.Get("ui.sync.weather") + CoopLocalization.Get("ui.sync.weather.unknown");
                 }
             }
             catch
             {
-                _weatherInfoText.text = "天气: 未知";
+                _weatherInfoText.text = CoopLocalization.Get("ui.sync.weather") + CoopLocalization.Get("ui.sync.weather.unknown");
             }
         }
         catch (Exception ex)
@@ -1540,19 +1540,24 @@ public class WaitingSynchronizationUI : MonoBehaviour
     /// <summary>
     /// 注册同步任务
     /// </summary>
-    public void RegisterTask(string taskId, string taskName)
+    /// <param name="taskId">TaskID</param>
+    /// <param name="taskNameKey">Localization key (e.g., 'ui.sync.task.weather')</param>
+    public void RegisterTask(string taskId, string taskNameKey)
     {
         if (!_syncTasks.ContainsKey(taskId))
         {
+            // Get translation from localization key
+            string localizedName = CoopLocalization.Get(taskNameKey);
+
             _syncTasks[taskId] = new SyncTaskStatus
             {
-                Name = taskName,
+                Name = localizedName,
                 IsCompleted = false,
                 Details = "",
             };
             // ✅ 记录任务注册时间
             _taskLastUpdateTime[taskId] = Time.time;
-            Debug.Log($"[SYNC_UI] 注册任务: {taskName}");
+            Debug.Log($"[SYNC_UI] 注册任务: {localizedName} (key: {taskNameKey})");
         }
     }
 
@@ -1623,7 +1628,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
                     20,
                     FontStyles.Italic
                 );
-                emptyText.text = "正在获取玩家列表...";
+                emptyText.text = CoopLocalization.Get("ui.sync.fetchingPlayers");
                 emptyText.color = new Color(0.6f, 0.6f, 0.6f, 1f);
                 emptyText.alignment = TextAlignmentOptions.Center;
                 var emptyRect = emptyText.GetComponent<RectTransform>();

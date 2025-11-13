@@ -804,19 +804,19 @@ public partial class ModBehaviourF : MonoBehaviour
             // 注册同步任务
             if (!IsServer)
             {
-                syncUI.RegisterTask("weather", "环境同步");
-                syncUI.RegisterTask("player_health", "玩家状态同步");
-                syncUI.RegisterTask("ai_loadouts", "AI装备接收"); // ✅ 客户端也需要追踪AI装备接收进度
+                syncUI.RegisterTask("weather", "ui.sync.task.weather");
+                syncUI.RegisterTask("player_health", "ui.sync.task.playerHealth");
+                syncUI.RegisterTask("ai_loadouts_receive", "ui.sync.task.aiLoadoutsReceive"); // ✅ 客户端也需要追踪AI装备接收进度
             }
 
             if (IsServer)
             {
-                syncUI.RegisterTask("ai_seeds", "AI种子同步");
-                syncUI.RegisterTask("ai_loadouts", "AI装备同步");
-                syncUI.RegisterTask("destructible", "可破坏物扫描");
+                syncUI.RegisterTask("ai_seeds", "ui.sync.task.aiSeeds");
+                syncUI.RegisterTask("ai_loadouts", "ui.sync.task.aiLoadouts");
+                syncUI.RegisterTask("destructible", "ui.sync.task.destructible");
             }
 
-            syncUI.RegisterTask("ai_names", "AI名称初始化");
+            syncUI.RegisterTask("ai_names", "ui.sync.task.aiNames");
         }
 
         // 【优化】立即执行玩家相关任务（P0优先级）

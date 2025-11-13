@@ -615,7 +615,7 @@ public class AIHandle
         var syncUI = WaitingSynchronizationUI.Instance;
         if (syncUI != null)
         {
-            syncUI.UpdateTaskStatus("ai_loadouts", false, $"已接收 {_clientAiLoadoutsReceived} 个AI");
+            syncUI.UpdateTaskStatus("ai_loadouts_receive", false, $"已接收 {_clientAiLoadoutsReceived} 个AI");
         }
 
         // ✅ 不需要重启协程，只需要更新时间戳即可
@@ -652,7 +652,7 @@ public class AIHandle
                     var syncUI = WaitingSynchronizationUI.Instance;
                     if (syncUI != null)
                     {
-                        syncUI.CompleteTask("ai_loadouts", $"已接收 {_clientAiLoadoutsReceived} 个AI");
+                        syncUI.CompleteTask("ai_loadouts_receive", $"已接收 {_clientAiLoadoutsReceived} 个AI");
                     }
 
                     _clientAiLoadoutTimeoutCoroutine = null;
@@ -667,7 +667,7 @@ public class AIHandle
                 var syncUI = WaitingSynchronizationUI.Instance;
                 if (syncUI != null)
                 {
-                    syncUI.CompleteTask("ai_loadouts", "场景无AI");
+                    syncUI.CompleteTask("ai_loadouts_receive", "场景无AI");
                 }
 
                 _clientAiLoadoutTimeoutCoroutine = null;

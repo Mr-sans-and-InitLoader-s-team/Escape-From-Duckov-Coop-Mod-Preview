@@ -90,11 +90,26 @@ public class LootNet
     public void Server_SendLootboxState(NetPeer toPeer, Inventory inv)
     {
         // ★ 新增：仅当群发(toPeer==null)时才受静音窗口影响
-        if (toPeer == null && LootManager.Instance.Server_IsLootMuted(inv)) return;
-
-        if (!IsServer || inv == null) return;
-        if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv))
+        if (toPeer == null && LootManager.Instance.Server_IsLootMuted(inv))
+        {
+            Debug.Log($"[LOOT-SEND] 跳过静音中的箱子: {inv?.gameObject?.name}");
             return;
+        }
+
+        if (!IsServer || inv == null)
+        {
+            Debug.LogWarning($"[LOOT-SEND] IsServer={IsServer}, inv={(inv == null ? "null" : "not null")}");
+            return;
+        }
+
+        bool isLootbox = LootboxDetectUtil.IsLootboxInventory(inv);
+        bool isPrivate = LootboxDetectUtil.IsPrivateInventory(inv);
+
+        if (!isLootbox || isPrivate)
+        {
+            Debug.LogWarning($"[LOOT-SEND] 拒绝发送战利品数据: {inv.gameObject.name}, isLootbox={isLootbox}, isPrivate={isPrivate}, 物品数={inv.Content.Count}");
+            return;
+        }
 
         var w = new NetDataWriter();
         w.Put((byte)Op.LOOT_STATE);
@@ -119,6 +134,8 @@ public class LootNet
             w.Put(i);
             ItemTool.WriteItemSnapshot(w, it);
         }
+
+        Debug.Log($"[LOOT-SEND] 发送战利品数据: {inv.gameObject.name}, 容量={capacity}, 物品数={count}, 目标={(toPeer != null ? "单个客户端" : "广播")}");
 
         if (toPeer != null) toPeer.Send(w, DeliveryMethod.ReliableOrdered);
         else CoopTool.BroadcastReliable(w);
@@ -221,26 +238,71 @@ public class LootNet
     {
         if (inv == null) yield break;
 
+        Debug.Log($"[LOOT-APPLY] 开始应用箱子状态: {inv.gameObject.name}, capacity={capacity}, 新物品数={itemData.Count}, 当前物品数={inv.Content.Count}");
+
+        // ✅ 保存搜索进度相关状态，避免被重置
+        var wasLoading = inv.Loading;
+        var hasBeenInspected = inv.hasBeenInspectedInLootBox;
+        var needInspection = inv.NeedInspection;
+
         _applyingLootState = true;
         try
         {
             inv.SetCapacity(capacity);
-            inv.Loading = false;
-
-            // ✅ 删除旧物品（每删除 5 个物品后 yield 一次）
-            int deleteCount = 0;
-            for (var i = inv.Content.Count - 1; i >= 0; --i)
+            // ✅ 只在首次打开时清除 Loading 状态，否则保持原状态
+            if (!hasBeenInspected)
             {
-                Item removed;
-                inv.RemoveAt(i, out removed);
-                if (removed) Object.Destroy(removed.gameObject);
+                inv.Loading = false;
+            }
+            else
+            {
+                // 已经搜索过的箱子，保持原有的 Loading 状态
+                inv.Loading = wasLoading;
+            }
 
-                deleteCount++;
-                if (deleteCount % 5 == 0)
+            // ✅ 完全清空旧物品（使用 Clear 方法，确保彻底清理）
+            var oldItems = new List<Item>();
+            for (var i = 0; i < inv.Content.Count; ++i)
+            {
+                var item = inv.Content[i];
+                if (item != null) oldItems.Add(item);
+            }
+
+            Debug.Log($"[LOOT-APPLY] 准备清空 {oldItems.Count} 个旧物品");
+
+            // 先清空 Content 列表
+            inv.Content.Clear();
+
+            // 然后销毁旧物品（每销毁 5 个物品后 yield 一次）
+            int destroyCount = 0;
+            foreach (var item in oldItems)
+            {
+                if (item != null)
                 {
-                    yield return null; // 每删除5个物品后等待1帧
+                    try
+                    {
+                        Object.Destroy(item.gameObject);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[LOOT-APPLY] 销毁旧物品失败: {ex.Message}");
+                    }
+
+                    destroyCount++;
+                    if (destroyCount % 5 == 0)
+                    {
+                        yield return null; // 每销毁5个物品后等待1帧
+                    }
                 }
             }
+
+            // 确保 Content 有足够的容量
+            while (inv.Content.Count < capacity)
+            {
+                inv.Content.Add(null);
+            }
+
+            Debug.Log($"[LOOT-APPLY] 开始添加 {itemData.Count} 个新物品");
 
             // ✅ 添加新物品（每添加 3 个物品后 yield 一次）
             int addCount = 0;
@@ -248,7 +310,25 @@ public class LootNet
             {
                 var item = ItemTool.BuildItemFromSnapshot(snap);
                 if (item == null) continue;
-                inv.AddAt(item, pos);
+
+                // 确保位置有效
+                if (pos >= 0 && pos < inv.Content.Count)
+                {
+                    // 如果位置已有物品，先清理
+                    if (inv.Content[pos] != null)
+                    {
+                        Debug.LogWarning($"[LOOT-APPLY] 位置 {pos} 已有物品，跳过添加 typeId={snap.typeId}");
+                        Object.Destroy(item.gameObject);
+                        continue;
+                    }
+
+                    inv.AddAt(item, pos);
+                }
+                else
+                {
+                    Debug.LogWarning($"[LOOT-APPLY] 位置 {pos} 超出范围 (capacity={capacity})，销毁物品 typeId={snap.typeId}");
+                    Object.Destroy(item.gameObject);
+                }
 
                 addCount++;
                 if (addCount % 3 == 0)
@@ -256,10 +336,36 @@ public class LootNet
                     yield return null; // 每添加3个物品后等待1帧（物品创建比删除更耗时）
                 }
             }
+
+            Debug.Log($"[LOOT-APPLY] 应用完成: {inv.gameObject.name}, 最终物品数={inv.Content.Count}");
+
+            // ✅ 恢复搜索进度相关状态
+            inv.hasBeenInspectedInLootBox = hasBeenInspected;
+            inv.NeedInspection = needInspection;
+            Debug.Log($"[LOOT-APPLY] 恢复搜索状态: hasBeenInspected={hasBeenInspected}, needInspection={needInspection}, Loading={inv.Loading}");
         }
         finally
         {
             _applyingLootState = false;
+        }
+
+        // ✅ 手动触发 onContentChanged 事件，通知 UI 刷新
+        try
+        {
+            var onContentChangedField = AccessTools.Field(typeof(Inventory), "onContentChanged");
+            if (onContentChangedField != null)
+            {
+                var onContentChanged = onContentChangedField.GetValue(inv) as Action<Inventory, int>;
+                if (onContentChanged != null)
+                {
+                    Debug.Log($"[LOOT-APPLY] 触发 onContentChanged 事件");
+                    onContentChanged.Invoke(inv, -1); // -1 表示整个容器都变了
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[LOOT-APPLY] 触发 onContentChanged 失败: {ex.Message}");
         }
 
         // ✅ 刷新 UI（如果箱子正在被查看）
@@ -268,14 +374,30 @@ public class LootNet
             var lv = LootView.Instance;
             if (lv && lv.open && ReferenceEquals(lv.TargetInventory, inv))
             {
-                // 轻量刷新：不强制重开，只更新细节/按钮与容量文本
+                Debug.Log($"[LOOT-APPLY] 刷新 LootView UI");
+
+                // ✅ 重新 Setup InventoryDisplay，这会重建整个物品格子显示
+                var lootTargetInventoryDisplay = AccessTools.Field(typeof(LootView), "lootTargetInventoryDisplay")?.GetValue(lv);
+                if (lootTargetInventoryDisplay != null)
+                {
+                    var setupMethod = AccessTools.Method(lootTargetInventoryDisplay.GetType(), "Setup",
+                        new[] { typeof(Inventory), typeof(Item), typeof(Item), typeof(bool), typeof(string) });
+                    if (setupMethod != null)
+                    {
+                        Debug.Log($"[LOOT-APPLY] 调用 lootTargetInventoryDisplay.Setup 重建物品格子");
+                        setupMethod.Invoke(lootTargetInventoryDisplay, new object[] { inv, null, null, true, null });
+                    }
+                }
+
+                // 然后刷新其他细节
                 AccessTools.Method(typeof(LootView), "RefreshDetails")?.Invoke(lv, null);
                 AccessTools.Method(typeof(LootView), "RefreshPickAllButton")?.Invoke(lv, null);
                 AccessTools.Method(typeof(LootView), "RefreshCapacityText")?.Invoke(lv, null);
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.LogWarning($"[LOOT-APPLY] 刷新 UI 失败: {ex.Message}");
         }
     }
 
@@ -470,6 +592,7 @@ public class LootNet
             return;
         }
 
+        Debug.Log($"[LOOT-TAKE] 客户端请求拿取: {inv.gameObject.name}, 位置={position}, 当前物品数={inv.Content.Count}");
 
         _serverApplyingLoot = true;
         var ok = false;
@@ -479,10 +602,14 @@ public class LootNet
             if (position >= 0 && position < inv.Capacity)
                 try
                 {
+                    var itemAtPos = inv.Content[position];
+                    Debug.Log($"[LOOT-TAKE] 位置 {position} 的物品: {(itemAtPos != null ? itemAtPos.DisplayName : "null")}");
                     ok = inv.RemoveAt(position, out removed);
+                    Debug.Log($"[LOOT-TAKE] RemoveAt 结果: ok={ok}, removed={(removed != null ? removed.DisplayName : "null")}");
                 }
-                catch (ArgumentOutOfRangeException)
+                catch (ArgumentOutOfRangeException ex)
                 {
+                    Debug.LogError($"[LOOT-TAKE] RemoveAt 异常: {ex.Message}");
                     ok = false;
                     removed = null;
                 }
@@ -494,10 +621,13 @@ public class LootNet
 
         if (!ok || removed == null)
         {
+            Debug.LogWarning($"[LOOT-TAKE] 拿取失败: ok={ok}, removed={(removed != null ? removed.DisplayName : "null")}");
             Server_SendLootDeny(peer, "rm_fail");
             Server_SendLootboxState(peer, inv); // ⬅️ 刷新请求方 UI 的索引认知
             return;
         }
+
+        Debug.Log($"[LOOT-TAKE] 拿取成功: {removed.DisplayName}, 剩余物品数={inv.Content.Count}");
 
         var wCli = new NetDataWriter();
         wCli.Put((byte)Op.LOOT_TAKE_OK);
@@ -513,6 +643,7 @@ public class LootNet
         {
         }
 
+        Debug.Log($"[LOOT-TAKE] 准备广播箱子状态，当前物品数={inv.Content.Count}");
         Server_SendLootboxState(null, inv);
     }
 

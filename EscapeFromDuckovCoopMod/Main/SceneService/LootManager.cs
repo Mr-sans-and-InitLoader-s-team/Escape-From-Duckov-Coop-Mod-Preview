@@ -275,25 +275,45 @@ public static class LootboxDetectUtil
 
         // ✅ 关键：检查 Inventory 是否在独立的 GameObject 上
         // 墓碑的 Inventory 直接挂在墓碑 GameObject 上，可以通过这个特征识别
+        // ★ 修复：需要区分玩家墓碑和AI战利品盒子
         try
         {
             var lootbox = inv.GetComponent<InteractableLootbox>();
             if (lootbox != null)
             {
                 // ✅ Inventory 和 InteractableLootbox 在同一个 GameObject 上
-                // 这说明是墓碑（通过 CreateLocalInventory 创建）
-                lock (_cacheLock)
-                {
-                    bool isNewTomb = _tombInventories.Add(inv); // ✅ 加入墓碑缓存
+                // 可能是墓碑或AI战利品盒子，需要进一步判断
 
-                    if (isNewTomb)
+                // ★ 通过预制体名称区分：玩家墓碑包含"Tomb"，AI战利品盒子包含"EnemyDie"或"Die"
+                var objName = inv.gameObject.name;
+                bool isTomb = objName.Contains("Tomb") || objName.Contains("墓碑");
+                bool isAILoot = objName.Contains("EnemyDie") || objName.Contains("Enemy") || objName.Contains("AI");
+
+                if (isTomb && !isAILoot)
+                {
+                    // 确认是玩家墓碑，排除
+                    lock (_cacheLock)
                     {
-                        _tombDetections++;
-                        // ✅ 性能优化：只在第一次检测到墓碑时输出日志（带时间戳）
-                        Debug.Log($"[LootManager] [{System.DateTime.Now:HH:mm:ss.fff}] 排除墓碑 Inventory: {inv.gameObject.name}（首次检测，总计 {_tombDetections} 个墓碑）");
+                        bool isNewTomb = _tombInventories.Add(inv);
+                        if (isNewTomb)
+                        {
+                            _tombDetections++;
+                            Debug.Log($"[LootManager] [{System.DateTime.Now:HH:mm:ss.fff}] 排除玩家墓碑 Inventory: {objName}（首次检测，总计 {_tombDetections} 个墓碑）");
+                        }
                     }
+                    return false;
                 }
-                return false;
+                else if (isAILoot)
+                {
+                    // ★ 这是AI战利品盒子，不应该被排除
+                    Debug.Log($"[LootManager] 识别为AI战利品盒子: {objName}，允许同步");
+                    lock (_cacheLock)
+                    {
+                        _validLootboxInventories.Add(inv);
+                    }
+                    return true;
+                }
+                // 如果无法判断，保守地认为是有效的战利品箱
             }
         }
         catch (Exception ex)
@@ -819,22 +839,28 @@ public class LootManager : MonoBehaviour
         var posHint = Vector3.zero;
         if (r.AvailableBytes >= 12) posHint = r.GetV3cm();
 
+        Debug.Log($"[LOOT-REQ] 收到客户端请求: scene={scene}, posKey={posKey}, iid={iid}, lootUid={lootUid}, posHint={posHint}");
+
         // 先用稳定ID命中（AI掉落箱优先命中这里）
         Inventory inv = null;
         if (lootUid >= 0) _srvLootByUid.TryGetValue(lootUid, out inv);
 
         if (LootboxDetectUtil.IsPrivateInventory(inv))
         {
+            Debug.LogWarning($"[LOOT-REQ] 拒绝：私有Inventory");
             COOPManager.LootNet.Server_SendLootDeny(peer, "no_inv");
             return;
         }
 
-        // 命不中再走你原有“激进解析”：三元标识 + 附近3米扫描并注册
+        // 命不中再走你原有"激进解析"：三元标识 + 附近3米扫描并注册
         if (inv == null && !Server_TryResolveLootAggressive(scene, posKey, iid, posHint, out inv))
         {
+            Debug.LogWarning($"[LOOT-REQ] 无法解析Inventory: scene={scene}, posKey={posKey}, iid={iid}");
             COOPManager.LootNet.Server_SendLootDeny(peer, "no_inv");
             return;
         }
+
+        Debug.Log($"[LOOT-REQ] 成功解析Inventory: {inv?.gameObject?.name}, 物品数={inv?.Content?.Count ?? 0}");
 
         // 只回给发起的这个 peer（不要广播）
         COOPManager.LootNet.Server_SendLootboxState(peer, inv);

@@ -65,3 +65,51 @@ internal class DeferedRunner : MonoBehaviour
         }
     }
 }
+
+/// <summary>
+/// 在帧内缓存重调用结果。
+/// 基于假设：调用的结果在同一帧内不会变化，或caller可以忍受一帧的延迟。
+/// </summary>
+public static class FrameCache
+{
+    private static bool FlagsClearRegistered = false;
+    private static readonly Dictionary<Delegate, bool> Flags = [];
+
+    /// <summary>
+    /// 每帧缓存访问：如果函数第一次调用返回 null，则本帧后续不再调用。
+    /// </summary>
+    public static T Get<T>(Func<T> fn) where T : UnityEngine.Object
+    {
+        if (fn == null)
+        {
+            throw new ArgumentNullException(nameof(fn));
+        }
+
+        // 如果已经标记为 null，本帧直接返回 null
+        if (Flags.TryGetValue(fn, out var isNull) && isNull)
+        {
+            return null;
+        }
+
+        T result = fn();
+
+        if (result == null)
+        {
+            // 标记本帧跳过
+            Flags[fn] = true;
+            // 注册帧结束时清理标记
+            if (!FlagsClearRegistered)
+            {
+                FlagsClearRegistered = true;
+                DeferedRunner.EndOfFrame(() =>
+                {
+                    Flags.Clear();
+                    FlagsClearRegistered = false;
+                });
+            }
+            return null;
+        }
+
+        return result;
+    }
+}

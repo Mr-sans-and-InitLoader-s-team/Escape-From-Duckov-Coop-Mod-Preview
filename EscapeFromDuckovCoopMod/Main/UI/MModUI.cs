@@ -40,7 +40,7 @@ public class MModUI : MonoBehaviour
 
     private GameObject _hostEntryPrefab;
     private GameObject _playerEntryPrefab;
-    
+
     // 🆕 光标指示器（红色圆点）
     private GameObject _cursorIndicator;
 
@@ -196,7 +196,7 @@ public class MModUI : MonoBehaviour
         // 🆕 UI 打开时：隐藏系统光标，显示红点
         if (showUI)
         {
-            
+
             // 更新红点位置
             if (_cursorIndicator != null)
             {
@@ -405,11 +405,11 @@ public class MModUI : MonoBehaviour
 
         // 创建观战面板
         CreateSpectatorPanel();
-        
+
         // 🆕 创建光标指示器（红色圆点）
         CreateCursorIndicator();
     }
-    
+
     /// <summary>
     /// 🆕 创建光标指示器（红色圆点）
     /// </summary>
@@ -417,15 +417,15 @@ public class MModUI : MonoBehaviour
     {
         _cursorIndicator = new GameObject("CursorIndicator");
         _cursorIndicator.transform.SetParent(_canvas.transform, false);
-        
+
         // 创建圆形纹理
         int size = 32;
         Texture2D texture = new Texture2D(size, size);
         Color[] pixels = new Color[size * size];
-        
+
         Vector2 center = new Vector2(size / 2f, size / 2f);
         float radius = size / 2f;
-        
+
         for (int y = 0; y < size; y++)
         {
             for (int x = 0; x < size; x++)
@@ -443,25 +443,25 @@ public class MModUI : MonoBehaviour
                 }
             }
         }
-        
+
         texture.SetPixels(pixels);
         texture.Apply();
-        
+
         var sprite = Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
-        
+
         var image = _cursorIndicator.AddComponent<Image>();
         image.sprite = sprite;
         image.raycastTarget = false; // 🔧 关键：不阻挡射线检测
-        
+
         var rectTransform = _cursorIndicator.GetComponent<RectTransform>();
         rectTransform.sizeDelta = new Vector2(20, 20); // 20x20 像素的圆点
         rectTransform.anchorMin = Vector2.zero;
         rectTransform.anchorMax = Vector2.zero;
         rectTransform.pivot = new Vector2(0.5f, 0.5f);
-        
+
         // 🔧 设置为最高渲染层级
         _cursorIndicator.transform.SetAsLastSibling();
-        
+
         _cursorIndicator.SetActive(false);
     }
 
@@ -969,12 +969,12 @@ public class MModUI : MonoBehaviour
 
         // 1. 从数据库获取所有玩家
         var allPlayers = Utils.Database.PlayerInfoDatabase.Instance.GetAllPlayers().ToList();
-        
+
         // 2. 提取当前玩家的 SteamId 集合
         var currentPlayerIds = new HashSet<string>(
             allPlayers.Select(p => p.SteamId)
         );
-        
+
         // 3. 检查是否需要重建 UI
         bool needsRebuild = forceRebuild || !_displayedPlayerIds.SetEquals(currentPlayerIds);
         
@@ -988,12 +988,12 @@ public class MModUI : MonoBehaviour
             Destroy(child.gameObject);
         _playerEntries.Clear();
         _playerPingTexts.Clear();
-        
+
         // 5. 更新缓存
         _displayedPlayerIds.Clear();
         foreach (var id in currentPlayerIds)
             _displayedPlayerIds.Add(id);
-        
+
         // 6. 渲染所有玩家
         foreach (var player in allPlayers)
         {
@@ -1063,9 +1063,9 @@ public class MModUI : MonoBehaviour
         var headerRow = CreateHorizontalGroup(entry.transform, "Header");
 
         // 状态指示器（从 CustomData 读取）
-        bool isInGame = player.CustomData.TryGetValue("IsInGame", out var inGameObj) 
+        bool isInGame = player.CustomData.TryGetValue("IsInGame", out var inGameObj)
             && inGameObj is bool inGameValue && inGameValue;
-        
+
         var statusDot = new GameObject("StatusDot");
         statusDot.transform.SetParent(headerRow.transform, false);
         var dotLayout = statusDot.AddComponent<LayoutElement>();
@@ -1075,45 +1075,44 @@ public class MModUI : MonoBehaviour
         dotImage.color = isInGame ? ModernColors.Success : ModernColors.Warning;
 
         // 显示玩家名称（直接使用数据库中的名称）
-        var nameText = CreateText("Name", headerRow.transform, player.PlayerName, 16, 
+        var nameText = CreateText("Name", headerRow.transform, player.PlayerName, 16,
             ModernColors.TextPrimary, TextAlignmentOptions.Left, FontStyles.Bold);
-        
+
         // 本地玩家标签
         if (player.IsLocalPlayer)
         {
-            CreateBadge(headerRow.transform, CoopLocalization.Get("ui.playerStatus.local"), 
+            CreateBadge(headerRow.transform, CoopLocalization.Get("ui.playerStatus.local"),
                 ModernColors.Primary);
         }
 
         CreateDivider(entry.transform);
 
         var infoRow = CreateHorizontalGroup(entry.transform, "Info");
-        
+
         // 显示 SteamId
-        CreateText("ID", infoRow.transform, 
-            CoopLocalization.Get("ui.playerStatus.id") + ": " + player.SteamId, 
+        CreateText("ID", infoRow.transform,
+            CoopLocalization.Get("ui.playerStatus.id") + ": " + player.SteamId,
             13, ModernColors.TextSecondary);
-        
+
         // 显示延迟（从 CustomData 读取）
         int latency = 0;
         if (player.CustomData.TryGetValue("Latency", out var latencyObj) && latencyObj is int latencyValue)
         {
             latency = latencyValue;
         }
-        
+
         var pingText = CreateText("Ping", infoRow.transform, $"{latency}ms", 13,
             latency < 50 ? ModernColors.Success :
             latency < 100 ? ModernColors.Warning : ModernColors.Error);
-        
+
         // 保存延迟文本引用（使用 SteamId 作为键）
         _playerPingTexts[player.SteamId] = pingText;
-        
+
         // 显示游戏状态
-        var stateText = CreateText("State", infoRow.transform, 
-            isInGame ? CoopLocalization.Get("ui.playerStatus.inGameStatus") : 
-                       CoopLocalization.Get("ui.playerStatus.idle"), 
+        var stateText = CreateText("State", infoRow.transform,
+            CoopLocalization.Get("ui.playerStatus.inGameStatus"),
             13, isInGame ? ModernColors.Success : ModernColors.TextSecondary);
-        
+
         // 踢人按钮（只有主机且不是本地玩家时显示）
         if (IsServer && !player.IsLocalPlayer && SteamManager.Initialized)
         {
@@ -1259,9 +1258,47 @@ public class MModUI : MonoBehaviour
         listTitleLayout.flexibleWidth = 0;
         listTitleLayout.preferredWidth = -1;
 
+        // 🆕 获取玩家数据库实例
+        var playerDb = Utils.Database.PlayerInfoDatabase.Instance;
+
         // 玩家列表
         foreach (var pid in SceneNet.Instance.sceneParticipantIds)
         {
+            // 🆕 过滤：必须在玩家数据库中存在
+            Utils.Database.PlayerInfoEntity playerInfo = null;
+            
+            // 尝试通过不同方式在数据库中查找玩家
+            // 1. 尝试直接用 pid 作为 SteamId 查找
+            playerInfo = playerDb.GetPlayerBySteamId(pid);
+            
+            // 2. 如果没找到，尝试用 EndPoint 查找
+            if (playerInfo == null)
+            {
+                playerInfo = playerDb.GetPlayerByEndPoint(pid);
+            }
+            
+            // 3. 如果还是没找到，尝试从投票数据中获取 SteamId 再查找
+            if (playerInfo == null && SceneNet.Instance.cachedVoteData?.playerList?.items != null)
+            {
+                foreach (var votePlayer in SceneNet.Instance.cachedVoteData.playerList.items)
+                {
+                    if (votePlayer.playerId == pid && !string.IsNullOrEmpty(votePlayer.steamId))
+                    {
+                        playerInfo = playerDb.GetPlayerBySteamId(votePlayer.steamId);
+                        break;
+                    }
+                }
+            }
+            
+            // 🆕 如果在数据库中找不到，跳过此玩家
+            if (playerInfo == null)
+            {
+                LoggerHelper.LogWarning($"[MModUI] 投票玩家 {pid} 不在数据库中，已跳过显示");
+                continue;
+            }
+            
+            LoggerHelper.Log($"[MModUI] ✅ 投票玩家 {pid} 在数据库中找到: {playerInfo.PlayerName} ({playerInfo.SteamId})");
+
             SceneNet.Instance.sceneReady.TryGetValue(pid, out var ready);
             var playerRow = CreateModernListItem(_components.VotePanel.transform, $"Player_{pid}");
 
@@ -1271,37 +1308,44 @@ public class MModUI : MonoBehaviour
             statusLayout.flexibleWidth = 0;
             statusLayout.preferredWidth = 60;
 
-            // 获取玩家显示名称和ID
-            string displayName = pid;
-            string displayId = pid;
-
-            // ✅ 优先从投票数据中获取 Steam 名字
-            if (SceneNet.Instance.cachedVoteData?.playerList?.items != null)
+            // 🆕 优先使用数据库中的玩家名称
+            string displayName = playerInfo.PlayerName;
+            string displayId = playerInfo.SteamId;
+            
+            // 🆕 添加角色前缀（HOST/CLIENT）
+            bool isHost = pid.StartsWith("Host:");
+            if (isHost)
             {
-                int playerCount = SceneNet.Instance.cachedVoteData.playerList.items.Count();
-                LoggerHelper.Log($"[MModUI] 尝试从投票数据获取玩家名字: pid={pid}, 投票数据玩家数={playerCount}");
-                foreach (var player in SceneNet.Instance.cachedVoteData.playerList.items)
+                displayName = $"HOST_{displayName}";
+            }
+            else if (pid.StartsWith("Client:"))
+            {
+                displayName = $"CLIENT_{displayName}";
+            }
+
+            // 🆕 如果数据库中的名称为空或无效，尝试从其他来源获取
+            if (string.IsNullOrEmpty(displayName) || displayName == "Unknown")
+            {
+                // 尝试从投票数据中获取
+                if (SceneNet.Instance.cachedVoteData?.playerList?.items != null)
                 {
-                    LoggerHelper.Log($"[MModUI] 检查玩家: playerId={player.playerId}, steamName={player.steamName}");
-                    if (player.playerId == pid && !string.IsNullOrEmpty(player.steamName))
+                    foreach (var player in SceneNet.Instance.cachedVoteData.playerList.items)
                     {
-                        // 判断是否是主机
-                        bool isHost = player.playerId.StartsWith("Host:");
-                        string prefix = isHost ? "HOST" : "CLIENT";
-                        displayName = $"{prefix}_{player.steamName}";
-                        displayId = player.steamId;
-                        LoggerHelper.Log($"[MModUI] ✅ 从投票数据获取到名字: {displayName}");
-                        break;
+                        if (player.playerId == pid && !string.IsNullOrEmpty(player.steamName))
+                        {
+                            string prefix = isHost ? "HOST" : "CLIENT";
+                            displayName = $"{prefix}_{player.steamName}";
+                            displayId = player.steamId;
+                            LoggerHelper.Log($"[MModUI] 从投票数据补充名字: {displayName}");
+                            break;
+                        }
                     }
                 }
             }
-            else
-            {
-                LoggerHelper.Log($"[MModUI] ⚠️ 投票数据为空，无法获取 Steam 名字");
-            }
 
-            // 如果投票数据中没有找到，回退到原来的逻辑
-            if (displayName == pid && TransportMode == NetworkTransportMode.SteamP2P && SteamManager.Initialized && LobbyManager != null && LobbyManager.IsInLobby)
+            // 如果还是没有有效名称，尝试从 Steam API 获取（仅 Steam 模式）
+            if ((string.IsNullOrEmpty(displayName) || displayName == "Unknown" || displayName.StartsWith("HOST_Unknown") || displayName.StartsWith("CLIENT_Unknown")) 
+                && TransportMode == NetworkTransportMode.SteamP2P && SteamManager.Initialized && LobbyManager != null && LobbyManager.IsInLobby)
             {
                 try
                 {
@@ -2480,12 +2524,12 @@ public class MModUI : MonoBehaviour
         {
             var playerDb = Utils.Database.PlayerInfoDatabase.Instance;
             var json = playerDb.ExportToJsonWithStats(indented: true);
-            
+
             GUIUtility.systemCopyBuffer = json;
-            
+
             LoggerHelper.Log($"[PlayerDB] 已复制玩家数据库 JSON 到剪贴板 ({playerDb.Count} 名玩家)");
             LoggerHelper.Log($"[PlayerDB] JSON 内容:\n{json}");
-            
+
             SetStatusText($"[OK] 已复制 {playerDb.Count} 名玩家数据到剪贴板", ModernColors.Success);
         }
         catch (Exception ex)
@@ -2620,7 +2664,7 @@ public class MModUI : MonoBehaviour
             localPlayerData["Rotation"] = lps.Rotation.eulerAngles.ToString();
             localPlayerData["Latency"] = lps.Latency;
             localPlayerData["CustomFaceJson"] = string.IsNullOrEmpty(lps.CustomFaceJson) ? "null" : $"[{lps.CustomFaceJson.Length} chars]";
-            
+
             // 🔍 新增：本地玩家的网络ID信息
             if (!isServer && Service.connectedPeer != null)
             {
@@ -2633,7 +2677,7 @@ public class MModUI : MonoBehaviour
             localPlayerData["Status"] = "null";
         }
         debugData["LocalPlayer"] = localPlayerData;
-        
+
         // 🔍 新增：本地玩家GameObject信息
         var localCharacterData = new Dictionary<string, object>();
         if (CharacterMainControl.Main != null)
@@ -2645,7 +2689,7 @@ public class MModUI : MonoBehaviour
             localCharacterData["ActiveInHierarchy"] = localGO.activeInHierarchy;
             localCharacterData["Position"] = localGO.transform.position.ToString();
             localCharacterData["Rotation"] = localGO.transform.rotation.eulerAngles.ToString();
-            
+
             // 场景路径
             var path = "";
             var t = localGO.transform;
@@ -2655,16 +2699,16 @@ public class MModUI : MonoBehaviour
                 t = t.parent;
             }
             localCharacterData["ScenePath"] = path;
-            
+
             // 检查是否有RemoteReplicaTag（不应该有）
             localCharacterData["HasRemoteReplicaTag"] = localGO.GetComponent<RemoteReplicaTag>() != null;
-            
+
             // 渲染器状态
             var renderers = localGO.GetComponentsInChildren<Renderer>();
             var enabledRenderers = renderers.Count(r => r.enabled);
             localCharacterData["TotalRenderers"] = renderers.Length;
             localCharacterData["EnabledRenderers"] = enabledRenderers;
-            
+
             // 组件列表
             var components = localGO.GetComponents<Component>();
             var componentNames = new List<string>();
@@ -2680,7 +2724,7 @@ public class MModUI : MonoBehaviour
             localCharacterData["Status"] = "null";
         }
         debugData["LocalCharacter"] = localCharacterData;
-        
+
         // 🔍 新增：场景中所有CharacterMainControl对象
         var allCharactersData = new List<object>();
         var allCharacters = UnityEngine.Object.FindObjectsOfType<CharacterMainControl>();
@@ -2698,7 +2742,7 @@ public class MModUI : MonoBehaviour
                 ["HasNetInterpolator"] = charGO.GetComponent<NetInterpolator>() != null,
                 ["HasAnimInterpolator"] = charGO.GetComponent<AnimParamInterpolator>() != null
             };
-            
+
             // 检查是否在remoteCharacters或clientRemoteCharacters中
             if (isServer && Service.remoteCharacters != null)
             {
@@ -2711,7 +2755,7 @@ public class MModUI : MonoBehaviour
                 var playerId = Service.clientRemoteCharacters.FirstOrDefault(kv => kv.Value == charGO).Key;
                 charInfo["PlayerId"] = playerId ?? "null";
             }
-            
+
             allCharactersData.Add(charInfo);
         }
         debugData["AllCharactersInScene"] = new Dictionary<string, object>
@@ -2830,13 +2874,13 @@ public class MModUI : MonoBehaviour
                         }
                         charData["AllComponents"] = string.Join(", ", componentNames);
                         charData["ComponentCount"] = componentNames.Count;
-                        
+
                         // 🔍 新增：渲染器状态
                         var renderers = go.GetComponentsInChildren<Renderer>();
                         var enabledRenderers = renderers.Count(r => r.enabled);
                         charData["TotalRenderers"] = renderers.Length;
                         charData["EnabledRenderers"] = enabledRenderers;
-                        
+
                         // 🔍 新增：父对象信息
                         charData["ParentName"] = go.transform.parent?.name ?? "null";
                         charData["SiblingIndex"] = go.transform.GetSiblingIndex();
@@ -3008,17 +3052,17 @@ public class MModUI : MonoBehaviour
                         }
                         charData["AllComponents"] = string.Join(", ", componentNames);
                         charData["ComponentCount"] = componentNames.Count;
-                        
+
                         // 🔍 新增：渲染器状态
                         var renderers = go.GetComponentsInChildren<Renderer>();
                         var enabledRenderers = renderers.Count(r => r.enabled);
                         charData["TotalRenderers"] = renderers.Length;
                         charData["EnabledRenderers"] = enabledRenderers;
-                        
+
                         // 🔍 新增：父对象信息
                         charData["ParentName"] = go.transform.parent?.name ?? "null";
                         charData["SiblingIndex"] = go.transform.GetSiblingIndex();
-                        
+
                         // 🔍 新增：检查是否是本地玩家的副本
                         var isLocalPlayerDuplicate = false;
                         if (Service.connectedPeer != null)
@@ -3027,7 +3071,7 @@ public class MModUI : MonoBehaviour
                             isLocalPlayerDuplicate = playerId == myNetworkId;
                         }
                         charData["IsLocalPlayerDuplicate"] = isLocalPlayerDuplicate;
-                        
+
                         // 🔍 新增：IsSelfId检查结果
                         charData["IsSelfId_Check"] = Service.IsSelfId(playerId);
                     }
@@ -3099,12 +3143,12 @@ public class MModUI : MonoBehaviour
             localPlayerManagerData["Status"] = "null";
         }
         debugData["LocalPlayerManager"] = localPlayerManagerData;
-        
+
         // 🔍 新增：CreateRemoteCharacter相关信息（客户端）
         if (!isServer)
         {
             var createRemoteData = new Dictionary<string, object>();
-            
+
             // 检查clientRemoteCharacters中是否有自己的副本
             if (Service.clientRemoteCharacters != null && Service.connectedPeer != null)
             {
@@ -3113,7 +3157,7 @@ public class MModUI : MonoBehaviour
                 createRemoteData["HasSelfDuplicate"] = hasSelfDuplicate;
                 createRemoteData["MyNetworkId"] = myNetworkId ?? "null";
                 createRemoteData["MyLocalPlayerId"] = Service.localPlayerStatus?.EndPoint ?? "null";
-                
+
                 // 列出所有clientRemoteCharacters的PlayerId
                 var allPlayerIds = new List<string>();
                 foreach (var kv in Service.clientRemoteCharacters)
@@ -3122,7 +3166,7 @@ public class MModUI : MonoBehaviour
                 }
                 createRemoteData["AllRemotePlayerIds"] = string.Join(", ", allPlayerIds);
             }
-            
+
             debugData["CreateRemoteInfo"] = createRemoteData;
         }
 
@@ -3157,7 +3201,7 @@ public class MModUI : MonoBehaviour
         LoggerHelper.Log($"  Role: {debugData["Role"]}");
         LoggerHelper.Log($"  NetworkStarted: {debugData["NetworkStarted"]}");
         LoggerHelper.Log($"  LocalPlayer: {(Service.localPlayerStatus != null ? Service.localPlayerStatus.EndPoint : "null")}");
-        
+
         if (isServer)
         {
             LoggerHelper.Log($"  RemoteCharacters: {Service.remoteCharacters?.Count ?? 0}");
@@ -3185,8 +3229,8 @@ public class MModUI : MonoBehaviour
             LoggerHelper.LogError($"[Debug] 堆栈: {ex.StackTrace}");
         }
 
-        var summary = isServer 
-            ? $"主机: {Service.remoteCharacters?.Count ?? 0} 个远程玩家" 
+        var summary = isServer
+            ? $"主机: {Service.remoteCharacters?.Count ?? 0} 个远程玩家"
             : $"客户端: {Service.clientRemoteCharacters?.Count ?? 0} 个远程玩家";
         SetStatusText($"[OK] 已输出网络状态 ({summary})", ModernColors.Success);
     }

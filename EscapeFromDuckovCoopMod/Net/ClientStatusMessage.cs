@@ -49,6 +49,7 @@ public static class ClientStatusMessage
         public string timestamp; // 时间戳
         public int latency; // 🆕 延迟（毫秒）
         public bool isInGame; // 🆕 是否在游戏中
+        public string currentSceneId; // 🆕 当前场景ID
     }
 
     /// <summary>
@@ -112,6 +113,11 @@ public static class ClientStatusMessage
         int latency = service.connectedPeer?.Ping ?? 0;
         bool isInGame = service.localPlayerStatus?.IsInGame ?? false;
 
+        // 🆕 获取当前场景ID
+        string currentSceneId = "";
+        LocalPlayerManager.Instance.ComputeIsInGame(out currentSceneId);
+        currentSceneId = currentSceneId ?? "";
+
         var data = new ClientStatusData
         {
             steamId = steamId,
@@ -122,6 +128,7 @@ public static class ClientStatusMessage
             timestamp = System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
             latency = latency,
             isInGame = isInGame,
+            currentSceneId = currentSceneId,
         };
 
         string json = Newtonsoft.Json.JsonConvert.SerializeObject(
@@ -512,12 +519,13 @@ public static class ClientStatusMessage
 
             if (success)
             {
-                // 🆕 更新延迟和游戏状态到 CustomData
+                // 🆕 更新延迟、游戏状态和场景ID到 CustomData
                 playerDb.SetCustomData(data.steamId, "Latency", data.latency);
                 playerDb.SetCustomData(data.steamId, "IsInGame", data.isInGame);
+                playerDb.SetCustomData(data.steamId, "CurrentSceneId", data.currentSceneId ?? "");
 
                 LoggerHelper.Log(
-                    $"[ClientStatus] ✓ 已更新玩家数据库: {data.steamName} ({data.steamId}), Latency={data.latency}ms, IsInGame={data.isInGame}"
+                    $"[ClientStatus] ✓ 已更新玩家数据库: {data.steamName} ({data.steamId}), Latency={data.latency}ms, IsInGame={data.isInGame}, Scene={data.currentSceneId}"
                 );
 
                 // 输出当前数据库状态（调试用）

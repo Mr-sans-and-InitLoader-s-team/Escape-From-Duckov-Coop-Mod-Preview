@@ -194,6 +194,13 @@ public class NetService : MonoBehaviour, INetEventListener
 
         if (IsServer) SendLocalPlayerStatus.Instance.SendPlayerStatusUpdate();
 
+        // 🆕 如果有活跃的投票，将新连接的客户端添加到投票列表
+        if (IsServer && Net.SceneVoteMessage.HasActiveVote())
+        {
+            Debug.Log($"[OnPeerConnected] 检测到活跃投票，将新连接的玩家添加到投票列表: {peer.EndPoint}");
+            Net.SceneVoteMessage.AddPlayerToVote(peer);
+        }
+
         if (IsServer)
         {
             // 1) 主机自己
@@ -285,7 +292,7 @@ public class NetService : MonoBehaviour, INetEventListener
             _peerConnectionTime.Remove(peer);
         }
 
-        // 🆕 更新数据库中的 LastSeen 时间戳
+        // 🆕 更新数据库中的 LastSeen 时间戳并从数据库中删除玩家
         if (playerStatuses.ContainsKey(peer))
         {
             var _st = playerStatuses[peer];
@@ -293,6 +300,21 @@ public class NetService : MonoBehaviour, INetEventListener
             {
                 UpdatePlayerLastSeenInDatabase(_st.EndPoint);
                 SceneNet.Instance._cliLastSceneIdByPlayer.Remove(_st.EndPoint);
+                
+                // 🔥 从数据库中删除断开连接的玩家
+                var player = Utils.Database.PlayerInfoDatabase.Instance.GetPlayerByEndPoint(_st.EndPoint);
+                if (player != null)
+                {
+                    Debug.Log($"[OnPeerDisconnected] 从数据库删除玩家: {player.PlayerName} (SteamId: {player.SteamId})");
+                    Utils.Database.PlayerInfoDatabase.Instance.RemovePlayer(player.SteamId);
+                }
+                
+                // 🆕 如果有活跃的投票，从投票列表中移除该玩家并重新检查
+                if (IsServer && Net.SceneVoteMessage.HasActiveVote())
+                {
+                    Debug.Log($"[OnPeerDisconnected] 检测到活跃投票，从投票列表移除玩家: {_st.EndPoint}");
+                    Net.SceneVoteMessage.RemovePlayerFromVote(_st.EndPoint);
+                }
             }
             playerStatuses.Remove(peer);
         }

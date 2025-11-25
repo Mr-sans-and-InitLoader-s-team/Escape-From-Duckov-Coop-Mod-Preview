@@ -27,16 +27,6 @@ public static class LocalHitKillFx
     private static MethodInfo _miHvOnHurt, _miHvOnDead; // HurtVisual.OnHurt / OnDead (private)
     private static MethodInfo _miHmOnHit, _miHmOnKill; // HitMarker.OnHit / OnKill (private)
 
-    // 【优化】委托缓存：避免反射调用和装箱开销
-    private static Action<DamageInfo> _cachedHvOnHurt;
-    private static Action<DamageInfo> _cachedHvOnDead;
-    private static Action<DamageInfo> _cachedHmOnHit;
-    private static Action<DamageInfo> _cachedHmOnKill;
-
-    // 【优化】缓存 HitMarker 单例，避免重复 FindObjectOfType
-    private static object _cachedHitMarker;
-    private static bool _hitMarkerSearched;
-
     private static float _lastBaseDamageForPop;
 
     private static void EnsureHurtVisualBindings(object characterModel, object hv)
@@ -52,31 +42,6 @@ public static class LocalHitKillFx
                 _miHvOnHurt = t.GetMethod("OnHurt", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
             if (_miHvOnDead == null)
                 _miHvOnDead = t.GetMethod("OnDead", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-
-            // 【优化】创建委托缓存，避免反射调用和装箱
-            if (_cachedHvOnHurt == null && _miHvOnHurt != null)
-            {
-                try
-                {
-                    _cachedHvOnHurt = (Action<DamageInfo>)Delegate.CreateDelegate(typeof(Action<DamageInfo>), hv, _miHvOnHurt);
-                }
-                catch
-                {
-                    // 如果委托创建失败，仍使用反射调用
-                }
-            }
-
-            if (_cachedHvOnDead == null && _miHvOnDead != null)
-            {
-                try
-                {
-                    _cachedHvOnDead = (Action<DamageInfo>)Delegate.CreateDelegate(typeof(Action<DamageInfo>), hv, _miHvOnDead);
-                }
-                catch
-                {
-                    // 如果委托创建失败，仍使用反射调用
-                }
-            }
         }
     }
 
@@ -117,21 +82,14 @@ public static class LocalHitKillFx
 
     private static object FindHitMarkerSingleton()
     {
-        // 【优化】缓存 HitMarker 单例，避免昂贵的 FindObjectOfType
-        if (!_hitMarkerSearched)
+        try
         {
-            _hitMarkerSearched = true;
-            try
-            {
-                _cachedHitMarker = Object.FindObjectOfType(typeof(HitMarker), true);
-            }
-            catch
-            {
-                _cachedHitMarker = null;
-            }
+            return Object.FindObjectOfType(typeof(HitMarker), true);
         }
-
-        return _cachedHitMarker;
+        catch
+        {
+            return null;
+        }
     }
 
     private static void PlayHurtVisual(object hv, DamageInfo di, bool predictedDead)
@@ -139,13 +97,9 @@ public static class LocalHitKillFx
         if (hv == null) return;
         EnsureHurtVisualBindings(null, hv);
 
-        // 【优化】优先使用委托缓存，避免反射调用和装箱
         try
         {
-            if (_cachedHvOnHurt != null)
-                _cachedHvOnHurt(di);
-            else
-                _miHvOnHurt?.Invoke(hv, new object[] { di });
+            _miHvOnHurt?.Invoke(hv, new object[] { di });
         }
         catch
         {
@@ -154,10 +108,7 @@ public static class LocalHitKillFx
         if (predictedDead)
             try
             {
-                if (_cachedHvOnDead != null)
-                    _cachedHvOnDead(di);
-                else
-                    _miHvOnDead?.Invoke(hv, new object[] { di });
+                _miHvOnDead?.Invoke(hv, new object[] { di });
             }
             catch
             {
@@ -173,8 +124,7 @@ public static class LocalHitKillFx
                 var look = GameplayDataSettings.UIStyle.GetElementDamagePopTextLook(ElementTypes.physics);
                 var size = di.crit > 0 ? look.critSize : look.normalSize;
                 var sprite = di.crit > 0 ? GameplayDataSettings.UIStyle.CritPopSprite : null;
-                // 【优化】移除 Debug.Log，减少性能开销
-                // Debug.Log(di.damageValue + " " + di.finalDamage);
+                Debug.Log(di.damageValue + " " + di.finalDamage);
                 var _display = di.damageValue;
                 // 某些路径里 DamageInfo.damageValue 会被归一化为 1；为避免弹字恒为 1.0，做一个兜底：
                 if (_display <= 1.001f && _lastBaseDamageForPop > 0f)
@@ -192,7 +142,7 @@ public static class LocalHitKillFx
         }
     }
 
-    // 只在"本地命中路径"里，必要时把 fromCharacter 强制设为 Main，以满足 HitMarker 的判断
+    // 只在“本地命中路径”里，必要时把 fromCharacter 强制设为 Main，以满足 HitMarker 的判断
     private static void PlayUiHitKill(DamageInfo di, bool predictedDead, bool forceLocalMain)
     {
         var hm = FindHitMarkerSingleton();
@@ -202,31 +152,6 @@ public static class LocalHitKillFx
             _miHmOnHit = hm.GetType().GetMethod("OnHit", BindingFlags.Instance | BindingFlags.NonPublic);
         if (_miHmOnKill == null)
             _miHmOnKill = hm.GetType().GetMethod("OnKill", BindingFlags.Instance | BindingFlags.NonPublic);
-
-        // 【优化】创建 HitMarker 委托缓存
-        if (_cachedHmOnHit == null && _miHmOnHit != null)
-        {
-            try
-            {
-                _cachedHmOnHit = (Action<DamageInfo>)Delegate.CreateDelegate(typeof(Action<DamageInfo>), hm, _miHmOnHit);
-            }
-            catch
-            {
-                // 如果委托创建失败，仍使用反射调用
-            }
-        }
-
-        if (_cachedHmOnKill == null && _miHmOnKill != null)
-        {
-            try
-            {
-                _cachedHmOnKill = (Action<DamageInfo>)Delegate.CreateDelegate(typeof(Action<DamageInfo>), hm, _miHmOnKill);
-            }
-            catch
-            {
-                // 如果委托创建失败，仍使用反射调用
-            }
-        }
 
         if (forceLocalMain)
             try
@@ -238,13 +163,9 @@ public static class LocalHitKillFx
             {
             }
 
-        // 【优化】优先使用委托缓存，避免反射调用和装箱
         try
         {
-            if (_cachedHmOnHit != null)
-                _cachedHmOnHit(di);
-            else
-                _miHmOnHit?.Invoke(hm, new object[] { di });
+            _miHmOnHit?.Invoke(hm, new object[] { di });
         }
         catch
         {
@@ -253,31 +174,11 @@ public static class LocalHitKillFx
         if (predictedDead)
             try
             {
-                if (_cachedHmOnKill != null)
-                    _cachedHmOnKill(di);
-                else
-                    _miHmOnKill?.Invoke(hm, new object[] { di });
+                _miHmOnKill?.Invoke(hm, new object[] { di });
             }
             catch
             {
             }
-    }
-
-    /// <summary>
-    ///     客户端本地：玩家 → AI 命中（子弹/爆炸都可）。在“已拦截伤害”的前缀里调用。
-    /// </summary>
-    public static void ClientPlayForAI(CharacterMainControl victim, DamageInfo di, bool predictedDead)
-    {
-        // 1) AI 模型上的受击/死亡可视化（私有 OnHurt/OnDead）
-        var hv = FindHurtVisualOn(victim);
-        PlayHurtVisual(hv, di, predictedDead);
-
-        // 2) UI 命中/击杀标记（私有 OnHit/OnKill）——只在本地命中路径强制 fromCharacter=Main
-        PlayUiHitKill(di, predictedDead, true);
-
-        // 3) 伤害数字
-        var pos = (di.damagePoint.sqrMagnitude > 1e-6f ? di.damagePoint : victim.transform.position) + Vector3.up * 2f;
-        PopDamageText(pos, di);
     }
 
     /// <summary>

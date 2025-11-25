@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -15,7 +15,10 @@
 // GNU Affero General Public License for more details.
 
 using Duckov.Scenes;
+using Duckov.UI;
 using Eflatun.SceneReference;
+using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -46,6 +49,11 @@ public static class Patch_SceneLoaderProxy_Authority
             return false;
         }
 
+        if(__instance.name == "CustomFace" || __instance.name == "SelectDifficulty")
+        {
+            MModUI.ShowTip("客户端请在单机进行设置! Please configure the client on a standalone machine!");
+            return false;
+        }
         SceneNet.Instance.Client_RequestBeginSceneVote(targetId, curtainGuid, notifyEvac, save, useLoc, locationName);
         //string mySceneId = null;
         //try { mySceneId = mod.localPlayerStatus != null ? mod.localPlayerStatus.SceneId : null; } catch { } 
@@ -110,6 +118,64 @@ public static class Patch_SceneLoaderProxy_Authority
         //    return false;
         //}
         Debug.Log($"[SCENE] 客户端放行切图（允许投票）：target={targetId}");
+        return false;
+    }
+
+}
+
+//[HarmonyPatch(typeof(MultiSceneTeleporter), "DoTeleport")]
+//internal static class Patch_Mapen_DoTeleport
+//{
+//    private static void Prefix()
+//    {
+//        var mod = ModBehaviourF.Instance;
+//        if (mod == null || !mod.networkStarted)
+//            return;
+
+//        COOPManager.TeleportAiClear();
+      
+//        CoopSyncDatabase.AI.Clear();
+       
+//        COOPManager.AI?.Reset();
+
+//        Debug.Log("[SCENE] MultiSceneTeleporter 触发，已清理 AI 缓存与数据库，等待主机重新同步。");
+//    }
+//}
+
+
+//[HarmonyPatch(typeof(TimeOfDayController), "Update")]
+//internal static class Patch_Mapen_TimeOfDayController
+//{
+//    private static bool Prefix()
+//    {
+//        var mod = ModBehaviourF.Instance;
+//        if (mod == null || !mod.networkStarted || mod.IsServer)
+//            return true;
+
+//        return false;
+//    }
+//}
+
+[HarmonyPatch(typeof(MultiSceneTeleporter), "DoTeleport")]
+internal static class Patch_Mapen_DoTeleport
+{
+    private static bool Prefix(MultiSceneTeleporter __instance)
+    {
+   
+        var mod = ModBehaviourF.Instance;
+        if (mod == null || !mod.networkStarted) return true;
+        if (SceneNet.Instance.allowLocalSceneLoad) return true;
+        if (!mod.IsServer) return false;
+    
+        SceneNet.Instance.IsDoteleportMap = true;
+       // SceneNet.Instance.Host_BeginSceneVote_Simple(__instance.Target.SceneID, "", false, false, false, "DoTeleport");
+        if (mod.IsServer)
+        {
+            SceneNet.Instance.Host_BeginSceneVote_Simple(__instance.Target.SceneID, "", false, false, false, "DoTeleport");
+            return false;
+        }
+
+        SceneNet.Instance.Client_RequestBeginSceneVote(__instance.Target.SceneID, "", false, false, false, "DoTeleport");
         return false;
     }
 }

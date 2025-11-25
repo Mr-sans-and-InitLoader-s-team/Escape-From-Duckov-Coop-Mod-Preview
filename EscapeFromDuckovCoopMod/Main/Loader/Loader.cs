@@ -14,8 +14,6 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using EscapeFromDuckovCoopMod.Utils;
-
 namespace EscapeFromDuckovCoopMod;
 
 public class ModBehaviour : Duckov.Modding.ModBehaviour
@@ -44,7 +42,6 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         DontDestroyOnLoad(go);
 
         go.AddComponent<SteamP2PLoader>();
-        go.AddComponent<AIRequest>();
         go.AddComponent<Send_ClientStatus>();
         go.AddComponent<HealthM>();
         go.AddComponent<LocalPlayerManager>();
@@ -54,12 +51,6 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         go.AddComponent<LootManager>();
         go.AddComponent<SceneNet>();
         go.AddComponent<MModUI>();
-        go.AddComponent<SceneInitManager>(); // 【优化】场景初始化管理器
-        go.AddComponent<EscapeFromDuckovCoopMod.Utils.BackgroundTaskManager>(); // 【优化】后台任务管理器
-        go.AddComponent<EscapeFromDuckovCoopMod.Jobs.JobSystemManager>(); // 【优化】Unity Job System 管理器
-        go.AddComponent<WaitingSynchronizationUI>(); // 【优化】场景同步等待UI
-        go.AddComponent<GameObjectCacheManager>(); // ✅ 游戏对象缓存管理器
-        go.AddComponent<EscapeFromDuckovCoopMod.Utils.AsyncMessageQueue>(); // ✅ 异步消息队列，优化网络消息处理
         CoopTool.Init();
 
         DeferredInit();
@@ -75,10 +66,9 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         SafeInit<SendLocalPlayerStatus>(s => s.Init());
         SafeInit<Spectator>(s => s.Init());
         SafeInit<MModUI>(ui => ui.Init());
-        SafeInit<AIRequest>(a => a.Init());
         SafeInit<Send_ClientStatus>(s => s.Init());
         SafeInit<DeadLootBox>(s => s.Init());
-
+        
     }
 
     private void SafeInit<T>(Action<T> init) where T : Component

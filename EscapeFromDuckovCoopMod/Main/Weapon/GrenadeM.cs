@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -47,7 +47,7 @@ public class GrenadeM
     }
 
 
-    public void HandleGrenadeExplode(NetDataReader r)
+    public void HandleGrenadeExplode(NetPacketReader r)
     {
         var id = r.GetUInt();
         var pos = r.GetV3cm();
@@ -89,7 +89,7 @@ public class GrenadeM
 
     // 客户端：生成视觉手雷
     // 客户端：收到主机广播的手雷生成
-    public void HandleGrenadeSpawn(NetDataReader r)
+    public void HandleGrenadeSpawn(NetPacketReader r)
     {
         var id = r.GetUInt();
         var typeId = r.GetInt();
@@ -245,7 +245,7 @@ public class GrenadeM
 
 
     // 主机：处理请求
-    public void HandleGrenadeThrowRequest(NetPeer peer, NetDataReader r)
+    public void HandleGrenadeThrowRequest(NetPeer peer, NetPacketReader r)
     {
         var shooterId = r.GetString();
         var typeId = r.GetInt();

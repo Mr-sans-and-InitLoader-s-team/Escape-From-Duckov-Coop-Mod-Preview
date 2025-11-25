@@ -266,6 +266,9 @@
         <Reference Include="UnityEngine.UIModule">
             <HintPath>$(DUCKOV_GAME_MANAGED)\UnityEngine.UIModule.dll</HintPath>
         </Reference>
+        <Reference Include="UnityEngine.UIModule">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\ECM2.dll</HintPath>
+        </Reference>
     </ItemGroup>
 
     <ItemGroup>
@@ -289,20 +292,14 @@
         </PropertyGroup>
 
         <!-- 复制DLL -->
-        <Copy
-            SourceFiles="$(OutputPath)\$(AssemblyName).dll"
-            DestinationFolder="$(_ModFolder)"
-            SkipUnchangedFiles="true"/>
-        <Message Text="Copied DLL -&gt; $(_ModFolder)\$(AssemblyName).dll" Importance="High"/>
+        <Copy SourceFiles="$(OutputPath)\$(AssemblyName).dll" DestinationFolder="$(_ModFolder)" SkipUnchangedFiles="true" />
+        <Message Text="Copied DLL -&gt; $(_ModFolder)\$(AssemblyName).dll" Importance="High" />
 
         <!-- 复制本地化文件 -->
         <ItemGroup>
-            <LocalizationFiles Include="$(OutputPath)\Localization\*.json"/>
+            <LocalizationFiles Include="$(OutputPath)\Localization\*.json" />
         </ItemGroup>
-        <Copy
-            SourceFiles="@(LocalizationFiles)"
-            DestinationFolder="$(_ModFolder)\Localization"
-            SkipUnchangedFiles="true"/>
-        <Message Text="Copied Localization files -&gt; $(_ModFolder)\Localization" Importance="High"/>
+        <Copy SourceFiles="@(LocalizationFiles)" DestinationFolder="$(_ModFolder)\Localization" SkipUnchangedFiles="true" />
+        <Message Text="Copied Localization files -&gt; $(_ModFolder)\Localization" Importance="High" />
     </Target>
 </Project>

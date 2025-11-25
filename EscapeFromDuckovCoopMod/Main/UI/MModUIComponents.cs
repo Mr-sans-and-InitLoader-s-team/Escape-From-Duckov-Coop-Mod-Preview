@@ -14,6 +14,7 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -34,7 +35,6 @@ public class MModUIComponents
     // 输入字段
     public TMP_InputField IpInputField;
     public TMP_InputField PortInputField;
-    public TMP_InputField JsonInputField;  // 🆕 JSON 消息输入框
 
     // 文本组件
     public TMP_Text StatusText;
@@ -45,6 +45,8 @@ public class MModUIComponents
     public TMP_Text ModeInfoText;
     public TMP_Text ModeText;
     public TMP_Text SteamMaxPlayersText;
+    public TMP_Text DifficultyValueText;
+    public TMP_Text SpectatorHintText;
 
     // 图像组件
     public Image ModeIndicator;
@@ -62,6 +64,10 @@ public class MModUIComponents
     // 模式面板
     public GameObject DirectModePanel;
     public GameObject SteamModePanel;
+
+    // 难度选择
+    public readonly Dictionary<DifficultyLevel, Button> DifficultyButtons = new();
+    public readonly Dictionary<DifficultyLevel, Image> DifficultyIcons = new();
 
     // 左侧列表区域
     public GameObject DirectServerListArea;

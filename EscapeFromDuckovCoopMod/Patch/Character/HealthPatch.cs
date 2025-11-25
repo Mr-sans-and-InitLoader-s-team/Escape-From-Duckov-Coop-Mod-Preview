@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,8 +14,10 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using Duckov.Scenes;
 using Duckov.UI;
 using Duckov.Utilities;
+using System.Reflection.Emit;
 using TMPro;
 using UnityEngine.UI;
 
@@ -115,167 +117,6 @@ public static class Patch_HSB_Dead_Broadcast
     }
 }
 
-// 回血/设血：主机也要广播（治疗、药效、脚本设血等）
-[HarmonyPatch(typeof(Health), "SetHealth")]
-internal static class Patch_AIHealth_SetHealth_Broadcast
-{
-    private static void Postfix(Health __instance, float healthValue)
-    {
-        var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted || !mod.IsServer) return;
-
-        var cmc = __instance.TryGetCharacter();
-        if (!cmc)
-            try
-            {
-                cmc = __instance.GetComponentInParent<CharacterMainControl>();
-            }
-            catch
-            {
-            }
-
-        if (!cmc || !cmc.GetComponent<NetAiTag>()) return;
-
-        var tag = cmc.GetComponent<NetAiTag>();
-        if (!tag) return;
-
-        if (ModBehaviourF.LogAiHpDebug) Debug.Log($"[AI-HP][SERVER] SetHealth => broadcast aiId={tag.aiId} cur={__instance.CurrentHealth}");
-        COOPManager.AIHealth.Server_BroadcastAiHealth(tag.aiId, __instance.MaxHealth, __instance.CurrentHealth);
-    }
-}
-
-[HarmonyPatch(typeof(Health), "AddHealth")]
-internal static class Patch_AIHealth_AddHealth_Broadcast
-{
-    private static void Postfix(Health __instance, float healthValue)
-    {
-        var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted || !mod.IsServer) return;
-
-        var cmc = __instance.TryGetCharacter();
-        if (!cmc)
-            try
-            {
-                cmc = __instance.GetComponentInParent<CharacterMainControl>();
-            }
-            catch
-            {
-            }
-
-        if (!cmc || !cmc.GetComponent<NetAiTag>()) return;
-
-        var tag = cmc.GetComponent<NetAiTag>();
-        if (!tag) return;
-
-        if (ModBehaviourF.LogAiHpDebug) Debug.Log($"[AI-HP][SERVER] AddHealth => broadcast aiId={tag.aiId} cur={__instance.CurrentHealth}");
-        COOPManager.AIHealth.Server_BroadcastAiHealth(tag.aiId, __instance.MaxHealth, __instance.CurrentHealth);
-    }
-}
-
-[HarmonyPatch(typeof(HealthBar), "RefreshCharacterIcon")]
-internal static class Patch_HealthBar_RefreshCharacterIcon_Override
-{
-    private static void Postfix(HealthBar __instance)
-    {
-        try
-        {
-            var h = __instance.target;
-            if (!h) return;
-
-            var cmc = h.TryGetCharacter();
-            if (!cmc) return;
-
-            var tag = cmc.GetComponent<NetAiTag>();
-            if (!tag) return;
-
-            // 若没有任何覆写数据，就不动原版结果
-            var hasIcon = tag.iconTypeOverride.HasValue;
-            var hasShow = tag.showNameOverride.HasValue;
-            var hasName = !string.IsNullOrEmpty(tag.nameOverride);
-            if (!hasIcon && !hasShow && !hasName) return;
-
-            // 取到 UI 私有字段
-            var tr = Traverse.Create(__instance);
-            var levelIcon = tr.Field<Image>("levelIcon").Value;
-            var nameText = tr.Field<TextMeshProUGUI>("nameText").Value;
-
-            // 1) 图标覆写（有就用，没有就保留原版）
-            if (levelIcon && hasIcon)
-            {
-                var sp = ResolveIconSpriteCompat(tag.iconTypeOverride.Value);
-                if (sp)
-                {
-                    levelIcon.sprite = sp;
-                    levelIcon.gameObject.SetActive(true);
-                }
-                else
-                {
-                    levelIcon.gameObject.SetActive(false);
-                }
-            }
-
-            // 2) 名字显隐与文本（主机裁决优先；boss/elete 兜底强制显示）
-            var show = hasShow ? tag.showNameOverride.Value : cmc.characterPreset ? cmc.characterPreset.showName : false;
-            if (tag.iconTypeOverride.HasValue)
-            {
-                var t = (CharacterIconTypes)tag.iconTypeOverride.Value;
-                if (!show && (t == CharacterIconTypes.boss || t == CharacterIconTypes.elete))
-                    show = true;
-            }
-
-            if (nameText)
-            {
-                if (show)
-                {
-                    if (hasName) nameText.text = tag.nameOverride;
-                    nameText.gameObject.SetActive(true);
-                }
-                else
-                {
-                    nameText.gameObject.SetActive(false);
-                }
-            }
-        }
-        catch
-        {
-            /* 防守式：别让UI崩 */
-        }
-    }
-
-    // 拷一份兼容的解析函数（避免跨文件访问）
-    private static Sprite ResolveIconSpriteCompat(int iconType)
-    {
-        switch ((CharacterIconTypes)iconType)
-        {
-            case CharacterIconTypes.elete: return GameplayDataSettings.UIStyle.EleteCharacterIcon;
-            case CharacterIconTypes.pmc: return GameplayDataSettings.UIStyle.PmcCharacterIcon;
-            case CharacterIconTypes.boss: return GameplayDataSettings.UIStyle.BossCharacterIcon;
-            case CharacterIconTypes.merchant: return GameplayDataSettings.UIStyle.MerchantCharacterIcon;
-            case CharacterIconTypes.pet: return GameplayDataSettings.UIStyle.PetCharacterIcon;
-            default: return null;
-        }
-    }
-}
-
-[HarmonyPatch(typeof(Health), "get_MaxHealth")]
-internal static class Patch_Health_get_MaxHealth_ClientOverride
-{
-    private static void Postfix(Health __instance, ref float __result)
-    {
-        var mod = ModBehaviourF.Instance;
-        if (mod == null || mod.IsServer) return;
-
-        // 只给 AI 覆盖（避免动到玩家自身的本地 UI）
-        var cmc = __instance.TryGetCharacter();
-        var isAI = cmc && (cmc.GetComponent<AICharacterController>() != null || cmc.GetComponent<NetAiTag>() != null);
-        if (!isAI) return;
-
-        if (HealthM.Instance.TryGetClientMaxOverride(__instance, out var v) && v > 0f)
-            if (__result <= 0f || v > __result)
-                __result = v;
-    }
-}
-
 [HarmonyPatch(typeof(HealthSimpleBase), "OnHurt")]
 internal static class Patch_HealthSimpleBase_OnHurt_RedirectNet
 {
@@ -348,42 +189,6 @@ internal static class Patch_HSB_Awake_AddTagAndRegister
     }
 }
 
-[HarmonyPatch(typeof(Health), "DestroyOnDelay")]
-internal static class Patch_Health_DestroyOnDelay_SkipForAI_Server
-{
-    private static bool Prefix(Health __instance)
-    {
-        var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted || !mod.IsServer) return true;
-
-        CharacterMainControl cmc = null;
-        try
-        {
-            cmc = __instance.TryGetCharacter();
-        }
-        catch
-        {
-        }
-
-        if (!cmc)
-            try
-            {
-                cmc = __instance.GetComponentInParent<CharacterMainControl>();
-            }
-            catch
-            {
-            }
-
-        var isAI = cmc &&
-                   (cmc.GetComponent<AICharacterController>() != null ||
-                    cmc.GetComponent<NetAiTag>() != null);
-        if (!isAI) return true;
-
-        // 对 AI：主机不再走原 DestroyOnDelay，避免已销毁对象的后续访问导致 NRE
-        return false;
-    }
-}
-
 // 兜底：即使有第三方路径仍触发 DestroyOnDelay，吞掉异常防止打断主循环（可选）
 [HarmonyPatch(typeof(Health), "DestroyOnDelay")]
 internal static class Patch_Health_DestroyOnDelay_Finalizer
@@ -396,3 +201,100 @@ internal static class Patch_Health_DestroyOnDelay_Finalizer
         return null;
     }
 }
+
+[HarmonyPatch(typeof(Health), "Hurt")]
+internal static class Patch_Health_Hurt_AIdEAD
+{
+    private static void Postfix(Health __instance)
+    {
+        var mod = ModBehaviourF.Instance;
+        if (mod == null || !mod.networkStarted) return;
+
+        if (__instance.TryGetCharacter().GetComponentInChildren<RemoteAIReplicaTag>() == null) return;
+
+        if (!mod.IsServer)
+        { 
+            if(__instance.IsDead)
+            {
+                var forced = new DamageInfo();
+                forced.damageValue = 99999f;
+                forced.finalDamage = 99999f;;
+                COOPManager.AI.Client_ReportAiHealth(__instance.TryGetCharacter().GetComponentInChildren<RemoteAIReplicaTag>().Id, __instance, forced);
+            }
+        }
+
+    }
+}
+
+[HarmonyPatch(typeof(Health), "Hurt")]
+internal static class Patch_Health_Hurt_RemoteAnti
+{
+    private static bool Prefix(Health __instance, ref DamageInfo damageInfo)
+    {
+        var mod = ModBehaviourF.Instance;
+        if (mod == null || !mod.networkStarted) return true;
+
+        if (__instance.TryGetCharacter().GetComponentInChildren<RemoteAIReplicaTag>() != null) return true;
+        if (__instance.TryGetCharacter().GetComponentInChildren<AICharacterController>() != null) return true;
+        if (__instance.TryGetCharacter().GetComponentInChildren<AutoRequestHealthBar>() != null) return false;
+
+       
+
+        return true;
+    }
+}
+
+
+[HarmonyPatch(typeof(Health), "Hurt")]
+internal static class Patch_Health_Hurt_HPClamp
+{
+    [HarmonyTranspiler]
+    private static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
+    {
+        var setter = AccessTools.PropertySetter(typeof(Health), "CurrentHealth");
+        var helper = AccessTools.Method(typeof(HealthILHelper), nameof(HealthILHelper.AfterApplyFinalDamage));
+
+        bool injected = false;
+
+        foreach (var code in instructions)
+        {
+
+            yield return code;
+
+
+            if (!injected && code.Calls(setter))
+            {
+                injected = true;
+
+ 
+                yield return new CodeInstruction(OpCodes.Ldarg_0); // this
+                yield return new CodeInstruction(OpCodes.Ldarg_1); // damageInfo
+                yield return new CodeInstruction(OpCodes.Call, helper);
+            }
+        }
+    }
+}
+
+public static class HealthILHelper
+{
+
+    public static void AfterApplyFinalDamage(Health __instance, DamageInfo damageInfo)
+    {
+        var chr = __instance.TryGetCharacter();
+
+
+        if (MultiSceneCore.Instance.SceneInfo.ID == "Base"
+            && !ModBehaviourF.Instance.IsServer
+            && chr != null
+            && chr.characterModel.name == "CharacterModel_Dummy_1(Clone)")
+        {
+
+            if (__instance.CurrentHealth <= 0f)
+            {
+                __instance.CurrentHealth = 1f;
+            }
+
+        }
+    }
+}
+

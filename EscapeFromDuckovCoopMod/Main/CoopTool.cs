@@ -14,20 +14,17 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using Duckov.Scenes;
 using Duckov.UI;
 using ItemStatsSystem;
+using LiteNetLib;
+using System;
 using Object = UnityEngine.Object;
-using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
 public static class CoopTool
 {
-    // 客户端：本地 SELF 权威包尚未套用时缓存
-    public static bool _cliSelfHpPending;
-
-    public static float _cliSelfHpMax, _cliSelfHpCur;
-
     public static readonly Dictionary<string, List<(int weaponTypeId, int buffId)>> _cliPendingProxyBuffs = new();
 
     // 客户端：远端克隆未生成前收到的远端HP缓存
@@ -60,6 +57,7 @@ public static class CoopTool
 
     public static void Init()
     {
+        RpcRegistry.Initialize();
         // 触发 Service 属性的初始化，确保 NetService 已经准备好。
         _ = Service;
     }
@@ -131,28 +129,84 @@ public static class CoopTool
         manager.SendToAll(w, DeliveryMethod.ReliableOrdered);
     }
 
-    /// <summary>
-    /// 发送可靠包（智能选择传输方式）
-    /// 注意：此方法已过时，建议直接使用 SendSmart 扩展方法
-    /// </summary>
-    public static void SendReliable(NetDataWriter w, Op op)
-    {
-        var manager = NetManager;
-        if (IsServer) manager?.SendSmart(w, op);
-        else ConnectedPeer?.SendSmart(w, op);
-    }
-
-    /// <summary>
-    /// 发送可靠包（兼容旧接口，从包中读取 Op 码）
-    /// 警告：这个方法假设 writer 的第一个字节是 Op 码
-    /// </summary>
     public static void SendReliable(NetDataWriter w)
     {
-        // 从 writer 中读取第一个字节作为 Op 码（假设调用者已经 Put 了 Op）
-        // 这是一个临时兼容方案，建议调用者改用带 Op 参数的版本
         var manager = NetManager;
         if (IsServer) manager?.SendToAll(w, DeliveryMethod.ReliableOrdered);
         else ConnectedPeer?.Send(w, DeliveryMethod.ReliableOrdered);
+    }
+
+    public static void SendRpc<T>(in T message, NetPeer excludePeer = null)
+        where T : struct, IRpcMessage
+    {
+        var service = Service;
+        if (service == null) return;
+
+        var descriptor = RpcRegistry.GetDescriptor<T>();
+        var writer = RpcWriterPool.Rent();
+        try
+        {
+            writer.Put((byte)descriptor.Op);
+            message.Serialize(writer);
+
+            var payloadBytes = Math.Max(0, writer.Length - 1);
+
+            if (service.IsServer)
+            {
+                if (descriptor.Direction == RpcDirection.ClientToServer)
+                    return;
+
+                var manager = service.netManager;
+                if (manager == null) return;
+
+                var peers = manager.ConnectedPeerList;
+                for (var i = 0; i < peers.Count; i++)
+                {
+                    var peer = peers[i];
+                    if (peer == null || peer == excludePeer) continue;
+                    peer.Send(writer, descriptor.Delivery);
+                    NetDiagnostics.Instance.RecordOutbound(descriptor.Op, payloadBytes);
+                }
+            }
+            else
+            {
+                if (descriptor.Direction == RpcDirection.ServerToClient)
+                    return;
+
+                if (service.connectedPeer != null)
+                {
+                    service.connectedPeer.Send(writer, descriptor.Delivery);
+                    NetDiagnostics.Instance.RecordOutbound(descriptor.Op, payloadBytes);
+                }
+            }
+        }
+        finally
+        {
+            RpcWriterPool.Return(writer);
+        }
+    }
+
+    public static void SendRpcTo<T>(NetPeer target, in T message)
+        where T : struct, IRpcMessage
+    {
+        var service = Service;
+        if (service == null || target == null || !service.IsServer) return;
+
+        var descriptor = RpcRegistry.GetDescriptor<T>();
+        if (descriptor.Direction == RpcDirection.ClientToServer) return;
+
+        var writer = RpcWriterPool.Rent();
+        try
+        {
+            writer.Put((byte)descriptor.Op);
+            message.Serialize(writer);
+            target.Send(writer, descriptor.Delivery);
+            NetDiagnostics.Instance.RecordOutbound(descriptor.Op, Math.Max(0, writer.Length - 1));
+        }
+        finally
+        {
+            RpcWriterPool.Return(writer);
+        }
     }
 
     public static void SendBroadcastDiscovery()
@@ -196,6 +250,50 @@ public static class CoopTool
             }
 
         return null;
+    }
+
+    public static void GoTeleport(string SceneID)
+    {
+        try
+        {
+            var launched = false; // 是否已触发加载
+
+           // COOPManager.TeleportAiClear();
+
+            CoopSyncDatabase.AI.Clear();
+
+            COOPManager.AI?.Reset();
+
+            Debug.Log("[SCENE] MultiSceneTeleporter 触发，已清理 AI 缓存与数据库，等待主机重新同步。");
+
+            // （如果后面你把 loader.LoadScene 恢复了，这里可以先试 loader 路径并把 launched=true）
+
+            // 无论 loader 是否存在，都尝试 SceneLoaderProxy 兜底
+            foreach (var ii in Object.FindObjectsOfType<MultiSceneTeleporter>())
+            {
+                try
+                {
+                    if (ii.Target.SceneID == SceneID)
+                    {
+                        ii.DoTeleport();
+                        launched = true;
+                        Debug.Log($"[SCENE] Fallback via SceneLoaderProxy -> {SceneID}");
+                        break;
+                    }
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning("[SCENE] proxy check failed: " + e);
+                }
+            }
+
+            if (!launched) Debug.LogWarning($"[SCENE] Local load fallback failed: no proxy for '{SceneID}'");
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning("[SCENE] Local load failed: " + e);
+        }
+        SceneNet.Instance.allowLocalSceneLoad = false;
     }
 
     private static string CleanName(string n)
@@ -242,6 +340,25 @@ public static class CoopTool
         return null;
     }
 
+    public static NetPeer TryGetPeerForCharacter(CharacterMainControl cmc)
+    {
+        var remotes = RemoteCharacters;
+        if (remotes == null || cmc == null) return null;
+
+        foreach (var kv in remotes)
+        {
+            var go = kv.Value;
+            if (!go) continue;
+
+            var remoteCmc = go.GetComponent<CharacterMainControl>() ?? go.GetComponentInChildren<CharacterMainControl>(true);
+            if (!remoteCmc) continue;
+            if (remoteCmc == cmc)
+                return kv.Key;
+        }
+
+        return null;
+    }
+
     // 工具：判断 DR 是否属于攻击者自己
     public static bool IsSelfDR(DamageReceiver dr, CharacterMainControl attacker)
     {
@@ -256,33 +373,6 @@ public static class CoopTool
         return dr && dr.GetComponentInParent<CharacterMainControl>(true) != null;
     }
 
-
-    public static void Client_ApplyPendingSelfIfReady()
-    {
-        if (!_cliSelfHpPending) return;
-        var main = CharacterMainControl.Main;
-        if (!main) return;
-
-        var h = main.GetComponentInChildren<Health>(true);
-        var cmc = main.GetComponent<CharacterMainControl>();
-        if (!h) return;
-
-        try
-        {
-            h.autoInit = false;
-        }
-        catch
-        {
-        } // 防止本地也被 Init() 回满
-
-        HealthTool.BindHealthToCharacter(h, cmc);
-        HealthM.Instance.ForceSetHealth(h, _cliSelfHpMax, _cliSelfHpCur);
-
-        // 若现在血量已到 0，补一次死亡事件（只在客户端本地）
-        LocalPlayerManager.Instance.Client_EnsureSelfDeathEvent(h, cmc);
-
-        _cliSelfHpPending = false;
-    }
 
     public static void Client_ApplyPendingRemoteIfAny(string playerId, GameObject go)
     {
@@ -307,6 +397,24 @@ public static class CoopTool
         var applyMax = snap.max > 0f ? snap.max : h.MaxHealth > 0f ? h.MaxHealth : 40f;
         var applyCur = snap.cur > 0f ? snap.cur : applyMax;
 
+        var characterItemInstance = cmc.CharacterItem;
+        if (characterItemInstance != null)
+        {
+            try
+            {
+                var stat = characterItemInstance.GetStat("MaxHealth".GetHashCode());
+                if (stat != null)
+                {
+                    var rule = LevelManager.Rule;
+                    var factor = rule != null ? rule.EnemyHealthFactor : 1f;
+                    stat.BaseValue = applyMax;
+                }
+                characterItemInstance.SetInt("Exp", cmc.characterPreset.exp);
+            }
+            catch
+            {
+            }
+        }
         HealthM.Instance.ForceSetHealth(h, applyMax, applyCur);
         _cliPendingRemoteHp.Remove(playerId);
 
@@ -324,6 +432,7 @@ public static class CoopTool
 
             _cliPendingProxyBuffs.Remove(playerId);
         }
+
     }
 
     public static List<string> BuildParticipantIds_Server()
@@ -370,4 +479,22 @@ public static class CoopTool
 
         return list;
     }
+
+    public static void HideAllTargetObjects(bool t1)
+    {
+        // 包括未激活的物体一起找（Unity 2020+ 可用 true 参数）
+        Transform[] allTransforms = GameObject.FindObjectsOfType<Transform>(true);
+
+        foreach (var t in allTransforms)
+        {
+            if (t.name == "CustomFace" || t.name == "SelectDifficulty")
+            {
+                t.gameObject.SetActive(t1);
+                Debug.Log($"Hide: {t.name} on path: {t.gameObject.name}");
+            }
+        }
+    }
+
+
+
 }

@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,6 +14,11 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System.Collections.Generic;
+using Cysharp.Threading.Tasks;
+using LiteNetLib;
+using UnityEngine;
+
 namespace EscapeFromDuckovCoopMod;
 
 public class Buff_
@@ -23,28 +28,67 @@ public class Buff_
 
     private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
 
-    public void HandlePlayerBuffSelfApply(NetDataReader r)
+    public void Server_HandleBuffReport(NetPeer sender, PlayerBuffReportRpc message)
     {
-        var weaponTypeId = r.GetInt(); // overrideWeaponID（通常就是武器/手雷的 Item.TypeID）
-        var buffId = r.GetInt(); // 兜底的 buff id
-        ApplyBuffToSelf_Client(weaponTypeId, buffId).Forget();
+        if (sender == null || message.BuffId == 0) return;
+
+        var service = Service;
+        var playerId = service?.GetPlayerId(sender);
+        if (string.IsNullOrEmpty(playerId)) return;
+
+        ApplyBuffOnServerProxy(playerId, message.WeaponTypeId, message.BuffId);
+        BroadcastBuff(playerId, message.WeaponTypeId, message.BuffId, sender);
     }
 
-    public void HandleBuffProxyApply(NetDataReader r)
+    public void Server_BroadcastHostBuff(int weaponTypeId, int buffId)
     {
-        var hostId = r.GetString(); // e.g. "Host:9050"
-        var weaponTypeId = r.GetInt();
-        var buffId = r.GetInt();
-        ApplyBuffProxy_Client(hostId, weaponTypeId, buffId).Forget();
+        var playerId = Service?.GetPlayerId(null);
+        if (string.IsNullOrEmpty(playerId)) return;
+
+        BroadcastBuff(playerId, weaponTypeId, buffId, null);
     }
 
-    public async UniTask ApplyBuffToSelf_Client(int weaponTypeId, int buffId)
+    private void BroadcastBuff(string playerId, int weaponTypeId, int buffId, NetPeer exclude)
     {
-        var me = LevelManager.Instance ? LevelManager.Instance.MainCharacter : null;
-        if (!me) return;
+        var rpc = new PlayerBuffBroadcastRpc
+        {
+            PlayerId = playerId,
+            WeaponTypeId = weaponTypeId,
+            BuffId = buffId
+        };
 
-        var buff = await COOPManager.ResolveBuffAsync(weaponTypeId, buffId);
-        if (buff != null) me.AddBuff(buff, null, weaponTypeId);
+        CoopTool.SendRpc(in rpc, exclude);
+    }
+
+    private void ApplyBuffOnServerProxy(string playerId, int weaponTypeId, int buffId)
+    {
+        var service = Service;
+        var remotes = service?.remoteCharacters;
+        if (remotes == null) return;
+
+        foreach (var kv in remotes)
+        {
+            var peer = kv.Key;
+            if (peer == null) continue;
+            if (service.GetPlayerId(peer) != playerId) continue;
+
+            var cmc = kv.Value ? kv.Value.GetComponent<CharacterMainControl>() : null;
+            if (!cmc) return;
+
+            COOPManager.ResolveBuffAsync(weaponTypeId, buffId)
+                .ContinueWith(buff =>
+                {
+                    if (buff != null && cmc) cmc.AddBuff(buff, null, weaponTypeId);
+                })
+                .Forget();
+            return;
+        }
+    }
+
+    public void Client_HandleBuffBroadcast(PlayerBuffBroadcastRpc message)
+    {
+        if (string.IsNullOrEmpty(message.PlayerId)) return;
+        ApplyBuffProxy_Client(message.PlayerId, message.WeaponTypeId, message.BuffId).Forget();
     }
 
     public async UniTask ApplyBuffProxy_Client(string playerId, int weaponTypeId, int buffId)

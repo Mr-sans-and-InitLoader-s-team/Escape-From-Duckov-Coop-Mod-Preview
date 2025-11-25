@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,41 +14,7 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-
-using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 namespace EscapeFromDuckovCoopMod;
-
-[HarmonyPatch(typeof(ItemAgent_Gun), "ShootOneBullet")]
-internal static class Patch_BlockClientAiShoot
-{
-    [HarmonyPriority(Priority.First)]
-    private static bool Prefix(ItemAgent_Gun __instance, Vector3 _muzzlePoint, Vector3 _shootDirection, Vector3 firstFrameCheckStartPoint)
-    {
-        var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted) return true;
-
-        // 主机照常；客户端才需要拦
-        if (mod.IsServer) return true;
-
-        var holder = __instance ? __instance.Holder : null;
-
-        // 非本地主角 &&（AI 有 AICharacterController 或 NetAiTag 任一）=> 拦截
-        if (holder && holder != CharacterMainControl.Main)
-        {
-            var isAI = holder.GetComponent<AICharacterController>() != null
-                       || holder.GetComponent<NetAiTag>() != null;
-
-            if (isAI)
-            {
-                if (ModBehaviourF.LogAiHpDebug)
-                    Debug.Log($"[CLIENT] Block local AI ShootOneBullet holder='{holder.name}'");
-                return false; // 不让客户端本地造弹
-            }
-        }
-
-        return true;
-    }
-}
 
 [HarmonyPatch(typeof(ItemAgent_MeleeWeapon), "CheckCollidersInRange")]
 internal static class Patch_Melee_FlagLocalDeal
@@ -67,31 +33,118 @@ internal static class Patch_Melee_FlagLocalDeal
     }
 }
 
+[HarmonyPatch(typeof(CharacterMainControl), nameof(CharacterMainControl.Attack))]
+public static class Patch_Melee_Attack_Request
+{
+    private static void Postfix(CharacterMainControl __instance, bool __result)
+    {
+        var mod = ModBehaviourF.Instance;
+        if (mod == null || !mod.networkStarted || !__result)
+            return;
+
+        var holder = __instance ? __instance.GetMeleeWeapon() : null;
+        if (!holder) return;
+
+        if (mod.IsServer)
+        {
+            var aiId = 0;
+            var pid = string.Empty;
+
+            if (__instance.IsMainCharacter())
+            {
+                pid = mod.localPlayerStatus?.EndPoint;
+            }
+            else
+            {
+                var ai = __instance.GetComponentInChildren<AICharacterController>();
+                if (ai && CoopSyncDatabase.AI.TryGet(ai, out var entry) && entry != null)
+                    aiId = entry.Id;
+            }
+
+            var broadcast = new MeleeSwingBroadcastRpc
+            {
+                PlayerId = pid,
+                AiId = aiId,
+                DealDelay = 0f,
+                SnapshotPosition = holder.transform.position,
+                SnapshotDirection = holder.transform.forward
+            };
+
+            COOPManager.WeaponHandle.Client_HandleMeleeSwing(in broadcast);
+            CoopTool.SendRpc(in broadcast);
+            return;
+        }
+
+        if (holder.Holder != CharacterMainControl.Main)
+            return;
+
+        var pos = holder.transform.position;
+        var dir = holder.transform.forward;
+
+        var delay = 0f;
+        try
+        {
+            delay = Traverse.Create(__instance).Field<float>("dealDamageDelay").Value;
+        }
+        catch
+        {
+            try
+            {
+                delay = Traverse.Create(__instance).Field<float>("dealDelay").Value;
+            }
+            catch
+            {
+            }
+        }
+
+        COOPManager.WeaponRequest.Net_OnClientMeleeAttack(delay, pos, dir);
+    }
+}
+
 // 客户端：在本地生成真实弹丸的同时，追加 FIRE_REQUEST 提示给主机
 [HarmonyPatch(typeof(ItemAgent_Gun), "ShootOneBullet")]
 public static class Patch_ShootOneBullet_Client
 {
-    private static bool Prefix(ItemAgent_Gun __instance, Vector3 _muzzlePoint, Vector3 _shootDirection, Vector3 firstFrameCheckStartPoint)
+    private struct FireState
+    {
+        public bool ShouldNotify;
+        public Vector3 MuzzlePoint;
+        public Vector3 FirstFrameCheckStart;
+    }
+
+    private static void Prefix(ItemAgent_Gun __instance, Vector3 _muzzlePoint, Vector3 _shootDirection, Vector3 firstFrameCheckStartPoint, ref FireState __state)
     {
         var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted) return true;
+        var shouldSend = mod != null && mod.networkStarted && !mod.IsServer && __instance.Holder == CharacterMainControl.Main;
 
-        var isClient = !mod.IsServer;
-        if (!isClient) return true;
-
-        var holder = __instance.Holder;
-        var isLocalMain = holder == CharacterMainControl.Main;
-        var isAI = holder && holder.GetComponent<NetAiTag>() != null;
-
-        if (isLocalMain)
+        __state = new FireState
         {
-            COOPManager.WeaponRequest.Net_OnClientShoot(__instance, _muzzlePoint, _shootDirection, firstFrameCheckStartPoint);
-            return true; // 允许本地生成真实子弹
+            ShouldNotify = shouldSend,
+            MuzzlePoint = _muzzlePoint,
+            FirstFrameCheckStart = firstFrameCheckStartPoint
+        };
+    }
+
+    private static void Postfix(ItemAgent_Gun __instance, FireState __state)
+    {
+        if (!__state.ShouldNotify)
+            return;
+
+        Projectile proj = null;
+        try
+        {
+            proj = Traverse.Create(__instance).Field<Projectile>("projInst").Value;
+        }
+        catch
+        {
         }
 
-        if (isAI) return false; // 客户端看到的AI，等主机的 FIRE_EVENT
-        if (!isLocalMain) return false;
-        return true;
+        var muzzle = proj ? proj.transform.position : __state.MuzzlePoint;
+        var dir = proj ? proj.transform.forward : (__instance.muzzle ? __instance.muzzle.forward : __instance.transform.forward);
+        if (dir.sqrMagnitude < 1e-8f)
+            dir = Vector3.forward;
+
+        COOPManager.WeaponRequest.Net_OnClientShoot(__instance, muzzle, dir.normalized, __state.FirstFrameCheckStart);
     }
 }
 
@@ -104,46 +157,48 @@ internal static class Patch_ProjectileInit_Broadcast
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.IsServer || __instance == null) return;
 
-        if (COOPManager.WeaponHandle._serverSpawnedFromClient != null && COOPManager.WeaponHandle._serverSpawnedFromClient.Contains(__instance)) return;
-
         var fromC = _context.fromCharacter;
         if (!fromC) return;
 
         string shooterId = null;
-        if (fromC.IsMainCharacter)
+        var aiId = 0;
+        if (fromC.IsMainCharacter())
         {
             shooterId = mod.localPlayerStatus?.EndPoint;
         }
         else
         {
-            var tag = fromC.GetComponent<NetAiTag>();
-            if (tag == null || tag.aiId == 0) return;
-            shooterId = $"AI:{tag.aiId}";
+            var ai = fromC.GetComponentInChildren<AICharacterController>();
+            if (ai && CoopSyncDatabase.AI.TryGet(ai, out var entry) && entry != null)
+                aiId = entry.Id;
         }
 
         var weaponType = 0;
+        ItemAgent_Gun gun = null;
         try
         {
-            var gun = fromC.GetGun();
+            gun = fromC.GetGun();
             if (gun != null && gun.Item != null) weaponType = gun.Item.TypeID;
         }
         catch
         {
         }
 
-        var w = new NetDataWriter();
-        w.Put((byte)Op.FIRE_EVENT);
-        w.Put(shooterId);
-        w.Put(weaponType);
-        w.PutV3cm(__instance.transform.position); // 近似 muzzle
-        w.PutDir(_context.direction);
-        w.Put(_context.speed);
-        w.Put(_context.distance);
-        w.Put(true); // 客户端收到后仅生成假子弹
+        _context.firstFrameCheckStartPoint = _context.firstFrameCheckStartPoint == default
+            ? __instance.transform.position
+            : _context.firstFrameCheckStartPoint;
+        _context.direction = _context.direction.sqrMagnitude < 1e-8f
+            ? __instance.transform.forward
+            : _context.direction;
+        _context.distance = _context.distance <= 0f
+            ? (gun ? gun.BulletDistance + 0.4f : 50f)
+            : _context.distance;
+        _context.speed = _context.speed <= 0f
+            ? (gun ? gun.BulletSpeed * (gun.Holder ? gun.Holder.GunBulletSpeedMultiplier : 1f) : 60f)
+            : _context.speed;
+        _context.team = _context.team == 0 && fromC != null ? fromC.Team : _context.team;
 
-        // 把服务端算好的弹丸参数一并带上（含 explosionRange / explosionDamage 等）
-        w.PutProjectilePayload(_context);
-
-        mod.netManager.SendSmart(w, Op.FIRE_EVENT);
+        COOPManager.WeaponHandle.Server_BroadcastProjectileSpawn(gun, _context, __instance.transform.position,
+            _context.direction, aiId, shooterId);
     }
 }

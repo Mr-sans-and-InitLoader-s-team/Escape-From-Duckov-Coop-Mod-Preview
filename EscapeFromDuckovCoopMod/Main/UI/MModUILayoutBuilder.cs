@@ -256,6 +256,9 @@ public class MModUILayoutBuilder
         // 服务器信息卡片
         BuildServerInfoCard(scrollContent);
 
+        // 难度选择
+        BuildDifficultyCard(scrollContent);
+
         // Direct模式面板
         BuildDirectModePanel(scrollContent);
 
@@ -332,6 +335,14 @@ public class MModUILayoutBuilder
     }
 
     /// <summary>
+    /// 创建难度选择卡片
+    /// </summary>
+    private void BuildDifficultyCard(Transform parent)
+    {
+        _ui.CreateDifficultyCard(parent);
+    }
+
+    /// <summary>
     /// 创建Direct模式面板
     /// </summary>
     private void BuildDirectModePanel(Transform parent)
@@ -387,8 +398,8 @@ public class MModUILayoutBuilder
     {
         var actionsCard = _ui.CreateModernCard(parent, "ActionsCard");
         var actionsCardLayout = actionsCard.GetComponent<LayoutElement>();
-        actionsCardLayout.preferredHeight = 450;  // 🔧 增加高度以容纳所有按钮和 JSON 输入框
-        actionsCardLayout.minHeight = 450;
+        actionsCardLayout.preferredHeight = 170;  // 170 * 0.8 = 136
+        actionsCardLayout.minHeight = 170;
 
         _ui.CreateSectionHeader(actionsCard.transform, CoopLocalization.Get("ui.actions.quickActions"));
 
@@ -398,18 +409,7 @@ public class MModUILayoutBuilder
             _ui.StartCoroutine(_ui.AnimatePanel(_components.PlayerStatusPanel, _ui.showPlayerStatusWindow));
         }, -1, MModUI.ModernColors.Info, 40, 15);
 
-        _ui.CreateModernButton("DebugLootBoxes", actionsCard.transform, CoopLocalization.Get("ui.debug.printLootBoxes"), _ui.DebugPrintLootBoxes, -1, MModUI.ModernColors.Warning, 40, 15);
-
-        _ui.CreateModernButton("DebugNetworkState", actionsCard.transform, "Debug: 网络状态 JSON", _ui.DebugPrintRemoteCharacters, -1, MModUI.ModernColors.Warning, 40, 15);
-
-        // 🆕 复制玩家数据库 JSON 到剪贴板
-        _ui.CreateModernButton("CopyPlayerDB", actionsCard.transform, "复制玩家数据库 JSON", _ui.CopyPlayerDatabaseToClipboard, -1, MModUI.ModernColors.Success, 40, 15);
-
-        // 🆕 JSON 输入框和发送按钮
-        var jsonInputCard = _ui.CreateModernCard(actionsCard.transform, "JSONInputCard");
-        _ui.CreateSectionHeader(jsonInputCard.transform, "JSON 消息发送");
-        _components.JsonInputField = _ui.CreateModernInputField("JSONInput", jsonInputCard.transform, "输入 JSON 消息...", "");
-        _ui.CreateModernButton("SendJSON", jsonInputCard.transform, "发送 JSON", _ui.SendJsonMessage, -1, MModUI.ModernColors.Primary, 40, 15);
+        _ui.CreateModernButton("Debug", actionsCard.transform, CoopLocalization.Get("ui.debug.printLootBoxes"), _ui.DebugPrintLootBoxes, -1, MModUI.ModernColors.Warning, 40, 15);
     }
 }
 

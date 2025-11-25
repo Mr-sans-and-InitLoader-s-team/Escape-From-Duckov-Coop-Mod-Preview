@@ -45,5 +45,13 @@ internal static class Patch_LootBoxLoader_Awake_PrimeNeedInspect
     {
         var lb = __instance.GetComponent<InteractableLootbox>();
         WorldLootPrime.PrimeIfClient(lb);
+
+        try
+        {
+            CoopSyncDatabase.Loot.RegisterLoader(__instance);
+        }
+        catch
+        {
+        }
     }
 }

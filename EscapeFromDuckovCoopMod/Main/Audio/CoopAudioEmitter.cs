@@ -51,7 +51,7 @@ public sealed class CoopAudioEmitter : MonoBehaviour
 
         if (payload.HasSwitch || payload.HasSoundKey)
         {
-            AudioManager.Post(payload.EventName, gameObject);//暂时无意义
+            AudioManager.Post(payload.EventName, gameObject);
         }
         else
         {

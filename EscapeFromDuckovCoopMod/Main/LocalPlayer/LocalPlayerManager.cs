@@ -17,6 +17,7 @@
 using Duckov.Scenes;
 using Duckov.Utilities;
 using ItemStatsSystem.Items;
+using System;
 using UnityEngine.SceneManagement;
 
 namespace EscapeFromDuckovCoopMod;
@@ -36,13 +37,12 @@ public class LocalPlayerManager : MonoBehaviour
     // weaponTypeId(= Item.TypeID) -> projectile prefab
     public readonly Dictionary<int, Projectile> _projCacheByWeaponType = new();
 
-    // 是否已经上报过“本轮生命”的尸体/战利品（= 主机已可生成，不要再上报）
-    internal bool _cliCorpseTreeReported;
-
     // 正在执行“补发死亡”的 OnDead 触发（仅作上下文标记，便于补丁识别来源）
     internal bool _cliInEnsureSelfDeathEmit;
 
     private bool _cliSelfDeathFired;
+    private float _localInvincibleUntil;
+    private const float ClientInvincibleDuration = 15f;
 
     private NetService Service => NetService.Instance;
     private bool IsServer => Service != null && Service.IsServer;
@@ -65,9 +65,12 @@ public class LocalPlayerManager : MonoBehaviour
     public void InitializeLocalPlayer()
     {
         var bool1 = ComputeIsInGame(out var ids);
+        var selfId = Service != null
+            ? Service.GetSelfNetworkId()
+            : (IsServer ? $"Host:{port}" : $"Client:{Guid.NewGuid().ToString().Substring(0, 8)}");
         Service.localPlayerStatus = new PlayerStatus
         {
-            EndPoint = IsServer ? $"Host:{port}" : $"Client:{Guid.NewGuid().ToString().Substring(0, 8)}",
+            EndPoint = selfId,
             PlayerName = IsServer ? "Host" : "Client",
             Latency = 0,
             IsInGame = bool1,
@@ -77,6 +80,12 @@ public class LocalPlayerManager : MonoBehaviour
             SceneId = ids,
             CustomFaceJson = CustomFace.LoadLocalCustomFaceJson()
         };
+        _localInvincibleUntil = 0f;
+    }
+
+    public bool IsLocalInvincible()
+    {
+        return Time.time < _localInvincibleUntil;
     }
 
     public bool ComputeIsInGame(out string sceneId)
@@ -319,6 +328,11 @@ public class LocalPlayerManager : MonoBehaviour
                 SceneNet.Instance.TrySendSceneReadyOnce();
             }
 
+            if (currentIsInGame && !IsServer)
+            {
+                _localInvincibleUntil = Time.time + ClientInvincibleDuration;
+            }
+
 
             if (!IsServer)
             {
@@ -350,15 +364,13 @@ public class LocalPlayerManager : MonoBehaviour
 
         try
         {
-            return cmc.Health != null && cmc.Health.CurrentHealth > 0.001f;
+            return cmc.Health != null && cmc.Health.CurrentHealth > 0.0001f;
         }
         catch
         {
             return false;
         }
     }
-
-
     public void Client_EnsureSelfDeathEvent(Health h, CharacterMainControl cmc)
     {
         if (!h || !cmc)
@@ -379,7 +391,6 @@ public class LocalPlayerManager : MonoBehaviour
         if (cur > 1e-3f)
         {
             _cliSelfDeathFired = false;
-            _cliCorpseTreeReported = false; //下一条命允许重新上报尸体树
             _cliInEnsureSelfDeathEmit = false; //清上下文
             return;
         }
@@ -459,14 +470,8 @@ public class PlayerStatus
     public bool LastIsInGame { get; set; }
     public Vector3 Position { get; set; }
     public Quaternion Rotation { get; set; }
+    public Vector3 Velocity { get; set; }
     public string CustomFaceJson { get; set; }
-    public string ClientReportedId { get; set; }
-    
-    /// <summary>
-    /// 🔧 真实网络ID（主机分配的，用于解决客户端本地ID与主机看到的ID不一致问题）
-    /// </summary>
-    public string RealNetworkId { get; set; }
-    
     public List<EquipmentSyncData> EquipmentList { get; set; } = new();
     public List<WeaponSyncData> WeaponList { get; set; } = new();
 }

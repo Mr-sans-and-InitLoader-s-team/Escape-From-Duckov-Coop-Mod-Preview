@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -30,7 +30,7 @@ public class ClientHandle
     private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
     private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
 
-    public void HandleClientStatusUpdate(NetPeer peer, NetDataReader reader)
+    public void HandleClientStatusUpdate(NetPeer peer, NetPacketReader reader)
     {
         var endPoint = reader.GetString();  // 客户端自报的EndPoint（Client:xxxxx），仅用于日志/调试
         var playerName = reader.GetString();
@@ -38,7 +38,7 @@ public class ClientHandle
         var position = reader.GetVector3();
         var rotation = reader.GetQuaternion();
         var sceneId = reader.GetString();
-        // ✅ 不再读取 faceJson，通过 PLAYER_APPEARANCE 包接收
+        var customFaceJson = reader.GetString();
 
         var equipmentCount = reader.GetInt();
         var equipmentList = new List<EquipmentSyncData>();
@@ -59,23 +59,21 @@ public class ClientHandle
         if (string.IsNullOrEmpty(st.EndPoint))
             st.EndPoint = peer.EndPoint.ToString();  // ✅ 使用服务器端的虚拟IP EndPoint
 
-        st.ClientReportedId = endPoint;
         st.PlayerName = playerName;
         st.Latency = peer.Ping;
         st.IsInGame = isInGame;
         st.LastIsInGame = isInGame;
         st.Position = position;
         st.Rotation = rotation;
-        // ✅ CustomFaceJson 通过 PLAYER_APPEARANCE 包单独接收
+        if (!string.IsNullOrEmpty(customFaceJson))
+            st.CustomFaceJson = customFaceJson;
         st.EquipmentList = equipmentList;
         st.WeaponList = weaponList;
         st.SceneId = sceneId;
 
         if (isInGame && !remoteCharacters.ContainsKey(peer))
         {
-            // ✅ 使用缓存或状态中的外观数据
-            var faceJson = st.CustomFaceJson ?? string.Empty;
-            CreateRemoteCharacter.CreateRemoteCharacterAsync(peer, position, rotation, faceJson).Forget();
+            CreateRemoteCharacter.CreateRemoteCharacterAsync(peer, position, rotation, customFaceJson).Forget();
             foreach (var e in equipmentList) COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(peer, e.SlotHash, e.ItemId).Forget();
             foreach (var w in weaponList) COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(peer, w.SlotHash, w.ItemId).Forget();
         }

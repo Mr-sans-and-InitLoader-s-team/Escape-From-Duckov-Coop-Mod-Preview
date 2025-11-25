@@ -18,7 +18,6 @@ using System.Reflection;
 using Duckov.Buffs;
 using UnityEngine.Events;
 using Object = UnityEngine.Object;
-using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -83,84 +82,47 @@ internal static class Patch_Buff_Setup_Safe
 
 
     [HarmonyPatch(typeof(CharacterBuffManager), nameof(CharacterBuffManager.AddBuff))]
-    private static class Patch_BroadcastBuffToOwner
+    private static class Patch_BroadcastBuff
     {
         private static void Postfix(CharacterBuffManager __instance, Buff buffPrefab, CharacterMainControl fromWho, int overrideWeaponID)
         {
             var mod = ModBehaviourF.Instance;
-            if (mod == null || !mod.networkStarted || !mod.IsServer) return;
+            if (mod == null || !mod.networkStarted) return;
             if (buffPrefab == null) return;
 
-            var target = __instance.Master; // 被加 Buff 的角色
+            var target = __instance.Master;
             if (target == null) return;
 
-            // 只给“这名远端玩家本人”发：在服务器的 remoteCharacters: NetPeer -> GameObject 中查找
-            NetPeer peer = null;
-            foreach (var kv in mod.remoteCharacters)
-            {
-                if (kv.Value == null) continue;
-                if (kv.Value == target.gameObject)
-                {
-                    peer = kv.Key;
-                    break;
-                }
-            }
-
-            if (peer == null) return; // 非玩家，或者就是主机本地角色
-
-            // 发一条“自加 Buff”消息（只给这名玩家）
-            var w = new NetDataWriter();
-            w.Put((byte)Op.PLAYER_BUFF_SELF_APPLY); // 新 opcode（见 Mod.cs）
-            w.Put(overrideWeaponID); // weaponTypeId：客户端可用它解析出正确的 buff prefab
-            w.Put(buffPrefab.ID); // 兜底：buffId（若武器没法解析，就用 id 回退）
-            peer.SendSmart(w, Op.PLAYER_BUFF_SELF_APPLY);
-        }
-    }
-
-
-    [HarmonyPatch(typeof(CharacterBuffManager), nameof(CharacterBuffManager.AddBuff))]
-    private static class Patch_BroadcastBuffApply
-    {
-        private static void Postfix(CharacterBuffManager __instance, Buff buffPrefab, CharacterMainControl fromWho, int overrideWeaponID)
-        {
-            var mod = ModBehaviourF.Instance;
-            if (mod == null || !mod.networkStarted || !mod.IsServer) return;
-            if (buffPrefab == null) return;
-
-            var target = __instance.Master; // 被加 Buff 的角色
-            if (target == null) return;
-
-            // ① 原有：只通知“被命中的那位本人客户端”做自加（保证本地玩法效果）
-            NetPeer ownerPeer = null;
-            foreach (var kv in mod.remoteCharacters)
-            {
-                if (kv.Value == null) continue;
-                if (kv.Value == target.gameObject)
-                {
-                    ownerPeer = kv.Key;
-                    break;
-                }
-            }
-
-            if (ownerPeer != null)
-            {
-                var w = new NetDataWriter();
-                w.Put((byte)Op.PLAYER_BUFF_SELF_APPLY);
-                w.Put(overrideWeaponID);
-                w.Put(buffPrefab.ID);
-                ownerPeer.SendSmart(w, Op.PLAYER_BUFF_SELF_APPLY);
-            }
-
-            // ② 如果“被命中者是主机本体”，就广播给所有客户端，让他们在“主机的代理对象”上也加 Buff（用于可见 FX）
             if (target.IsMainCharacter)
             {
-                var w2 = new NetDataWriter();
-                w2.Put((byte)Op.HOST_BUFF_PROXY_APPLY);
-                // 用你们现有的玩家标识：Host 的 endPoint 已在 InitializeLocalPlayer 里设为 "Host:端口"
-                w2.Put(mod.localPlayerStatus?.EndPoint ?? $"Host:{mod.port}");
-                w2.Put(overrideWeaponID);
-                w2.Put(buffPrefab.ID);
-                mod.netManager.SendSmart(w2, Op.HOST_BUFF_PROXY_APPLY);
+                // 主机：直接广播；客户端：上报给主机
+                if (mod.IsServer)
+                {
+                    COOPManager.Buff.Server_BroadcastHostBuff(overrideWeaponID, buffPrefab.ID);
+                }
+                else
+                {
+                    var rpc = new PlayerBuffReportRpc
+                    {
+                        WeaponTypeId = overrideWeaponID,
+                        BuffId = buffPrefab.ID
+                    };
+                    CoopTool.SendRpc(in rpc);
+                }
+                return;
+            }
+
+            if (mod.IsServer)
+            {
+                COOPManager.AI?.Server_HandleBuffApplied(target, overrideWeaponID, buffPrefab.ID);
+                return;
+            }
+
+            var aiTag = target.GetComponent<RemoteAIReplicaTag>();
+            if (aiTag != null)
+            {
+                if (aiTag.SuppressBuffForward) return;
+                COOPManager.AI?.Client_ReportAiBuff(aiTag.Id, overrideWeaponID, buffPrefab.ID);
             }
         }
     }

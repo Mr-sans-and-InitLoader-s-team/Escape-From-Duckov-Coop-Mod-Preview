@@ -113,14 +113,8 @@ public static class CoopAudioSync
         if (service == null || !service.networkStarted)
             return;
 
-        if (service.IsServer)
-        {
-            AudioEventMessage.ServerBroadcast(payload);
-        }
-        else if (service.connectedPeer != null)
-        {
-            AudioEventMessage.ClientSend(payload);
-        }
+        var rpc = new AudioEventRpc { Payload = payload };
+        CoopTool.SendRpc(in rpc);
     }
 
     private static IDisposable BeginSuppress()
@@ -181,6 +175,27 @@ public static class CoopAudioSync
             SwitchName = switchName ?? string.Empty,
             HasSoundKey = !string.IsNullOrEmpty(soundKey),
             SoundKey = soundKey ?? string.Empty
+        };
+
+        Dispatch(payload);
+    }
+
+    internal static void NotifyLocalPost(string eventName, Vector3 position)
+    {
+        if (IsSuppressed) return;
+        if (string.IsNullOrEmpty(eventName)) return;
+        if (!ShouldSend) return;
+
+        if (ShouldBlockUi(eventName, hasEmitter: true))
+            return;
+
+        var payload = new CoopAudioEventPayload
+        {
+            Kind = CoopAudioEventKind.ThreeD,
+            EventName = eventName,
+            Position = position,
+            HasSwitch = false,
+            HasSoundKey = false
         };
 
         Dispatch(payload);

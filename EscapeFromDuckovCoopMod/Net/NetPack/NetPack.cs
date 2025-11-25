@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -28,7 +28,7 @@ public static class NetPack
         w.Put((int)Mathf.Round(v.z * POS_SCALE));
     }
 
-    public static Vector3 GetV3cm(this NetDataReader r)
+    public static Vector3 GetV3cm(this NetPacketReader r)
     {
         var inv = 1f / POS_SCALE;
         return new Vector3(r.GetInt() * inv, r.GetInt() * inv, r.GetInt() * inv);
@@ -50,7 +50,7 @@ public static class NetPack
         w.Put(qPitch);
     }
 
-    public static Vector3 GetDir(this NetDataReader r)
+    public static Vector3 GetDir(this NetPacketReader r)
     {
         var yaw = r.GetUShort() / 65535f * 360f; // 0..360
         var pitch = r.GetUShort() / 65535f * 180f - 90f; // -90..90
@@ -70,7 +70,7 @@ public static class NetPack
         w.Put((sbyte)Mathf.Clamp(q, sbyte.MinValue, sbyte.MaxValue));
     }
 
-    public static float GetSNorm16(this NetDataReader r)
+    public static float GetSNorm16(this NetPacketReader r)
     {
         return r.GetSByte() / 16f;
     }
@@ -94,7 +94,7 @@ public static class NetPack
     }
 
     public static (float dmg, float ap, float cdf, float cr, int crit, Vector3 point, Vector3 normal, int wid, float bleed, bool boom, float range)
-        GetDamagePayload(this NetDataReader r)
+        GetDamagePayload(this NetPacketReader r)
     {
         var dmg = r.GetFloat();
         var ap = r.GetFloat();

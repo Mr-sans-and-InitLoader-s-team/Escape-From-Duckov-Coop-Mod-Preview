@@ -108,16 +108,6 @@ public static class FxManager
     private static readonly FieldInfo FI_ShellParticle =
         AccessTools.Field(typeof(ItemAgent_Gun), "shellParticle");
 
-    // 【优化】缓存 HurtVisual 组件，避免每次死亡都反射查找
-    private static readonly Dictionary<CharacterMainControl, object> _hvCache = new();
-
-    // 【优化】缓存 OnDead 委托，避免反射调用和装箱
-    private static Action<DamageInfo> _cachedOnDead;
-    private static MethodInfo _miOnDead;
-
-    // 【优化】预检查音效是否存在，避免每次都查询 FMOD
-    private static bool? _killMarkerSoundExists;
-
     private static NetService Service => NetService.Instance;
     private static bool IsServer => Service != null && Service.IsServer;
     private static NetManager netManager => Service?.netManager;
@@ -130,26 +120,27 @@ public static class FxManager
     private static Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
 
 
-    public static void PlayMuzzleFxAndShell(string shooterId, int weaponType, Vector3 muzzlePos, Vector3 finalDir)
+    public static void PlayMuzzleFxAndShell(string shooterId, int weaponType, Vector3 muzzlePos, Vector3 finalDir,
+        ItemAgent_Gun overrideGun = null, Transform overrideMuzzle = null, int aiId = 0)
     {
         try
         {
             // 1) 定位 shooter GameObject
             GameObject shooterGo = null;
+            var cacheKey = !string.IsNullOrEmpty(shooterId) ? shooterId : (aiId != 0 ? $"AI:{aiId}" : null);
             if (NetService.Instance.IsSelfId(shooterId))
             {
                 var cmSelf = LevelManager.Instance?.MainCharacter?.GetComponent<CharacterMainControl>();
                 if (cmSelf) shooterGo = cmSelf.gameObject;
             }
-            else if (!string.IsNullOrEmpty(shooterId) && shooterId.StartsWith("AI:"))
-            {
-                if (int.TryParse(shooterId.Substring(3), out var aiId))
-                    if (AITool.aiById.TryGetValue(aiId, out var cmc) && cmc)
-                        shooterGo = cmc.gameObject;
-            }
             else
             {
-                if (IsServer)
+                if (aiId != 0 && COOPManager.AI != null)
+                {
+                    var ai = COOPManager.AI.TryGetCharacter(aiId);
+                    if (ai) shooterGo = ai.gameObject;
+                }
+                if (!shooterGo && IsServer)
                 {
                     // Server：EndPoint -> NetPeer -> remoteCharacters
                     NetPeer foundPeer = null;
@@ -170,22 +161,20 @@ public static class FxManager
             }
 
             // 2) 尝试命中缓存（避免每包 GetComponentInChildren）
-            ItemAgent_Gun gun = null;
-            Transform muzzleTf = null;
-            if (!string.IsNullOrEmpty(shooterId))
-                if (LocalPlayerManager.Instance._gunCacheByShooter.TryGetValue(shooterId, out var cached) && cached.gun)
+            ItemAgent_Gun gun = overrideGun;
+            Transform muzzleTf = overrideMuzzle;
+            if (!gun && cacheKey != null)
+                if (LocalPlayerManager.Instance._gunCacheByShooter.TryGetValue(cacheKey, out var cached) && cached.gun)
                 {
                     gun = cached.gun;
-                    muzzleTf = cached.muzzle;
+                    muzzleTf = muzzleTf ? muzzleTf : cached.muzzle;
                 }
 
             // 3) 缓存未命中 → 扫描一次并写入缓存
-            // ✅ 优化：保存 CMC 引用供后续使用
-            CharacterMainControl shooterCmc = null;
             if (shooterGo && (!gun || !muzzleTf))
             {
-                shooterCmc = shooterGo.GetComponent<CharacterMainControl>();
-                var model = shooterCmc ? shooterCmc.characterModel : null;
+                var cmc = shooterGo.GetComponent<CharacterMainControl>();
+                var model = cmc ? cmc.characterModel : null;
 
                 if (!gun && model)
                 {
@@ -194,11 +183,11 @@ public static class FxManager
                     if (model.MeleeWeaponSocket && !gun) gun = model.MeleeWeaponSocket.GetComponentInChildren<ItemAgent_Gun>(true);
                 }
 
-                if (!gun) gun = shooterCmc ? shooterCmc.CurrentHoldItemAgent as ItemAgent_Gun : null;
+                if (!gun) gun = cmc ? cmc.CurrentHoldItemAgent as ItemAgent_Gun : null;
 
                 if (gun && gun.muzzle && !muzzleTf) muzzleTf = gun.muzzle;
 
-                if (!string.IsNullOrEmpty(shooterId) && gun) LocalPlayerManager.Instance._gunCacheByShooter[shooterId] = (gun, muzzleTf);
+                if (cacheKey != null && gun) LocalPlayerManager.Instance._gunCacheByShooter[cacheKey] = (gun, muzzleTf);
             }
 
             // 4) 没有 muzzle 就用兜底挂点（只负责火光，不做抛壳/回座力）
@@ -217,12 +206,9 @@ public static class FxManager
             if (tmp) GameObject.Destroy(tmp, 0.2f);
 
             // 6) 非主机端本地顺带触发一次攻击动画（和你原逻辑一致）
-            // ✅ 优化：优先使用已获取的 shooterCmc
             if (!IsServer && shooterGo)
             {
-                if (shooterCmc == null) shooterCmc = shooterGo.GetComponent<CharacterMainControl>();
-                var model = shooterCmc?.characterModel;
-                var anim = model ? model.GetComponent<CharacterAnimationControl_MagicBlend>() : null;
+                var anim = shooterGo.GetComponentInChildren<CharacterAnimationControl_MagicBlend>(true);
                 if (anim && anim.animator) anim.OnAttack();
             }
         }
@@ -238,87 +224,47 @@ public static class FxManager
         var model = cmc.characterModel;
         if (!model) return;
 
-        // 【优化】尝试从缓存获取 HurtVisual
-        if (!_hvCache.TryGetValue(cmc, out var hv) || hv == null)
+        object hv = null;
+        try
         {
-            // 缓存未命中，查找并缓存
+            var fi = model.GetType().GetField("hurtVisual",
+                BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+            if (fi != null) hv = fi.GetValue(model);
+        }
+        catch
+        {
+        }
+
+        if (hv == null)
             try
             {
-                var fi = model.GetType().GetField("hurtVisual",
-                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-                if (fi != null) hv = fi.GetValue(model);
+                hv = model.GetComponentInChildren(typeof(HurtVisual), true);
             }
             catch
             {
             }
-
-            if (hv == null)
-                try
-                {
-                    hv = model.GetComponentInChildren(typeof(HurtVisual), true);
-                }
-                catch
-                {
-                }
-
-            // 缓存结果（即使为null也缓存，避免重复查找）
-            _hvCache[cmc] = hv;
-        }
 
         if (hv != null)
-        {
-            // 【优化】创建委托缓存（只在第一次创建）
-            if (_cachedOnDead == null && _miOnDead == null)
-            {
-                try
-                {
-                    _miOnDead = hv.GetType().GetMethod("OnDead",
-                        BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-
-                    if (_miOnDead != null)
-                    {
-                        try
-                        {
-                            _cachedOnDead = (Action<DamageInfo>)Delegate.CreateDelegate(
-                                typeof(Action<DamageInfo>), hv, _miOnDead);
-                        }
-                        catch
-                        {
-                            // 委托创建失败，继续使用反射调用
-                        }
-                    }
-                }
-                catch
-                {
-                }
-            }
-
             try
             {
-                var di = new DamageInfo
+                var miDead = hv.GetType().GetMethod("OnDead",
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                if (miDead != null)
                 {
-                    // OnDead 本身只需要一个 DamageInfo；就传个位置即可
-                    damagePoint = cmc.transform.position,
-                    damageNormal = Vector3.up
-                };
+                    var di = new DamageInfo
+                    {
+                        // OnDead 本身只需要一个 DamageInfo；就传个位置即可
+                        damagePoint = cmc.transform.position,
+                        damageNormal = Vector3.up
+                    };
+                    miDead.Invoke(hv, new object[] { di });
 
-                // 【优化】优先使用委托缓存，避免反射调用和装箱
-                if (_cachedOnDead != null)
-                    _cachedOnDead(di);
-                else if (_miOnDead != null)
-                    _miOnDead.Invoke(hv, new object[] { di });
-
-                // 【优化】预检查音效是否存在（首次调用时检查并缓存结果）
-                if (_killMarkerSoundExists == null)
-                    _killMarkerSoundExists = FmodEventExists("event:/e_KillMarker");
-
-                if (_killMarkerSoundExists == true)
-                    AudioManager.Post("e_KillMarker");
+                    if (FmodEventExists("event:/e_KillMarker")) AudioManager.Post("e_KillMarker");
+                }
             }
             catch
             {
             }
-        }
     }
 
     public static void Client_PlayLocalShotFx(ItemAgent_Gun gun, Transform muzzleTf, int weaponType)

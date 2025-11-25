@@ -14,6 +14,7 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System.Collections;
 using Duckov.UI;
 using ItemStatsSystem;
 using ItemStatsSystem.Items;
@@ -215,11 +216,26 @@ internal static class Patch_LootView_HasInventoryEverBeenLooted_NeedAware_AllLoo
     {
         if (!inventory) return true;
 
-        if (!LootboxDetectUtil.IsLootboxInventory(inventory)) return true;
         if (LootboxDetectUtil.IsPrivateInventory(inventory)) return true;
 
-        __result = true; // 公共容器一律视为“已搜过”
-        return false;
+        if (!LootboxDetectUtil.IsLootboxInventory(inventory)) return true;
+
+        var needInspect = false;
+        try
+        {
+            needInspect = inventory.NeedInspection;
+        }
+        catch
+        {
+        }
+
+        if (needInspect)
+        {
+            __result = false; // 视为“未搜过” → UI 走搜索条/迷雾
+            return false;
+        }
+
+        return true;
     }
 }
 
@@ -236,8 +252,53 @@ internal static class Patch_LootView_OnStartLoot_PrimeSearchGate_Robust
 
         if (LootboxDetectUtil.IsPrivateInventory(inv)) return;
 
-        TrySetNeedInspection(inv, false);
-        TrySetLootboxNeedInspect(lootbox, false);
+        if (inv.hasBeenInspectedInLootBox) return;
+
+        {
+            var last = inv.GetLastItemPosition();
+            var allInspectedNow = true;
+            for (var i = 0; i <= last; i++)
+            {
+                var it = inv.GetItemAt(i);
+                if (it != null && !it.Inspected)
+                {
+                    allInspectedNow = false;
+                    break;
+                }
+            }
+
+            if (allInspectedNow) return;
+        }
+
+        TrySetNeedInspection(inv, true);
+        TrySetLootboxNeedInspect(lootbox, true);
+
+        mod.StartCoroutine(KickSearchGateOnceStable(inv, lootbox));
+    }
+
+    private static IEnumerator KickSearchGateOnceStable(
+        Inventory inv,
+        InteractableLootbox lootbox)
+    {
+        yield return null;
+        yield return null;
+
+        if (!inv) yield break;
+
+        var last = inv.GetLastItemPosition();
+        var allInspected = true;
+        for (var i = 0; i <= last; i++)
+        {
+            var it = inv.GetItemAt(i);
+            if (it != null && !it.Inspected)
+            {
+                allInspected = false;
+                break;
+            }
+        }
+
+        TrySetNeedInspection(inv, !allInspected);
+        TrySetLootboxNeedInspect(lootbox, !allInspected);
     }
 
     private static void TrySetNeedInspection(Inventory inv, bool v)

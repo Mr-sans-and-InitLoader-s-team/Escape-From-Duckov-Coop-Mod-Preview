@@ -36,7 +36,8 @@
     { "key": "ui.vote.readyIcon", "value": "Ready" },
     { "key": "ui.vote.notReadyIcon", "value": "Not Ready" },
     { "key": "ui.vote.cancel", "value": "Cancel Vote" },
-    { "key": "ui.spectator.mode", "value": "Spectator Mode: LMB ▶ Next | RMB ◀ Previous | Spectating" },
+    { "key": "ui.vote.title", "value": "Map Vote" },
+    { "key": "ui.spectator.mode", "value": "Spectator Mode: LMB ▶ Next | RMB ◀ Previous | Press F8 to end and view results (failsafe)" },
     { "key": "scene.waitingForHost", "value": "[Coop] Waiting for host to finish loading… (Auto-enter after 100s if delayed)" },
     { "key": "scene.hostReady", "value": "Host ready, entering…" },
     { "key": "net.connectionSuccess", "value": "Connected successfully: {0}" },
@@ -121,6 +122,14 @@
     { "key": "ui.manualConnect.hint", "value": "Hint: Must be in a level to connect" },
     { "key": "ui.actions.quickActions", "value": "Quick Actions" },
     { "key": "ui.debug.lootBoxCount", "value": "Printed {0} loot boxes" },
+    { "key": "ui.difficulty.title", "value": "Difficulty" },
+    { "key": "ui.difficulty.hint", "value": "Host can raise or lower AI awareness and combat strength." },
+    { "key": "ui.difficulty.current", "value": "Current: {0}" },
+    { "key": "ui.difficulty.easy", "value": "Easy" },
+    { "key": "ui.difficulty.normal", "value": "Normal" },
+    { "key": "ui.difficulty.hard", "value": "Hard" },
+    { "key": "ui.difficulty.veryHard", "value": "Extreme" },
+    { "key": "ui.difficulty.impossible", "value": "Impossible" },
     { "key": "ui.hint.toggleUI", "value": "{0} Show/Hide" }
   ]
 }

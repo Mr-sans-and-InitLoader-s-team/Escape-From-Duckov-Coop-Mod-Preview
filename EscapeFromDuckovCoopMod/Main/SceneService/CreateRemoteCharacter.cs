@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -28,11 +28,6 @@ public static class CreateRemoteCharacter
     private static NetManager netManager => Service?.netManager;
     private static NetDataWriter writer => Service?.writer;
     private static NetPeer connectedPeer => Service?.connectedPeer;
-
-    // 日志频率限制
-    private static int _createRemoteLogCount = 0;
-    private static System.DateTime _lastCreateRemoteLogTime = System.DateTime.MinValue;
-    private const double CREATE_REMOTE_LOG_INTERVAL = 5.0;
     private static PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
     private static bool networkStarted => Service != null && Service.networkStarted;
     private static Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
@@ -42,26 +37,25 @@ public static class CreateRemoteCharacter
     public static async UniTask<GameObject> CreateRemoteCharacterAsync(NetPeer peer, Vector3 position, Quaternion rotation, string customFaceJson)
     {
         if (remoteCharacters.ContainsKey(peer) && remoteCharacters[peer] != null) return null;
-
+        Debug.Log(peer + " CreateRemoteCharacterAsync");
         var levelManager = LevelManager.Instance;
         if (levelManager == null || levelManager.MainCharacter == null) return null;
 
-        var instance = GameObject.Instantiate(CharacterMainControl.Main.gameObject, position, rotation);
-        // ✅ 优化：复用组件引用，避免重复 GetComponent
+        var itemLoaded = await Coopbase.LoadOrCreateCharacterItemInstance();
+        var playerP = Traverse.Create(LevelManager.Instance).Field<CharacterModel>("characterModel").Value;
+        var player = await LevelManager.Instance.CharacterCreator.CreateCharacter(itemLoaded, playerP, position, rotation);
+        var instance = player.gameObject;
         var characterModel = instance.GetComponent<CharacterMainControl>();
+
+        // Traverse.Create(characterModel).Field<Item>("characterItem").Value = itemLoaded;
+        characterModel.SetItem(itemLoaded);
 
         //  cInventory = CharacterMainControl.Main.CharacterItem.Inventory;
         //  Traverse.Create(characterModel.CharacterItem).Field<Inventory>("inventory").Value = cInventory;
 
-        COOPManager.StripAllHandItems(characterModel);
-        var itemLoaded = await ItemSavesUtilities.LoadItem(LevelManager.MainCharacterItemSaveKey);
-        if (itemLoaded == null)
-        {
-            itemLoaded = await ItemAssetsCollection.InstantiateAsync(GameplayDataSettings.ItemAssets.DefaultCharacterItemTypeID);
-            Debug.LogWarning("Item Loading failed");
-        }
+        var cmc = instance.GetComponent<CharacterMainControl>();
+        COOPManager.StripAllHandItems(cmc);
 
-        Traverse.Create(characterModel).Field<Item>("characterItem").Value = itemLoaded;
         // Debug.Log(peer.EndPoint.ToString() + " CreateRemoteCharacterForClient");
         // 统一设置初始位姿
         instance.transform.SetPositionAndRotation(position, rotation);
@@ -108,59 +102,41 @@ public static class CreateRemoteCharacter
 
         NetInterpUtil.Attach(instance)?.Push(position, rotation);
         AnimInterpUtil.Attach(instance); // 先挂上，样本由后续网络包填
-        characterModel.gameObject.SetActive(false);
+        cmc.gameObject.SetActive(false);
         remoteCharacters[peer] = instance;
-        characterModel.gameObject.SetActive(true);
-
-        // 🕐 标记玩家已成功进入游戏，清除加入超时计时
-        Service.MarkPlayerJoinedSuccessfully(peer);
-
+        cmc.gameObject.SetActive(true);
         return instance;
     }
 
     public static async UniTask CreateRemoteCharacterForClient(string playerId, Vector3 position, Quaternion rotation, string customFaceJson)
     {
-        if (NetService.Instance.IsSelfId(playerId)) return; // ★ 不给自己创建"远程自己"
+        if (NetService.Instance.IsSelfId(playerId)) return; // ★ 不给自己创建“远程自己”
         if (clientRemoteCharacters.ContainsKey(playerId) && clientRemoteCharacters[playerId] != null) return;
 
-        // 频率限制：避免刷屏
-        _createRemoteLogCount++;
-        var now = System.DateTime.Now;
-        if ((now - _lastCreateRemoteLogTime).TotalSeconds >= CREATE_REMOTE_LOG_INTERVAL)
-        {
-            if (_createRemoteLogCount > 1)
-            {
-                Debug.Log($"[CreateRemote] 创建了 {_createRemoteLogCount} 个远程角色 (最后: {playerId})");
-            }
-            else
-            {
-                Debug.Log($"[CreateRemote] {playerId} CreateRemoteCharacterForClient");
-            }
-            _createRemoteLogCount = 0;
-            _lastCreateRemoteLogTime = now;
-        }
+        Debug.Log(playerId + " CreateRemoteCharacterForClient");
 
         var levelManager = LevelManager.Instance;
         if (levelManager == null || levelManager.MainCharacter == null) return;
 
-
-        var instance = GameObject.Instantiate(CharacterMainControl.Main.gameObject, position, rotation);
-        // ✅ 优化：复用组件引用，避免重复 GetComponent
+        var itemLoaded = await Coopbase.LoadOrCreateCharacterItemInstance();
+        var playerP = Traverse.Create(LevelManager.Instance).Field<CharacterModel>("characterModel").Value;
+        var player = await LevelManager.Instance.CharacterCreator.CreateCharacter(itemLoaded, playerP, position,rotation);
+        var instance = player.gameObject;
         var characterModel = instance.GetComponent<CharacterMainControl>();
 
-        var itemLoaded = await ItemSavesUtilities.LoadItem(LevelManager.MainCharacterItemSaveKey);
-        if (itemLoaded == null) itemLoaded = await ItemAssetsCollection.InstantiateAsync(GameplayDataSettings.ItemAssets.DefaultCharacterItemTypeID);
-        Traverse.Create(characterModel).Field<Item>("characterItem").Value = itemLoaded;
+        // Traverse.Create(characterModel).Field<Item>("characterItem").Value = itemLoaded;
+        characterModel.SetItem(itemLoaded);
 
-        COOPManager.StripAllHandItems(characterModel);
+        var cmc = instance.GetComponent<CharacterMainControl>();
+        COOPManager.StripAllHandItems(cmc);
 
         instance.transform.SetPositionAndRotation(position, rotation);
 
-        // ✅ 优化：复用 characterModel，GetComponentInChildren 在此场景下返回同一对象
-        if (characterModel && characterModel.modelRoot)
+        var cmc0 = instance.GetComponentInChildren<CharacterMainControl>(true);
+        if (cmc0 && cmc0.modelRoot)
         {
             var e = rotation.eulerAngles;
-            characterModel.modelRoot.transform.rotation = Quaternion.Euler(0f, e.y, 0f);
+            cmc0.modelRoot.transform.rotation = Quaternion.Euler(0f, e.y, 0f);
         }
 
         MakeRemotePhysicsPassive(instance);
@@ -201,16 +177,16 @@ public static class CreateRemoteCharacter
             anim.updateMode = AnimatorUpdateMode.Normal;
         }
 
-        var h = instance.GetComponentInChildren<Health>(true);
+        var h = cmc.Health;
         if (h) h.autoInit = false;
         instance.AddComponent<AutoRequestHealthBar>();
         CoopTool.Client_ApplyPendingRemoteIfAny(playerId, instance);
 
         NetInterpUtil.Attach(instance)?.Push(position, rotation);
         AnimInterpUtil.Attach(instance);
-        characterModel.gameObject.SetActive(false);
+        cmc.gameObject.SetActive(false);
         clientRemoteCharacters[playerId] = instance;
-        characterModel.gameObject.SetActive(true);
+        cmc.gameObject.SetActive(true);
     }
 
     private static void MakeRemotePhysicsPassive(GameObject go)
@@ -218,9 +194,6 @@ public static class CreateRemoteCharacter
         if (!go) return;
 
         // 1) 典型运动/导航组件：关掉使其不再自行挪动
-        var ai = go.GetComponentInChildren<AICharacterController>(true);
-        if (ai) ai.enabled = false;
-
         var nma = go.GetComponentInChildren<NavMeshAgent>(true);
         if (nma) nma.enabled = false;
 

@@ -14,28 +14,39 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using System.Collections;
+using Duckov;
+using Duckov.Utilities;
 using ItemStatsSystem;
-using ItemStatsSystem.Items;
+using System;
+using System.Collections;
 
 namespace EscapeFromDuckovCoopMod;
 
-[HarmonyPatch(typeof(InteractableLootbox), "StartLoot")]
-internal static class Patch_Lootbox_StartLoot_RequestState
+[HarmonyPatch(typeof(CharacterMainControl), "OnDead", typeof(DamageInfo))]
+[HarmonyPriority(Priority.First)]
+internal static class Patch_CharacterMainControl_OnDead_MarkContext
 {
-    private static void Postfix(InteractableLootbox __instance, ref bool __result)
+    private static void Prefix(CharacterMainControl __instance, ref (CharacterMainControl, bool) __state)
     {
-        if (!__result) return;
+        if(__instance.IsMainCharacter())
+        {
+            DeadLootSpawnContext.LocalOnDead = true;
+            return;
+        }
+        else
+        {
+            DeadLootSpawnContext.LocalOnDead = false;
+        }
+        __state = (DeadLootSpawnContext.InOnDead, DeadLootSpawnContext.LocalOnDead);
+        DeadLootSpawnContext.InOnDead = __instance;
+        DeadLootSpawnContext.LocalOnDead = __instance != null && __instance == CharacterMainControl.Main;
+    }
 
-        var m = ModBehaviourF.Instance;
-        if (m == null || !m.networkStarted || m.IsServer) return;
-
-        var inv = __instance ? __instance.Inventory : null;
-        if (inv == null) return;
-
-        inv.Loading = true; // 先挂起 UI
-        COOPManager.LootNet.Client_RequestLootState(inv); // 请求快照
-        LootManager.Instance.KickLootTimeout(inv); // 每次开箱都拉起 1.5s 兜底，避免二次打开卡死
+    private static Exception Finalizer((CharacterMainControl, bool) __state, Exception __exception)
+    {
+        DeadLootSpawnContext.InOnDead = __state.Item1;
+        DeadLootSpawnContext.LocalOnDead = __state.Item2;
+        return __exception;
     }
 }
 
@@ -47,13 +58,20 @@ internal static class Patch_Lootbox_OnInteractStop_DisableFogWhenAllInspected
         var inv = __instance?.Inventory;
         if (inv == null) return;
 
-        try
+        // 判断是否全部已检视
+        var allInspected = true;
+        var last = inv.GetLastItemPosition();
+        for (var i = 0; i <= last; i++)
         {
-            inv.NeedInspection = false;
+            var it = inv.GetItemAt(i);
+            if (it != null && !it.Inspected)
+            {
+                allInspected = false;
+                break;
+            }
         }
-        catch
-        {
-        }
+
+        if (allInspected) inv.NeedInspection = false;
     }
 }
 
@@ -147,6 +165,8 @@ internal static class Patch_Lootbox_GetInventory_Register
             var lm = LevelManager.Instance;
             var dictB = lm != null ? LevelManager.LootBoxInventories : null;
             if (dictB != null) dictB[key] = __result;
+
+            CoopSyncDatabase.Loot.Register(__instance, __result);
         }
         catch
         {
@@ -155,114 +175,6 @@ internal static class Patch_Lootbox_GetInventory_Register
 }
 
 // 阻断：客户端在“死亡路径”里不要本地创建（避免双生）
-[HarmonyPatch(typeof(InteractableLootbox), "CreateFromItem")]
-internal static class Patch_Lootbox_CreateFromItem_BlockClient
-{
-    private static bool Prefix()
-    {
-        var mod = ModBehaviourF.Instance;
-        if (mod != null && mod.networkStarted && !mod.IsServer && DeadLootSpawnContext.InOnDead != null)
-            return false; // 客户端处于OnDead路径→禁止本地创建
-        return true;
-    }
-}
-
-// ★ 修复：在CreateFromItem之前，确保AI的装备槽能被正确读取
-[HarmonyPatch(typeof(InteractableLootbox), "CreateFromItem")]
-[HarmonyPriority(Priority.VeryHigh)]
-internal static class Patch_Lootbox_CreateFromItem_EnsureAISlots
-{
-    private static void Prefix(Item item)
-    {
-        var mod = ModBehaviourF.Instance;
-        var dead = DeadLootSpawnContext.InOnDead;
-        if (mod == null || !mod.networkStarted || !mod.IsServer) return;
-        if (dead == null || item == null) return;
-
-        try
-        {
-            // 确保characterItem的Slots引用正确指向EquipmentController的槽位
-            var equipmentController = dead.EquipmentController;
-            if (equipmentController == null) return;
-
-            // 获取characterItem的Slots
-            var itemSlots = item.Slots;
-            if (itemSlots == null || itemSlots.list == null) return;
-
-            var slotNames = new[] { "armorSlot", "helmatSlot", "faceMaskSlot", "backpackSlot", "headsetSlot" };
-
-            Debug.Log($"[AI-LOOT] 开始检查AI装备槽，characterItem={item.DisplayName}, Slots.list.Count={itemSlots.list.Count}");
-
-            // 遍历装备控制器的槽位，确保它们在characterItem.Slots中
-            foreach (var slotName in slotNames)
-            {
-                try
-                {
-                    var slotField = Traverse.Create(equipmentController).Field<Slot>(slotName);
-                    if (slotField?.Value == null) continue;
-
-                    var equipSlot = slotField.Value;
-                    var content = equipSlot.Content;
-
-                    if (content != null)
-                    {
-                        // 检查这个槽位是否已经在characterItem.Slots中
-                        bool found = false;
-                        foreach (var slot in itemSlots.list)
-                        {
-                            if (slot != null && ReferenceEquals(slot, equipSlot))
-                            {
-                                found = true;
-                                break;
-                            }
-                        }
-
-                        if (!found)
-                        {
-                            // 添加到Slots列表中
-                            itemSlots.list.Add(equipSlot);
-                            Debug.Log($"[AI-LOOT] 添加装备槽到Slots: {slotName}, 内容: {content.DisplayName}");
-                        }
-                        else
-                        {
-                            Debug.Log($"[AI-LOOT] 装备槽已存在: {slotName}, 内容: {content.DisplayName}");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"[AI-LOOT] 处理装备槽 {slotName} 时出错: {ex.Message}");
-                }
-            }
-
-            Debug.Log($"[AI-LOOT] 装备槽检查完成，最终Slots.list.Count={itemSlots.list.Count}");
-
-            // 同时检查Inventory中的物品
-            var itemInv = item.Inventory;
-            if (itemInv != null)
-            {
-                Debug.Log($"[AI-LOOT] characterItem.Inventory物品数量: {itemInv.Content.Count}");
-                for (int i = 0; i < itemInv.Content.Count; i++)
-                {
-                    var invItem = itemInv.GetItemAt(i);
-                    if (invItem != null)
-                    {
-                        Debug.Log($"[AI-LOOT] Inventory物品 {i}: {invItem.DisplayName}");
-                    }
-                }
-            }
-            else
-            {
-                Debug.LogWarning("[AI-LOOT] characterItem.Inventory is null!");
-            }
-        }
-        catch (Exception e)
-        {
-            Debug.LogError($"[AI-LOOT] EnsureAISlots failed: {e}");
-        }
-    }
-}
-
 // 广播：服务端在 CreateFromItem 返回实例的这一刻立即广播 spawn + state
 [HarmonyPatch(typeof(InteractableLootbox), "CreateFromItem")]
 internal static class Patch_Lootbox_CreateFromItem_DeferredSpawn
@@ -284,6 +196,61 @@ internal static class Patch_Lootbox_CreateFromItem_DeferredSpawn
         if (mod && mod.IsServer && box) DeadLootBox.Instance.Server_OnDeadLootboxSpawned(box, who);
     }
 }
+
+[HarmonyPatch(typeof(InteractableLootbox), "CreateFromItem")]
+internal static class Patch_Lootbox_CreateFromItem_BlockClient
+{
+    private static bool Prefix()
+    {
+        var mod = ModBehaviourF.Instance;
+        var dead = DeadLootSpawnContext.InOnDead;
+
+        if (DeadLootSpawnContext.LocalOnDead)
+        {
+            return true;
+        }
+
+        // 联机：死亡路径里，客户端一律阻断；服务端仅阻断“玩家角色”
+        if (mod != null && mod.networkStarted && dead != null)
+        {
+            if (!mod.IsServer)
+                return false; // 客户端处于OnDead路径→禁止本地创建
+
+            if (IsPlayerCharacter(dead))
+                return false; // 服务端遇到玩家角色死亡：改由墓碑 RPC 统一生成
+        }
+
+        return true;
+    }
+
+    private static bool IsPlayerCharacter(CharacterMainControl cmc)
+    {
+        if (!cmc) return false;
+
+        try
+        {
+            var main = LevelManager.Instance?.MainCharacter;
+            if (cmc == main)
+                return true; // 主机自己的角色
+
+            var service = NetService.Instance;
+            if (service != null && service.remoteCharacters != null)
+            {
+                foreach (var kv in service.remoteCharacters)
+                {
+                    if (kv.Value == cmc.gameObject)
+                        return true; // 远端玩家
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return false;
+    }
+}
+
 
 [HarmonyPatch(typeof(InteractableLootbox), "CreateFromItem")]
 internal static class Patch_Lootbox_CreateFromItem_Register
@@ -313,7 +280,7 @@ internal static class Patch_Lootbox_CreateFromItem_Register
 }
 
 [HarmonyPatch(typeof(InteractableLootbox), "CreateFromItem")]
-[HarmonyPriority(Priority.High)]
+[HarmonyPriority(Priority.First)]
 internal static class Patch_Lootbox_CreateFromItem_DeferOnServerFromOnDead
 {
     // 防止我们在协程里再次调用 CreateFromItem 时又被自己拦截
@@ -328,6 +295,13 @@ internal static class Patch_Lootbox_CreateFromItem_DeferOnServerFromOnDead
         bool filterDontDropOnDead,
         ref InteractableLootbox __result)
     {
+        // 放行默认的 CreateFromItem，以便死亡掉落的生成/填充流程不被延迟或拦截。
+        // （此前为了避开 OnDead 路径里的重复广播做了一帧延迟，但会导致玩家墓碑在复入时出现空容器。）
+        if (DeadLootSpawnContext.LocalOnDead)
+        {
+            return true;
+        }
+
         var mod = ModBehaviourF.Instance;
         var dead = DeadLootSpawnContext.InOnDead;
 
@@ -397,21 +371,47 @@ internal static class Patch_Lootbox_StartLoot_RequestState_AndPrime
 
         if (!LootboxDetectUtil.IsPrivateInventory(inv) && LootboxDetectUtil.IsLootboxInventory(inv))
         {
+            var needInspect = false;
             try
             {
-                inv.NeedInspection = false;
+                needInspect = inv.NeedInspection;
             }
             catch
             {
             }
 
-            try
+            if (!needInspect)
             {
-                __instance.needInspect = false;
-            }
-            catch
-            {
+                var hasUninspected = false;
+                try
+                {
+                    foreach (var it in inv)
+                        if (it != null && !it.Inspected)
+                        {
+                            hasUninspected = true;
+                            break;
+                        }
+                }
+                catch
+                {
+                }
+
+                if (hasUninspected) inv.NeedInspection = true;
             }
         }
+    }
+}
+
+
+[HarmonyPatch(typeof(DeadBodyManager), "SpawnDeadBody")]
+internal static class Patch_DeadBodyManager_SpawnDeadBody
+{
+    private static void Prefix(DeadBodyManager __instance)
+    {
+        DeadLootSpawnContext.LocalOnDead = true;
+    }
+    private static void Postfix(DeadBodyManager __instance)
+    {
+        DeadLootSpawnContext.LocalOnDead = false;
     }
 }

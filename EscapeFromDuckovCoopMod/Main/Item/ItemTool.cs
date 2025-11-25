@@ -14,7 +14,10 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System;
+using System.Collections.Generic;
 using ItemStatsSystem;
+using UnityEngine;
 using static EscapeFromDuckovCoopMod.LootNet;
 using Object = UnityEngine.Object;
 
@@ -22,13 +25,6 @@ namespace EscapeFromDuckovCoopMod;
 
 public static class ItemTool
 {
-    public static uint nextDropId = 1;
-
-    public static uint nextLocalDropToken = 1; // 客户端本地 token（用来忽略自己 echo 回来的 SPAWN）
-
-    public static readonly Dictionary<uint, Item> serverDroppedItems = COOPManager.ItemHandle.serverDroppedItems; // 主机记录
-    public static readonly Dictionary<uint, Item> clientDroppedItems = COOPManager.ItemHandle.clientDroppedItems; // 客户端记录（可用于拾取等后续）
-
     public static bool _serverApplyingLoot; // 主机：处理客户端请求时抑制 Postfix 二次广播
 
     public static void AddNetDropTag(GameObject go, uint id)
@@ -82,14 +78,6 @@ public static class ItemTool
         }
 
         return false;
-    }
-
-    public static uint AllocateDropId()
-    {
-        var id = nextDropId++;
-        while (serverDroppedItems.ContainsKey(id))
-            id = nextDropId++;
-        return id;
     }
 
     public static async UniTaskVoid Server_DoSplitAsync(
@@ -168,26 +156,31 @@ public static class ItemTool
     //写物品快照！！
     public static void WriteItemSnapshot(NetDataWriter w, Item item)
     {
-        w.Put(item.TypeID);
-        w.Put(item.StackCount);
-        w.Put(item.Durability);
-        w.Put(item.DurabilityLoss);
-        w.Put(item.Inspected);
-
-        // Slots：只写“有内容”的槽
-        var slots = item.Slots;
-        if (slots != null && slots.list != null)
+        if (item == null)
         {
-            var filled = 0;
-            foreach (var s in slots.list)
-                if (s != null && s.Content != null)
-                    filled++;
-            w.Put((ushort)filled);
-            foreach (var s in slots.list)
+            WriteItemSnapshot(w, default(ItemSnapshot));
+            return;
+        }
+
+        WriteItemSnapshot(w, MakeSnapshot(item));
+    }
+
+    public static void WriteItemSnapshot(NetDataWriter w, ItemSnapshot snapshot)
+    {
+        w.Put(snapshot.typeId);
+        w.Put(snapshot.stack);
+        w.Put(snapshot.durability);
+        w.Put(snapshot.durabilityLoss);
+        w.Put(snapshot.inspected);
+
+        var slots = snapshot.slots;
+        if (slots != null && slots.Count > 0)
+        {
+            w.Put((ushort)slots.Count);
+            foreach (var (key, child) in slots)
             {
-                if (s == null || s.Content == null) continue;
-                w.Put(s.Key ?? string.Empty);
-                WriteItemSnapshot(w, s.Content);
+                w.Put(key ?? string.Empty);
+                WriteItemSnapshot(w, child);
             }
         }
         else
@@ -195,17 +188,11 @@ public static class ItemTool
             w.Put((ushort)0);
         }
 
-        // Inventory：**只写非空**，不写任何占位
-        var invItems = TryGetInventoryItems(item.Inventory);
-        if (invItems != null)
+        var inventory = snapshot.inventory;
+        if (inventory != null && inventory.Count > 0)
         {
-            var valid = new List<Item>(invItems.Count);
-            foreach (var c in invItems)
-                if (c != null)
-                    valid.Add(c);
-
-            w.Put((ushort)valid.Count);
-            foreach (var child in valid)
+            w.Put((ushort)inventory.Count);
+            foreach (var child in inventory)
                 WriteItemSnapshot(w, child);
         }
         else
@@ -215,10 +202,7 @@ public static class ItemTool
     }
 
     // 读快照
-    /// <summary>
-    /// ✅ 重载：接受 NetDataReader（用于异步消息队列）
-    /// </summary>
-    public static ItemSnapshot ReadItemSnapshot(NetDataReader r)
+    public static ItemSnapshot ReadItemSnapshot(NetPacketReader r)
     {
         ItemSnapshot s;
         s.typeId = r.GetInt();
@@ -245,12 +229,6 @@ public static class ItemTool
         }
 
         return s;
-    }
-
-    public static ItemSnapshot ReadItemSnapshot(NetPacketReader r)
-    {
-        // NetPacketReader 继承自 NetDataReader，直接调用重载方法
-        return ReadItemSnapshot((NetDataReader)r);
     }
 
     // 用快照构建实例（递归）

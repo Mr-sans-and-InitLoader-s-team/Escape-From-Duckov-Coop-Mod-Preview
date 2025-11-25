@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,14 +14,19 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
-using Object = UnityEngine.Object;
+using System.Reflection;
 
 namespace EscapeFromDuckovCoopMod;
 
 public class Door
 {
     [ThreadStatic] public static bool _applyingDoor; // 客户端正在应用网络下发，避免误触发本地拦截
+    private static readonly FieldInfo DoorKeyField = AccessTools.Field(typeof(global::Door), "doorClosedDataKeyCached");
+    private static readonly MethodInfo DoorGetKeyMethod = AccessTools.Method(typeof(global::Door), "GetKey");
+    private static readonly MethodInfo DoorSetClosedMethod = AccessTools.Method(typeof(global::Door), "SetClosed",
+        new[] { typeof(bool), typeof(bool) });
+    private static readonly MethodInfo DoorOpenMethod = AccessTools.Method(typeof(global::Door), "Open");
+    private static readonly MethodInfo DoorCloseMethod = AccessTools.Method(typeof(global::Door), "Close");
     private NetService Service => NetService.Instance;
 
     private bool IsServer => Service != null && Service.IsServer;
@@ -33,7 +38,7 @@ public class Door
 
 
     // 与 Door.GetKey 一致的稳定 Key：Door_{round(pos*10)} 的 GetHashCode
-    public int ComputeDoorKey(Transform t)
+    public static int ComputeDoorKey(Transform t)
     {
         if (!t) return 0;
         var p = t.position * 10f;
@@ -45,31 +50,54 @@ public class Door
         return $"Door_{k}".GetHashCode();
     }
 
+    internal static int TryGetDoorKey(global::Door door, bool allowCompute = true)
+    {
+        if (!door) return 0;
+
+        var key = 0;
+
+        if (DoorKeyField != null)
+            try
+            {
+                key = (int)DoorKeyField.GetValue(door);
+            }
+            catch
+            {
+                key = 0;
+            }
+
+        if (key == 0 && DoorGetKeyMethod != null)
+            try
+            {
+                key = (int)DoorGetKeyMethod.Invoke(door, null);
+            }
+            catch
+            {
+                key = 0;
+            }
+
+        if (key == 0 && allowCompute)
+        {
+            key = ComputeDoorKey(door.transform);
+            if (key != 0 && DoorKeyField != null)
+                try
+                {
+                    DoorKeyField.SetValue(door, key);
+                }
+                catch
+                {
+                }
+        }
+
+        return key;
+    }
+
     // 通过 key 找场景里的 Door（优先用其缓存字段 doorClosedDataKeyCached）
     public global::Door FindDoorByKey(int key)
     {
         if (key == 0) return null;
-
-        // ✅ 优化：优先使用缓存管理器查找
-        if (Utils.GameObjectCacheManager.Instance != null)
-        {
-            var cachedDoor = Utils.GameObjectCacheManager.Instance.Environment.FindDoorByKey(key);
-            if (cachedDoor) return cachedDoor;
-        }
-
-        // 兜底：全量扫描（直接使用 ComputeDoorKey 计算，避免访问私有字段）
-        var doors = Object.FindObjectsOfType<global::Door>(true);
-        foreach (var d in doors)
-        {
-            if (!d) continue;
-
-            // 直接使用本地的 ComputeDoorKey 方法计算 key
-            var k = ComputeDoorKey(d.transform);
-            if (k == key)
-            {
-                return d;
-            }
-        }
+        if (CoopSyncDatabase.Environment.Doors.TryGetDoor(key, out var door) && door)
+            return door;
 
         return null;
     }
@@ -79,18 +107,10 @@ public class Door
     {
         if (IsServer || connectedPeer == null || d == null) return;
 
-        var key = 0;
-        try
-        {
-            // 优先用缓存字段；无则重算（与 Door.GetKey 一致）
-            key = (int)AccessTools.Field(typeof(global::Door), "doorClosedDataKeyCached").GetValue(d);
-        }
-        catch
-        {
-        }
-
-        if (key == 0) key = ComputeDoorKey(d.transform);
+        var key = TryGetDoorKey(d);
         if (key == 0) return;
+
+        CoopSyncDatabase.Environment.Doors.Register(d);
 
         var w = writer;
         if (w == null) return;
@@ -98,11 +118,11 @@ public class Door
         w.Put((byte)Op.DOOR_REQ_SET);
         w.Put(key);
         w.Put(closed);
-        connectedPeer.SendSmart(w, Op.DOOR_REQ_SET);
+        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
     }
 
     // 主机：处理客户端的设门请求
-    public void Server_HandleDoorSetRequest(NetPeer peer, NetDataReader reader)
+    public void Server_HandleDoorSetRequest(NetPeer peer, NetPacketReader reader)
     {
         if (!IsServer) return;
         var key = reader.GetInt();
@@ -110,6 +130,8 @@ public class Door
 
         var door = FindDoorByKey(key);
         if (!door) return;
+
+        CoopSyncDatabase.Environment.Doors.Register(door);
 
         // 调原生 API，走动画/存档/切 NavMesh
         if (closed) door.Close();
@@ -128,7 +150,7 @@ public class Door
         w.Put((byte)Op.DOOR_STATE);
         w.Put(key);
         w.Put(closed);
-        netManager.SendSmart(w, Op.DOOR_STATE);
+        netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
     }
 
     // 客户端：应用门状态（反射调用 SetClosed，确保 NavMeshCut/插值/存档一致）
@@ -138,22 +160,22 @@ public class Door
         var door = FindDoorByKey(key);
         if (!door) return;
 
+        CoopSyncDatabase.Environment.Doors.Register(door);
+
         try
         {
             _applyingDoor = true;
 
-            var mSetClosed2 = AccessTools.Method(typeof(global::Door), "SetClosed",
-                new[] { typeof(bool), typeof(bool) });
-            if (mSetClosed2 != null)
+            if (DoorSetClosedMethod != null)
             {
-                mSetClosed2.Invoke(door, new object[] { closed, true });
+                DoorSetClosedMethod.Invoke(door, new object[] { closed, true });
             }
             else
             {
                 if (closed)
-                    AccessTools.Method(typeof(global::Door), "Close")?.Invoke(door, null);
+                    DoorCloseMethod?.Invoke(door, null);
                 else
-                    AccessTools.Method(typeof(global::Door), "Open")?.Invoke(door, null);
+                    DoorOpenMethod?.Invoke(door, null);
             }
         }
         finally

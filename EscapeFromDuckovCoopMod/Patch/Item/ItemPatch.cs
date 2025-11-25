@@ -15,8 +15,6 @@
 // GNU Affero General Public License for more details.
 
 using ItemStatsSystem;
-using Object = UnityEngine.Object;
-using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -28,68 +26,13 @@ public static class Patch_Item_Pickup_NotifyAdded
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return;
 
-        // 只关注“主角相关”的拾取；例如 inv 属于玩家身上的背包/角色栏等
-        // 如果游戏里还有其它 NPC/容器也会触发，可再加更精确的判断（比如 inv.AttachedToItem 是否是玩家背包）
-        // —— 客户端逻辑：拾到自己客户端映射的掉落，就立刻销毁地面体并发拾取请求
-        if (!mod.IsServer)
-        {
-            if (TryFindId(COOPManager.ItemHandle.clientDroppedItems, __instance, out var cid))
-            {
-                // 本地立刻把地面拾取体干掉（如果还在）
-                try
-                {
-                    var ag = __instance.ActiveAgent;
-                    if (ag && ag.gameObject) Object.Destroy(ag.gameObject);
-                }
-                catch
-                {
-                }
+        var net = COOPManager.ItemNet;
+        if (net == null) return;
 
-                // 发送拾取请求给主机（等主机广播 DESPAWN，让所有客户端一致删除）
-                var w = mod.writer;
-                w.Reset();
-                w.Put((byte)Op.ITEM_PICKUP_REQUEST);
-                w.Put(cid);
-                mod.connectedPeer?.SendSmart(w, Op.ITEM_PICKUP_REQUEST);
-            }
-
+        if (LootboxDetectUtil.IsLootboxInventory(__0) && !LootboxDetectUtil.IsPrivateInventory(__0))
             return;
-        }
 
-        // —— 主机逻辑：主机自己捡起主机表里的掉落，则直接移除并广播 DESPAWN
-        if (mod.IsServer && TryFindId(COOPManager.ItemHandle.serverDroppedItems, __instance, out var sid))
-        {
-            COOPManager.ItemHandle.serverDroppedItems.Remove(sid);
-
-            try
-            {
-                var ag = __instance.ActiveAgent;
-                if (ag && ag.gameObject) Object.Destroy(ag.gameObject);
-            }
-            catch
-            {
-            }
-
-            var w = mod.writer;
-            w.Reset();
-            w.Put((byte)Op.ITEM_DESPAWN);
-            w.Put(sid);
-            mod.netManager.SendSmart(w, Op.ITEM_DESPAWN);
-        }
-    }
-
-    // 小工具：ReferenceEquals 扫描映射
-    private static bool TryFindId(Dictionary<uint, Item> dict, Item item, out uint id)
-    {
-        foreach (var kv in dict)
-            if (ReferenceEquals(kv.Value, item))
-            {
-                id = kv.Key;
-                return true;
-            }
-
-        id = 0;
-        return false;
+        net.HandleInventoryItemAdded(__0, __instance);
     }
 }
 

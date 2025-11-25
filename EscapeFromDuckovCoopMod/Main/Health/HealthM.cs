@@ -14,372 +14,257 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using EscapeFromDuckovCoopMod.Utils.Logger.Tools;
+using Cysharp.Threading.Tasks;
+using ItemStatsSystem;
+using LiteNetLib;
 using System.Collections;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Runtime.ConstrainedExecution;
+using UnityEngine;
+using static Unity.Burst.Intrinsics.X86.Avx;
 
 namespace EscapeFromDuckovCoopMod;
 
 public class HealthM : MonoBehaviour
 {
-    private const float SRV_HP_SEND_COOLDOWN = 0.05f; // 20Hz
+    private const float CLIENT_SEND_INTERVAL = 0.05f; // 20Hz
+    private const float SERVER_SEND_INTERVAL = 0.05f;
+
     public static HealthM Instance;
-    private static (float max, float cur) _cliLastSentHp = HealthTool._cliLastSentHp;
-    private static float _cliNextSendHp = HealthTool._cliNextSendHp;
 
-    public bool _cliApplyingSelfSnap;
-    public float _cliEchoMuteUntil;
-    private readonly Dictionary<Health, NetPeer> _srvHealthOwner = HealthTool._srvHealthOwner;
+    private readonly Dictionary<string, (float max, float cur)> _srvPlayerSnapshots = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, float> _srvNextBroadcast = new(StringComparer.OrdinalIgnoreCase);
 
-    // 主机端：节流去抖
-    private readonly Dictionary<Health, (float max, float cur)> _srvLastSent = new();
-    private readonly Dictionary<Health, float> _srvNextSend = new();
+    private (float max, float cur) _cliLastSentHp;
+    private float _cliNextSendHp;
+    private float _cliNextHeartbeat;
 
     private NetService Service => NetService.Instance;
     private bool IsServer => Service != null && Service.IsServer;
-    private NetManager netManager => Service?.netManager;
-    private NetDataWriter writer => Service?.writer;
-    private NetPeer connectedPeer => Service?.connectedPeer;
-    private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
     private bool networkStarted => Service != null && Service.networkStarted;
 
     private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
-    private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
     private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
+
+    private MethodInfo _miCmcOnDead;
 
     public void Init()
     {
         Instance = this;
     }
 
-    internal bool TryGetClientMaxOverride(Health h, out float v)
+    public void NotifyLocalHealthChanged(Health health, DamageInfo? damage)
     {
-        return COOPManager.AIHandle._cliAiMaxOverride.TryGetValue(h, out v);
+        if (!networkStarted || health == null) return;
+        Debug.Log($"NotifyLocalHealthChanged {health.CurrentHealth} max:{health.MaxHealth}");
+        if (IsServer)
+            Server_BroadcastHostSnapshot(health, damage);
+        else
+            Client_SendSnapshot(health, damage);
     }
 
-
-    // 发送自身血量（带 20Hz 节流 & 值未变不发）
-    public void Client_SendSelfHealth(Health h, bool force)
+    private void Update()
     {
-        if (_cliApplyingSelfSnap || Time.time < _cliEchoMuteUntil) return;
+        if (IsServer || !networkStarted) return;
 
-        if (!networkStarted || IsServer || connectedPeer == null || h == null) return;
-
-        float max = 0f, cur = 0f;
-        try
-        {
-            max = h.MaxHealth;
-        }
-        catch
-        {
-        }
-
-        try
-        {
-            cur = h.CurrentHealth;
-        }
-        catch
-        {
-        }
-
-        // 去抖：值相同直接跳过
-        if (!force && Mathf.Approximately(max, _cliLastSentHp.max) && Mathf.Approximately(cur, _cliLastSentHp.cur))
-            return;
-
-        // 节流：20Hz
-        if (!force && Time.time < _cliNextSendHp) return;
-
-        // 🔍 JSON日志：血量上报（简化版，避免循环）
-        // LoggerHelper.Log($"[HP_REPORT] max={max:F1}, cur={cur:F1}, force={force}");
-
-        // 🔍 详细调试：反射读取Health内部状态
-        try
-        {
-            var debugData = new Dictionary<string, object>
-            {
-                ["event"] = "Client_SendSelfHealth_Debug",
-                ["maxHealth"] = max,
-                ["currentHealth"] = cur,
-                ["force"] = force,
-                ["time"] = Time.time
-            };
-
-            try
-            {
-                var defaultMax = HealthTool.FI_defaultMax?.GetValue(h);
-                var lastMax = HealthTool.FI_lastMax?.GetValue(h);
-                var _current = HealthTool.FI__current?.GetValue(h);
-
-                debugData["defaultMaxHealth"] = defaultMax;
-                debugData["lastMaxHealth"] = lastMax;
-                debugData["_currentHealth"] = _current;
-                debugData["autoInit"] = h.autoInit;
-                debugData["gameObjectName"] = h.gameObject?.name ?? "null";
-                debugData["gameObjectActive"] = h.gameObject?.activeSelf ?? false;
-            }
-            catch (Exception e)
-            {
-                debugData["reflectionError"] = e.Message;
-            }
-
-            // LoggerHelper.Log($"[HP_REPORT_DEBUG] {Newtonsoft.Json.JsonConvert.SerializeObject(debugData, Newtonsoft.Json.Formatting.None)}");
-        }
-        catch
-        {
-            // 静默失败，避免影响正常流程
-        }
-
-        var w = new NetDataWriter();
-        w.Put((byte)Op.PLAYER_HEALTH_REPORT);
-        w.Put(max);
-        w.Put(cur);
-        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
-
-        _cliLastSentHp = (max, cur);
-        _cliNextSendHp = Time.time + 0.05f;
-    }
-
-
-    public void Server_ForceAuthSelf(Health h)
-    {
-        if (!networkStarted || !IsServer || h == null) return;
-        if (!_srvHealthOwner.TryGetValue(h, out var ownerPeer) || ownerPeer == null) return;
-
-        var w = writer;
-        if (w == null) return;
-        w.Reset();
-        w.Put((byte)Op.AUTH_HEALTH_SELF);
-        float max = 0f, cur = 0f;
-        try
-        {
-            max = h.MaxHealth;
-            cur = h.CurrentHealth;
-        }
-        catch
-        {
-        }
-
-        w.Put(max);
-        w.Put(cur);
-        ownerPeer.Send(w, DeliveryMethod.ReliableOrdered);
-    }
-
-    // 主机：把 DamageInfo（简化字段）发给拥有者客户端，让其本地执行 Hurt
-    public void Server_ForwardHurtToOwner(NetPeer owner, DamageInfo di)
-    {
-        if (!IsServer || owner == null) return;
-
-        var w = new NetDataWriter();
-        w.Put((byte)Op.PLAYER_HURT_EVENT);
-
-        // 参照你现有近战上报字段进行对称序列化
-        w.Put(di.damageValue);
-        w.Put(di.armorPiercing);
-        w.Put(di.critDamageFactor);
-        w.Put(di.critRate);
-        w.Put(di.crit);
-        w.PutV3cm(di.damagePoint);
-        w.PutDir(di.damageNormal.sqrMagnitude < 1e-6f ? Vector3.up : di.damageNormal.normalized);
-        w.Put(di.fromWeaponItemID);
-        w.Put(di.bleedChance);
-        w.Put(di.isExplosion);
-
-        owner.Send(w, DeliveryMethod.ReliableOrdered);
-    }
-
-
-    public void Client_ApplySelfHurtFromServer(NetDataReader r)
-    {
-        try
-        {
-            // 反序列化与上面写入顺序保持一致
-            var dmg = r.GetFloat();
-            var ap = r.GetFloat();
-            var cdf = r.GetFloat();
-            var cr = r.GetFloat();
-            var crit = r.GetInt();
-            var hit = r.GetV3cm();
-            var nrm = r.GetDir();
-            var wid = r.GetInt();
-            var bleed = r.GetFloat();
-            var boom = r.GetBool();
-
-            var main = LevelManager.Instance ? LevelManager.Instance.MainCharacter : null;
-            if (!main || main.Health == null) return;
-
-            // 构造 DamageInfo（攻击者此处可不给/或给 main，自身并不影响结算核心）
-            var di = new DamageInfo(main)
-            {
-                damageValue = dmg,
-                armorPiercing = ap,
-                critDamageFactor = cdf,
-                critRate = cr,
-                crit = crit,
-                damagePoint = hit,
-                damageNormal = nrm,
-                fromWeaponItemID = wid,
-                bleedChance = bleed,
-                isExplosion = boom
-            };
-
-            // 记录“最近一次本地受击时间”，便于已有的 echo 抑制逻辑
-            HealthTool._cliLastSelfHurtAt = Time.time;
-
-            main.Health.Hurt(di);
-
-            Client_ReportSelfHealth_IfReadyOnce();
-        }
-        catch (Exception e)
-        {
-            LoggerHelper.LogWarning("[CLIENT] apply self hurt from server failed: " + e);
-        }
-    }
-
-    public void Client_ReportSelfHealth_IfReadyOnce()
-    {
-        if (_cliApplyingSelfSnap || Time.time < _cliEchoMuteUntil) return;
-        if (IsServer || HealthTool._cliInitHpReported) return;
-        if (connectedPeer == null || connectedPeer.ConnectionState != ConnectionState.Connected) return;
+        if (Time.time < _cliNextHeartbeat) return;
+        _cliNextHeartbeat = Time.time + 3f;
 
         var main = CharacterMainControl.Main;
-        var h = main ? main.GetComponentInChildren<Health>(true) : null;
-        if (!h) return;
+        var health = main ? main.Health : null;
+        if (!health) return;
 
-        float max = 0f, cur = 0f;
-        try
-        {
-            max = h.MaxHealth;
-        }
-        catch
-        {
-        }
-
-        try
-        {
-            cur = h.CurrentHealth;
-        }
-        catch
-        {
-        }
-
-        // 🔍 JSON日志：初始血量上报
-        var sceneId = "unknown";
-        try
-        {
-            sceneId = localPlayerStatus?.SceneId ?? "null";
-        }
-        catch
-        {
-        }
-
-        var logData = new Dictionary<string, object>
-        {
-            ["event"] = "Client_ReportSelfHealth_IfReadyOnce",
-            ["maxHealth"] = max,
-            ["currentHealth"] = cur,
-            ["sceneId"] = sceneId,
-            ["time"] = Time.time,
-            ["isValid"] = max > 0f && cur > 0f
-        };
-        // LoggerHelper.Log($"[HP_REPORT_INIT] {Newtonsoft.Json.JsonConvert.SerializeObject(logData)}");
-
-        // ⚠️ 检查血量是否有效
-        // if (max <= 0f || cur <= 0f)
-        // {
-        //     LoggerHelper.LogWarning($"[HP_REPORT_INIT] ⚠️ 血量未初始化，延迟上报: max={max}, cur={cur}");
-        //     return; // 不上报，等待下一帧重试
-        // }
-
-        var w = new NetDataWriter();
-        w.Put((byte)Op.PLAYER_HEALTH_REPORT);
-        w.Put(max);
-        w.Put(cur);
-        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
-
-        HealthTool._cliInitHpReported = true;
-        LoggerHelper.Log($"[HP_REPORT_INIT] ✓ 初始血量上报成功");
+        Client_SendSnapshot(health, null, true);
     }
 
-    public void Server_OnHealthChanged(NetPeer ownerPeer, Health h)
+    private void Client_SendSnapshot(Health health, DamageInfo? damage, bool force = false)
     {
-        if (!IsServer || !h) return;
+        var peer = Service?.connectedPeer;
+        if (peer == null || peer.ConnectionState != ConnectionState.Connected) return;
 
-        float max = 0f, cur = 0f;
-        try
-        {
-            max = h.MaxHealth;
-        }
-        catch
-        {
-        }
-
-        try
-        {
-            cur = h.CurrentHealth;
-        }
-        catch
-        {
-        }
-
+        var (max, cur) = ReadHealth(health);
         if (max <= 0f) return;
-        // 去抖 + 限频（与你现有字段保持一致）
-        if (_srvLastSent.TryGetValue(h, out var last))
-            if (Mathf.Approximately(max, last.max) && Mathf.Approximately(cur, last.cur))
-                return;
-
+        Debug.Log($"Client_SendSnapshot {health.CurrentHealth} max:{health.MaxHealth}");
         var now = Time.time;
-        if (_srvNextSend.TryGetValue(h, out var tNext) && now < tNext)
-            return;
-
-        _srvLastSent[h] = (max, cur);
-        _srvNextSend[h] = now + SRV_HP_SEND_COOLDOWN;
-
-        // 计算 playerId（你已有的辅助方法）
-        var pid = NetService.Instance.GetPlayerId(ownerPeer);
-
-        // ✅ 回传本人快照：AUTH_HEALTH_SELF（修复“自己本地看起来没伤害”的现象）
-        if (ownerPeer != null && ownerPeer.ConnectionState == ConnectionState.Connected)
+        force |= damage.HasValue;
+        if (!force)
         {
-            var w1 = new NetDataWriter();
-            w1.Put((byte)Op.AUTH_HEALTH_SELF);
-            w1.Put(max);
-            w1.Put(cur);
-            ownerPeer.Send(w1, DeliveryMethod.ReliableOrdered);
+            if (Mathf.Approximately(max, _cliLastSentHp.max) && Mathf.Approximately(cur, _cliLastSentHp.cur))
+                if (now < _cliNextSendHp) return;
         }
 
-        // ✅ 广播给其他玩家：AUTH_HEALTH_REMOTE（带 playerId）
-        var w2 = new NetDataWriter();
-        w2.Put((byte)Op.AUTH_HEALTH_REMOTE);
-        w2.Put(pid);
-        w2.Put(max);
-        w2.Put(cur);
-
-        foreach (var p in netManager.ConnectedPeerList)
+        var rpc = new PlayerHealthReportRpc
         {
-            if (p == ownerPeer) continue; // 跳过本人，避免重复
-            p.Send(w2, DeliveryMethod.ReliableOrdered);
+            MaxHealth = max,
+            CurrentHealth = cur,
+            HasDamage = damage.HasValue,
+            Damage = DamageForwardPayload.FromDamageInfo(damage)
+        };
+
+        CoopTool.SendRpc(in rpc);
+
+        _cliLastSentHp = (max, cur);
+        _cliNextSendHp = now + CLIENT_SEND_INTERVAL;
+    }
+
+    private void Server_BroadcastHostSnapshot(Health health, DamageInfo? damage)
+    {
+        var service = Service;
+        if (service == null) return;
+        var playerId = service.GetPlayerId(null);
+        if (string.IsNullOrEmpty(playerId)) return;
+
+        var (max, cur) = ReadHealth(health);
+        if (max <= 0f) return;
+
+
+        BroadcastPlayerSnapshot(playerId, max, cur, damage.HasValue ? DamageForwardPayload.FromDamageInfo(damage) : (DamageForwardPayload?)null, null);
+    }
+
+    private static (float max, float cur) ReadHealth(Health health)
+    {
+        float max = 0f, cur = 0f;
+        try { max = health.MaxHealth; }
+        catch { }
+
+        try { cur = health.CurrentHealth; }
+        catch { }
+
+        return (max, cur);
+    }
+
+    private void BroadcastPlayerSnapshot(string playerId, float max, float cur, DamageForwardPayload? damage, NetPeer excludePeer)
+    {
+        if (!IsServer || string.IsNullOrEmpty(playerId) || max <= 0f) return;
+
+        _srvPlayerSnapshots[playerId] = (max, cur);
+        _srvNextBroadcast[playerId] = Time.time + SERVER_SEND_INTERVAL;
+
+        var rpc = new PlayerHealthBroadcastRpc
+        {
+            PlayerId = playerId,
+            MaxHealth = max,
+            CurrentHealth = cur,
+            HasDamage = damage.HasValue,
+            Damage = damage ?? default
+        };
+
+        CoopTool.SendRpc(in rpc, excludePeer);
+    }
+
+    public void Server_HandlePlayerHealthReport(NetPeer sender, PlayerHealthReportRpc message)
+    {
+        if (!IsServer || sender == null) return;
+
+        var service = Service;
+        var playerId = service?.GetPlayerId(sender);
+        if (string.IsNullOrEmpty(playerId)) return;
+
+        var max = Mathf.Max(1f, message.MaxHealth);
+        var cur = Mathf.Clamp(message.CurrentHealth, 0f, max);
+
+
+        if (remoteCharacters != null && remoteCharacters.TryGetValue(sender, out var go) && go)
+            ApplyHealthAndEnsureBar(go, max, cur);
+        else
+        {
+            _srvPlayerSnapshots[playerId] = (max, cur);
+
+            Server_TrySpawnMissingRemote(sender, playerId, max, cur);
+        }
+
+        BroadcastPlayerSnapshot(playerId, max, cur, message.HasDamage ? message.Damage : (DamageForwardPayload?)null, sender);
+    }
+
+    public void Client_HandlePlayerHealthBroadcast(PlayerHealthBroadcastRpc message)
+    {
+        if (IsServer || string.IsNullOrEmpty(message.PlayerId)) return;
+        if (Service != null && Service.IsSelfId(message.PlayerId)) return;
+
+        var max = Mathf.Max(1f, message.MaxHealth);
+        var cur = Mathf.Clamp(message.CurrentHealth, 0f, max);
+
+        if (clientRemoteCharacters != null && clientRemoteCharacters.TryGetValue(message.PlayerId, out var go) && go)
+            ApplyHealthAndEnsureBar(go, max, cur);
+        else
+        {
+            CoopTool._cliPendingRemoteHp[message.PlayerId] = (max, cur);
+
+            Client_TrySpawnMissingRemote(message.PlayerId, max, cur);
         }
     }
 
-    // 服务器兜底：每帧确保所有权威对象都已挂监听（含主机自己）
+    public void Client_HandlePlayerDamageForward(PlayerDamageForwardRpc message)
+    {
+        if (IsServer) return;
+        var service = Service;
+        if (service == null) return;
+        if (LocalPlayerManager.Instance != null && LocalPlayerManager.Instance.IsLocalInvincible())
+            return;
+        // 允许空 PlayerId 或不匹配的转发继续执行，恢复客户端对自身伤害的本地处理
+
+        var main = CharacterMainControl.Main;
+        var health = main ? main.GetComponentInChildren<Health>(true) : null;
+        if (!health) return;
+
+        var receiver = main ? main.mainDamageReceiver : null;
+        var damage = message.Damage.ToDamageInfo(null, receiver);
+
+        try
+        {
+            health.Hurt(damage);
+        }
+        catch
+        {
+        }
+    }
+
+    public void Server_ApplyCachedHealth(NetPeer peer, GameObject instance)
+    {
+        if (!IsServer || instance == null) return;
+        var service = Service;
+        var playerId = service?.GetPlayerId(peer);
+        if (string.IsNullOrEmpty(playerId)) return;
+        if (!_srvPlayerSnapshots.TryGetValue(playerId, out var snap)) return;
+       // Debug.Log("Server_ApplyCachedHealth "+ snap.max+" "+snap.cur);
+        ApplyHealthAndEnsureBar(instance, snap.max, snap.cur);
+    }
+
     public void Server_EnsureAllHealthHooks()
     {
         if (!IsServer || !networkStarted) return;
 
-        var hostMain = CharacterMainControl.Main;
-        if (hostMain) HealthTool.Server_HookOneHealth(null, hostMain.gameObject);
-
         if (remoteCharacters != null)
             foreach (var kv in remoteCharacters)
-            {
-                var peer = kv.Key;
-                var go = kv.Value;
-                if (peer == null || !go) continue;
-                HealthTool.Server_HookOneHealth(peer, go);
-            }
+                if (kv.Value)
+                    Server_ApplyCachedHealth(kv.Key, kv.Value);
     }
 
+    public void Server_SendAllSnapshotsTo(NetPeer peer)
+    {
+        if (!IsServer || peer == null) return;
 
-    // 起条兜底：多帧重复请求血条，避免 UI 初始化竞态
+        foreach (var kv in _srvPlayerSnapshots)
+        {
+            var playerId = kv.Key;
+            if (string.IsNullOrEmpty(playerId))
+                continue;
+
+            var (max, cur) = kv.Value;
+            var rpc = new PlayerHealthBroadcastRpc
+            {
+                PlayerId = playerId,
+                MaxHealth = max,
+                CurrentHealth = cur,
+                HasDamage = false,
+                Damage = default
+            };
+
+            CoopTool.SendRpcTo(peer, in rpc);
+        }
+    }
+
     private static IEnumerator EnsureBarRoutine(Health h, int attempts, float interval)
     {
         for (var i = 0; i < attempts; i++)
@@ -421,8 +306,7 @@ public class HealthM : MonoBehaviour
         }
     }
 
-    // 把 (max,cur) 灌到 Health，并确保血条显示（修正 defaultMax=0）
-    public void ForceSetHealth(Health h, float max, float cur, bool ensureBar = true)
+    public void ForceSetHealth(Health h, float max, float cur, bool ensureBar = true, float? bodyArmor = null, float? headArmor = null)
     {
         if (!h) return;
 
@@ -444,19 +328,41 @@ public class HealthM : MonoBehaviour
         {
         }
 
-        // ★ 只要传入的 max 更大，就把 defaultMaxHealth 调到更大，并触发一次 Max 变更事件
         if (max > 0f && (nowMax <= 0f || max > nowMax + 0.0001f || defMax <= 0))
             try
             {
                 HealthTool.FI_defaultMax?.SetValue(h, Mathf.RoundToInt(max));
                 HealthTool.FI_lastMax?.SetValue(h, -12345f);
                 h.OnMaxHealthChange?.Invoke(h);
+                var characterItemInstance = h.TryGetCharacter().CharacterItem;
+                if (characterItemInstance != null)
+                {
+                    var stat = characterItemInstance.GetStat("MaxHealth".GetHashCode());
+                    if (stat != null)
+                    {
+                        var rule = LevelManager.Rule;
+                        var factor = rule != null ? rule.EnemyHealthFactor : 1f;
+                        stat.BaseValue = max;
+                    }
+                    ApplyArmorStats(characterItemInstance, bodyArmor, headArmor);
+                }
             }
             catch
             {
             }
+        else
+        {
+            try
+            {
+                var characterItemInstance = h.TryGetCharacter().CharacterItem;
+                if (characterItemInstance != null)
+                    ApplyArmorStats(characterItemInstance, bodyArmor, headArmor);
+            }
+            catch
+            {
+            }
+        }
 
-        // ★ 避免被 SetHealth() 按旧 Max 夹住
         var effMax = 0f;
         try
         {
@@ -528,18 +434,49 @@ public class HealthM : MonoBehaviour
             {
             }
 
-            StartCoroutine(EnsureBarRoutine(h, 30, 0.1f));
+            StartCoroutine(EnsureBarRoutine(h, 2, 0.1f));
         }
     }
 
-    // 统一应用到某个 GameObject 的 Health（含绑定）
+    private static void ApplyArmorStats(Item characterItemInstance, float? bodyArmor, float? headArmor)
+    {
+        if (characterItemInstance == null) return;
+
+        try
+        {
+            if (bodyArmor.HasValue)
+            {
+                Item item = characterItemInstance;
+                var stat = item.GetStat("BodyArmor".GetHashCode());
+                if (stat != null)
+                    stat.BaseValue = bodyArmor.Value;
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            if (headArmor.HasValue)
+            {
+                Item item = characterItemInstance;
+                var stat = item.GetStat("HeadArmor".GetHashCode());
+                if (stat != null)
+                    stat.BaseValue = headArmor.Value;
+            }
+        }
+        catch
+        {
+        }
+    }
 
     public void ApplyHealthAndEnsureBar(GameObject go, float max, float cur)
     {
         if (!go) return;
-
+        
         var cmc = go.GetComponent<CharacterMainControl>();
-        var h = go.GetComponentInChildren<Health>(true);
+        var h = cmc.Health;
         if (!cmc || !h) return;
 
         try
@@ -549,14 +486,12 @@ public class HealthM : MonoBehaviour
         catch
         {
         }
-
-        // 绑定 Health ⇄ Character（否则 UI/Hidden 判断拿不到角色）
+      //  Debug.Log("ApplyHealthAndEnsureBar "+cmc.Health.MaxHealth);
         HealthTool.BindHealthToCharacter(h, cmc);
 
-        // 先把数值灌进去（内部会触发 OnMax/OnHealth）
-        ForceSetHealth(h, max > 0 ? max : 40f, cur > 0 ? cur : max > 0 ? max : 40f, false);
+        var clampedCur = Mathf.Max(0f, cur);
+        ForceSetHealth(h, max, clampedCur, false);
 
-        // 立刻起条 + 多帧兜底（UI 还没起来时反复 Request）
         try
         {
             h.showHealthBar = true;
@@ -573,7 +508,6 @@ public class HealthM : MonoBehaviour
         {
         }
 
-        // 触发一轮事件，部分 UI 需要
         try
         {
             h.OnMaxHealthChange?.Invoke(h);
@@ -590,7 +524,90 @@ public class HealthM : MonoBehaviour
         {
         }
 
-        // 多帧重试：8 次、每 0.25s 一次（你已有 EnsureBarRoutine(h, attempts, interval)）
-        StartCoroutine(EnsureBarRoutine(h, 8, 0.25f));
+        StartCoroutine(EnsureBarRoutine(h, 2, 0.25f));
+
+        EnsureRemoteDeathState(cmc, h, clampedCur);
     }
+
+    private void Server_TrySpawnMissingRemote(NetPeer peer, string playerId, float max, float cur)
+    {
+        if (!IsServer || !networkStarted || Service == null || peer == null) return;
+        if (cur <= 0f || max <= 0f) return; // 不生成死亡/无效角色
+        if (remoteCharacters != null && remoteCharacters.TryGetValue(peer, out var existing) && existing) return;
+
+        if (!Service.playerStatuses.TryGetValue(peer, out var st) || st == null || !st.IsInGame) return;
+
+        var mySceneId = Service.localPlayerStatus != null ? Service.localPlayerStatus.SceneId : null;
+        if (string.IsNullOrEmpty(mySceneId))
+            LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
+        if (!Spectator.AreSameMap(mySceneId, st.SceneId)) return;
+
+        var pos = st.Position;
+        var rot = st.Rotation;
+        if (!IsFinite(pos) || !IsFinite(rot)) return;
+
+        CreateRemoteCharacter.CreateRemoteCharacterAsync(peer, pos, rot, st.CustomFaceJson).Forget();
+    }
+
+    private void Client_TrySpawnMissingRemote(string playerId, float max, float cur)
+    {
+        if (IsServer || !networkStarted || Service == null || string.IsNullOrEmpty(playerId)) return;
+        if (cur <= 0f || max <= 0f) return; // 不生成死亡/无效角色
+        if (clientRemoteCharacters != null && clientRemoteCharacters.TryGetValue(playerId, out var existing) && existing) return;
+
+        if (!Service.clientPlayerStatuses.TryGetValue(playerId, out var st) || st == null || !st.IsInGame) return;
+
+        var mySceneId = Service.localPlayerStatus != null ? Service.localPlayerStatus.SceneId : null;
+        if (string.IsNullOrEmpty(mySceneId))
+            LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
+        if (!Spectator.AreSameMap(mySceneId, st.SceneId)) return;
+
+        var pos = st.Position;
+        var rot = st.Rotation;
+        if (!IsFinite(pos) || !IsFinite(rot)) return;
+
+        CreateRemoteCharacter.CreateRemoteCharacterForClient(playerId, pos, rot, st.CustomFaceJson).Forget();
+    }
+
+    private static bool IsFinite(Vector3 value)
+    {
+        return !(float.IsNaN(value.x) || float.IsNaN(value.y) || float.IsNaN(value.z) ||
+                 float.IsInfinity(value.x) || float.IsInfinity(value.y) || float.IsInfinity(value.z));
+    }
+
+    private static bool IsFinite(Quaternion value)
+    {
+        return !(float.IsNaN(value.x) || float.IsNaN(value.y) || float.IsNaN(value.z) || float.IsNaN(value.w) ||
+                 float.IsInfinity(value.x) || float.IsInfinity(value.y) || float.IsInfinity(value.z) || float.IsInfinity(value.w));
+    }
+
+    public void ForceRemoteOnDead(CharacterMainControl cmc)
+    {
+        if (cmc == null || cmc == CharacterMainControl.Main) return;
+
+        var h = cmc.Health;
+        if (h == null) return;
+
+        if (cmc.Health.CurrentHealth <= 0)
+        {
+            GameObject.Destroy(cmc.gameObject);
+        }
+
+    }
+
+    private void EnsureRemoteDeathState(CharacterMainControl cmc, Health h, float cur)
+    {
+        if (cmc == null || h == null) return;
+        if (cmc == CharacterMainControl.Main) return; // 自己的死亡流程由本地逻辑处理
+
+        var id = cmc.GetInstanceID();
+
+        if(cur <= 0)
+        {
+            GameObject.Destroy(cmc.gameObject);
+        }
+
+    }
+
+  
 }

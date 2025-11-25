@@ -36,7 +36,7 @@
     { "key": "ui.vote.readyIcon", "value": "準備完了" },
     { "key": "ui.vote.notReadyIcon", "value": "未準備" },
     { "key": "ui.vote.cancel", "value": "投票をキャンセル" },
-    { "key": "ui.spectator.mode", "value": "観戦モード: 左クリック ▶ 次 | 右クリック ◀ 前 | 観戦中" },
+    { "key": "ui.spectator.mode", "value": "観戦モード: 左クリック ▶ 次 | 右クリック ◀ 前 | F8で結果画面へ（フリーズ防止）" },
     { "key": "scene.waitingForHost", "value": "[Coop] ホストの読み込み待機中… (遅延が続く場合は100秒後に自動入場)" },
     { "key": "scene.hostReady", "value": "ホスト準備完了、入場中…" },
     { "key": "net.connectionSuccess", "value": "接続成功: {0}" },
@@ -121,6 +121,14 @@
     { "key": "ui.manualConnect.hint", "value": "ヒント: 接続するにはレベルに入る必要があります" },
     { "key": "ui.actions.quickActions", "value": "クイックアクション" },
     { "key": "ui.debug.lootBoxCount", "value": "{0}個のルートボックスが出力されました" },
+    { "key": "ui.difficulty.title", "value": "難易度" },
+    { "key": "ui.difficulty.hint", "value": "ホストがAIの反応速度と戦闘力を調整します。" },
+    { "key": "ui.difficulty.current", "value": "現在: {0}" },
+    { "key": "ui.difficulty.easy", "value": "簡単" },
+    { "key": "ui.difficulty.normal", "value": "普通" },
+    { "key": "ui.difficulty.hard", "value": "難しい" },
+    { "key": "ui.difficulty.veryHard", "value": "とても難しい" },
+    { "key": "ui.difficulty.impossible", "value": "不可能" },
     { "key": "ui.hint.toggleUI", "value": "{0} 表示/非表示" }
   ]
 }

@@ -16,6 +16,22 @@
 
 namespace EscapeFromDuckovCoopMod;
 
+// ========= Door 生命周期：Start 时注册索引 =========
+[HarmonyPatch(typeof(global::Door), "Start")]
+internal static class Patch_Door_Start_Register
+{
+    private static void Postfix(global::Door __instance)
+    {
+        try
+        {
+            CoopSyncDatabase.Environment.Doors.Register(__instance);
+        }
+        catch
+        {
+        }
+    }
+}
+
 // ========= 客户端：拦截 Door.Open -> 发送请求给主机 =========
 [HarmonyPatch(typeof(global::Door), nameof(global::Door.Open))]
 internal static class Patch_Door_Open_ClientToServer
@@ -82,16 +98,9 @@ internal static class Patch_Door_SetClosed_BroadcastOnServer
         var m = ModBehaviourF.Instance;
         if (m == null || !m.networkStarted || !m.IsServer) return;
 
-        var key = 0;
-        try
-        {
-            key = (int)AccessTools.Field(typeof(global::Door), "doorClosedDataKeyCached").GetValue(__instance);
-        }
-        catch
-        {
-        }
+        CoopSyncDatabase.Environment.Doors.Register(__instance);
 
-        if (key == 0) key = COOPManager.Door.ComputeDoorKey(__instance.transform);
+        var key = Door.TryGetDoorKey(__instance);
         if (key == 0) return;
 
         COOPManager.Door.Server_BroadcastDoorState(key, _closed);

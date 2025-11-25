@@ -36,7 +36,7 @@
     { "key": "ui.vote.readyIcon", "value": "Pronto" },
     { "key": "ui.vote.notReadyIcon", "value": "Não pronto" },
     { "key": "ui.vote.cancel", "value": "Cancelar Votação" },
-    { "key": "ui.spectator.mode", "value": "Modo Espectador: Botão Esquerdo ▶ Próximo | Botão Direito ◀ Anterior | Observando" },
+    { "key": "ui.spectator.mode", "value": "Modo Espectador: Botão Esquerdo ▶ Próximo | Botão Direito ◀ Anterior | Pressione F8 para ir direto à tela de resultados (anti travamento)" },
     { "key": "scene.waitingForHost", "value": "[Coop] Aguardando o host terminar de carregar… (Entrada automática após 100s se houver atraso)" },
     { "key": "scene.hostReady", "value": "Host pronto, entrando…" },
     { "key": "net.connectionSuccess", "value": "Conectado com sucesso: {0}" },
@@ -121,6 +121,14 @@
     { "key": "ui.manualConnect.hint", "value": "Dica: Deve estar em um nível para conectar" },
     { "key": "ui.actions.quickActions", "value": "Ações Rápidas" },
     { "key": "ui.debug.lootBoxCount", "value": "Impresso {0} caixas de loot" },
+    { "key": "ui.difficulty.title", "value": "Dificuldade" },
+    { "key": "ui.difficulty.hint", "value": "O host ajusta a percepção e a força de combate da IA." },
+    { "key": "ui.difficulty.current", "value": "Atual: {0}" },
+    { "key": "ui.difficulty.easy", "value": "Fácil" },
+    { "key": "ui.difficulty.normal", "value": "Normal" },
+    { "key": "ui.difficulty.hard", "value": "Difícil" },
+    { "key": "ui.difficulty.veryHard", "value": "Muito Difícil" },
+    { "key": "ui.difficulty.impossible", "value": "Impossível" },
     { "key": "ui.hint.toggleUI", "value": "{0} Mostrar/Ocultar" }
   ]
 }

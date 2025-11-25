@@ -14,18 +14,14 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using System.Collections;
+using Duckov.Utilities;
 using ItemStatsSystem;
 using UnityEngine.SceneManagement;
-using EscapeFromDuckovCoopMod.Net;
-using Object = UnityEngine.Object;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
 public class DeadLootBox : MonoBehaviour
 {
-    // ★ 修复：启用立即广播，确保客户端生成盒子时就能收到物品数据
-    public const bool EAGER_BROADCAST_LOOT_STATE_ON_SPAWN = true;
     public static DeadLootBox Instance;
 
     private NetService Service => NetService.Instance;
@@ -42,135 +38,67 @@ public class DeadLootBox : MonoBehaviour
         Instance = this;
     }
 
-    public void SpawnDeadLootboxAt(int aiId, int lootUid, Vector3 pos, Quaternion rot)
+    public void SpawnDeadLootboxAt(int lootUid, Vector3 pos, Quaternion rot, bool useTombPrefab)
     {
-        // 【优化】改为协程分帧处理，避免瞬间卡顿
-        StartCoroutine(SpawnDeadLootboxAtAsync(aiId, lootUid, pos, rot));
-    }
-
-    // 【优化】异步协程版本，分帧处理避免卡顿
-    private IEnumerator SpawnDeadLootboxAtAsync(int aiId, int lootUid, Vector3 pos, Quaternion rot)
-    {
-        // 【修复】移除外层 try-catch，因为协程中不能在 try-catch 块内使用 yield
-        // 第一帧：移除尸体
-        // 【优化】物理查询半径从 3.0f 降至 2.5f
-        AITool.TryClientRemoveNearestAICorpse(pos, 2.5f);
-        yield return null;
-
-        // 第二帧：获取预制体并实例化
-        var prefab = GetDeadLootPrefabOnClient(aiId);
-        if (!prefab) yield break;
-
-        var go = Instantiate(prefab, pos, rot);
-        var box = go ? go.GetComponent<InteractableLootbox>() : null;
-        if (!box) yield break;
-
-        var inv = box.Inventory;
-        if (!inv) yield break;
-
-        WorldLootPrime.PrimeIfClient(box);
-        yield return null;
-
-        // 第三帧：字典操作和ID注册
-        var dict = InteractableLootbox.Inventories;
-        if (dict != null)
+        try
         {
-            var correctKey = LootManager.ComputeLootKeyFromPos(pos);
-            var wrongKey = -1;
-            foreach (var kv in dict)
-                if (kv.Value == inv && kv.Key != correctKey)
-                {
-                    wrongKey = kv.Key;
-                    break;
-                }
-
-            if (wrongKey != -1) dict.Remove(wrongKey);
-            dict[correctKey] = inv;
-        }
-
-        if (lootUid >= 0) LootManager.Instance._cliLootByUid[lootUid] = inv;
-        yield return null;
-
-        // 第四帧：处理缓存的物品数据
-        if (lootUid >= 0 && LootManager.Instance._pendingLootStatesByUid.TryGetValue(lootUid, out var pack))
-        {
-            LootManager.Instance._pendingLootStatesByUid.Remove(lootUid);
-
-            COOPManager.LootNet._applyingLootState = true;
-            try
+            var prefab = useTombPrefab ? GetDeadLootTombPrefabOnClient() : GetDeadLootPrefabOnClient();
+            if (!prefab)
             {
-                var cap = Mathf.Clamp(pack.capacity, 1, 128);
-                inv.Loading = true;
-                inv.SetCapacity(cap);
-
-                for (var i = inv.Content.Count - 1; i >= 0; --i)
-                {
-                    Item removed;
-                    inv.RemoveAt(i, out removed);
-                    if (removed != null)
-                    {
-                        try { Destroy(removed.gameObject); }
-                        catch { /* 忽略销毁错误 */ }
-                    }
-                }
-
-                foreach (var (p, snap) in pack.Item2)
-                {
-                    var item = ItemTool.BuildItemFromSnapshot(snap);
-                    if (item && !InventoryPlacementUtil.TryPlaceItemExact(inv, item, p))
-                    {
-                        try
-                        {
-                            Object.Destroy(item.gameObject);
-                        }
-                        catch
-                        {
-                        }
-                    }
-                }
+                Debug.LogWarning("[LOOT] DeadLoot prefab not found on client, spawn aborted.");
+                return;
             }
-            finally
+
+            var go = Instantiate(prefab, pos, rot);
+            var box = go ? go.GetComponent<InteractableLootbox>() : null;
+            if (!box) return;
+
+            var inv = box.Inventory;
+            if (!inv)
             {
-                inv.Loading = false;
-                COOPManager.LootNet._applyingLootState = false;
+                Debug.LogWarning("[Client DeadLootBox Spawn] Inventory is null!");
+                return;
             }
 
             WorldLootPrime.PrimeIfClient(box);
-            yield break;
-        }
-        yield return null;
 
-        // 第五帧：网络请求
-        COOPManager.LootNet.Client_RequestLootState(inv);
-        StartCoroutine(LootManager.Instance.ClearLootLoadingTimeout(inv, 1.5f));
+            CoopSyncDatabase.Loot.Register(box, inv, lootUid);
+
+            // 用主机广播的 pos 注册 posKey → inv（旧兜底仍保留）
+            var dict = InteractableLootbox.Inventories;
+            if (dict != null)
+            {
+                var correctKey = LootManager.ComputeLootKeyFromPos(pos);
+                var wrongKey = -1;
+                foreach (var kv in dict)
+                    if (kv.Value == inv && kv.Key != correctKey)
+                    {
+                        wrongKey = kv.Key;
+                        break;
+                    }
+
+                if (wrongKey != -1) dict.Remove(wrongKey);
+                dict[correctKey] = inv;
+            }
+
+            //稳定 ID → inv
+            if (lootUid >= 0)
+            {
+                LootManager.Instance._cliLootByUid[lootUid] = inv;
+                CoopSyncDatabase.Loot.SetLootUid(inv, lootUid);
+            }
+
+        }
+        catch (Exception e)
+        {
+            Debug.LogError("[LOOT] SpawnDeadLootboxAt failed: " + e);
+        }
     }
 
 
-    private GameObject GetDeadLootPrefabOnClient(int aiId)
+    private GameObject GetDeadLootPrefabOnClient()
     {
-        // 1) 首选：死亡 CMC 上的 private deadLootBoxPrefab
-        try
-        {
-            if (aiId > 0 && AITool.aiById.TryGetValue(aiId, out var cmc) && cmc)
-            {
-                // 【优化】移除 Debug.LogWarning，减少日志开销
-                // Debug.LogWarning($"[SpawnDeadloot] AiID:{cmc.GetComponent<NetAiTag>().aiId}");
-                // if (cmc.deadLootBoxPrefab.gameObject == null) Debug.LogWarning("[SPawnDead] deadLootBoxPrefab.gameObject null!");
-
-                if (cmc != null)
-                {
-                    var obj = cmc.deadLootBoxPrefab.gameObject;
-                    if (obj) return obj;
-                }
-                // 【优化】移除 Debug.LogWarning
-                // else { Debug.LogWarning("[SPawnDead] cmc is null!"); }
-            }
-        }
-        catch
-        {
-        }
-
-        // 2) 兜底：沿用你现有逻辑（Main 或任意 CMC）
+        // 沿用现有逻辑（Main 或任意 CMC）
         try
         {
             var main = CharacterMainControl.Main;
@@ -186,12 +114,7 @@ public class DeadLootBox : MonoBehaviour
 
         try
         {
-            var any = FindObjectOfType<CharacterMainControl>();
-            if (any)
-            {
-                var obj = any.deadLootBoxPrefab.gameObject;
-                if (obj) return obj;
-            }
+            return GameplayDataSettings.Prefabs.LootBoxPrefab.gameObject;
         }
         catch
         {
@@ -200,7 +123,22 @@ public class DeadLootBox : MonoBehaviour
         return null;
     }
 
-    public void Server_OnDeadLootboxSpawned(InteractableLootbox box, CharacterMainControl whoDied)
+    private GameObject GetDeadLootTombPrefabOnClient()
+    {
+        try
+        {
+            var any = GameplayDataSettings.Prefabs;
+            if (any != null && any.LootBoxPrefab_Tomb != null)
+                return any.LootBoxPrefab_Tomb.gameObject;
+        }
+        catch
+        {
+        }
+
+        return GetDeadLootPrefabOnClient();
+    }
+
+    public void Server_OnDeadLootboxSpawned(InteractableLootbox box, CharacterMainControl whoDied, bool useTombPrefab = false, string playerId = null)
     {
         if (!IsServer || box == null) return;
         try
@@ -209,111 +147,43 @@ public class DeadLootBox : MonoBehaviour
             var lootUid = LootManager.Instance._nextLootUid++;
             var inv = box.Inventory;
             if (inv) LootManager.Instance._srvLootByUid[lootUid] = inv;
-
-            var aiId = 0;
-            if (whoDied)
-            {
-                var tag = whoDied.GetComponent<NetAiTag>();
-                if (tag != null) aiId = tag.aiId;
-                if (aiId == 0)
-                    foreach (var kv in AITool.aiById)
-                        if (kv.Value == whoDied)
-                        {
-                            aiId = kv.Key;
-                            break;
-                        }
-            }
+            CoopSyncDatabase.Loot.Register(box, inv, lootUid);
+            if (inv) CoopSyncDatabase.Loot.SetLootUid(inv, lootUid);
 
             // >>> 放在 writer.Reset() 之前 <<<
             if (inv != null)
             {
-                inv.NeedInspection = false;
+                inv.NeedInspection = true;
                 // 尝试把“这个箱子以前被搜过”的标记也清空（有的版本有这个字段）
                 try
                 {
-                    Traverse.Create(inv).Field<bool>("hasBeenInspectedInLootBox").Value = true;
+                    Traverse.Create(inv).Field<bool>("hasBeenInspectedInLootBox").Value = false;
                 }
                 catch
                 {
                 }
 
-                // 把当前内容全部标记为“已鉴定”
+                // 把当前内容全部标记为“未鉴定”
                 for (var i = 0; i < inv.Content.Count; ++i)
                 {
                     var it = inv.GetItemAt(i);
-                    if (it) it.Inspected = true;
+                    if (it) it.Inspected = false;
                 }
             }
 
 
-            // 稳定 ID
-            writer.Reset();
-            writer.Put((byte)Op.DEAD_LOOT_SPAWN);
-            writer.Put(SceneManager.GetActiveScene().buildIndex);
-            writer.Put(aiId);
-            writer.Put(lootUid); // 稳定 ID
-            writer.PutV3cm(box.transform.position);
-            writer.PutQuaternion(box.transform.rotation);
-            netManager.SendSmart(writer, Op.DEAD_LOOT_SPAWN);
-
-            if (EAGER_BROADCAST_LOOT_STATE_ON_SPAWN)
-                StartCoroutine(RebroadcastDeadLootStateAfterFill(box));
-        }
-        catch (Exception e)
-        {
-            Debug.LogError("[LOOT] Server_OnDeadLootboxSpawned failed: " + e);
-        }
-    }
-
-    public IEnumerator RebroadcastDeadLootStateAfterFill(InteractableLootbox box)
-    {
-        if (!EAGER_BROADCAST_LOOT_STATE_ON_SPAWN) yield break;
-
-        yield return null; // 给原版填充时间
-        yield return null;
-
-        if (box && box.Inventory)
-        {
-            var inv = box.Inventory;
-            Debug.Log($"[DEAD-LOOT] 准备广播战利品盒子内容，物品数量: {inv.Content.Count}");
-
-            // 列出所有物品
-            for (int i = 0; i < inv.Content.Count; i++)
+            var rpc = new DeadLootSpawnRpc
             {
-                var item = inv.GetItemAt(i);
-                if (item != null)
-                {
-                    Debug.Log($"[DEAD-LOOT] 物品 {i}: {item.DisplayName} (TypeID={item.TypeID})");
-                }
-            }
+                SceneIndex = SceneManager.GetActiveScene().buildIndex,
+                LootUid = lootUid,
+                Position = box.transform.position,
+                Rotation = box.transform.rotation,
+                UseTombPrefab = useTombPrefab,
+                PlayerId = playerId ?? string.Empty
+            };
 
-            COOPManager.LootNet.Server_SendLootboxState(null, inv);
-            Debug.Log($"[DEAD-LOOT] 战利品盒子内容已广播");
-        }
-    }
+            CoopTool.SendRpc(in rpc);
 
-
-    public void Server_OnDeadLootboxSpawned(InteractableLootbox box)
-    {
-        if (!IsServer || box == null) return;
-        try
-        {
-            var lootUid = LootManager.Instance._nextLootUid++;
-            var inv = box.Inventory;
-            if (inv) LootManager.Instance._srvLootByUid[lootUid] = inv;
-
-            // ★ 新增：抑制“填充期间”的 AddItem 广播
-            if (inv) LootManager.Instance.Server_MuteLoot(inv, 2.0f);
-
-            writer.Reset();
-            writer.Put((byte)Op.DEAD_LOOT_SPAWN);
-            writer.Put(SceneManager.GetActiveScene().buildIndex);
-            writer.PutV3cm(box.transform.position);
-            writer.PutQuaternion(box.transform.rotation);
-            netManager.SendSmart(writer, Op.DEAD_LOOT_SPAWN);
-
-            // 2) 可选：是否立刻广播整箱内容（默认不广播，等客户端真正打开时再按需请求）
-            if (EAGER_BROADCAST_LOOT_STATE_ON_SPAWN) COOPManager.LootNet.Server_SendLootboxState(null, box.Inventory); // 如需老行为，打开上面的开关即可
         }
         catch (Exception e)
         {

@@ -37,30 +37,27 @@ public class Send_ClientStatus : MonoBehaviour
     {
         if (IsServer || connectedPeer == null) return;
 
-        // ✅ 保存外观数据到 localPlayerStatus（供其他地方使用）
         localPlayerStatus.CustomFaceJson = CustomFace.LoadLocalCustomFaceJson();
         var equipmentList = LocalPlayerManager.Instance.GetLocalEquipment();
         var weaponList = LocalPlayerManager.Instance.GetLocalWeapons();
 
-        writer.Reset();
-        writer.Put((byte)Op.CLIENT_STATUS_UPDATE); // opcode
-        writer.Put(localPlayerStatus.EndPoint);
-        writer.Put(localPlayerStatus.PlayerName);
-        writer.Put(localPlayerStatus.IsInGame);
-        writer.PutVector3(localPlayerStatus.Position);
-        writer.PutQuaternion(localPlayerStatus.Rotation);
+        var rpc = new ClientStatusUpdateRpc
+        {
+            Player = new PlayerStatusPayload
+            {
+                PlayerId = localPlayerStatus.EndPoint,
+                PlayerName = localPlayerStatus.PlayerName,
+                Latency = connectedPeer.Ping,
+                IsInGame = localPlayerStatus.IsInGame,
+                Position = localPlayerStatus.Position,
+                Rotation = localPlayerStatus.Rotation,
+                SceneId = localPlayerStatus?.SceneId ?? string.Empty,
+                CustomFaceJson = localPlayerStatus.CustomFaceJson ?? string.Empty,
+                Equipment = equipmentList.ToArray(),
+                Weapons = weaponList.ToArray()
+            }
+        };
 
-        writer.Put(localPlayerStatus?.SceneId ?? string.Empty);
-
-        // ✅ 不再发送 faceJson，保持小包快速传输
-        // writer.Put(localPlayerStatus.CustomFaceJson ?? "");
-
-        writer.Put(equipmentList.Count);
-        foreach (var e in equipmentList) e.Serialize(writer);
-
-        writer.Put(weaponList.Count);
-        foreach (var w in weaponList) w.Serialize(writer);
-
-        connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+        CoopTool.SendRpc(in rpc);
     }
 }

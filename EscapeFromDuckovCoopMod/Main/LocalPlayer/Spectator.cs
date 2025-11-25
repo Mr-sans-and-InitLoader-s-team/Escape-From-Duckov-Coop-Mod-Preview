@@ -208,11 +208,11 @@ public class Spectator : MonoBehaviour
         if (GameCamera.Instance) GameCamera.Instance.SetTarget(_spectateList[_spectateIdx]);
     }
 
-    public void EndSpectatorAndShowClosure()
+    public void EndSpectatorAndShowClosure(bool force = false)
     {
         _spectatorEndOnVotePending = false;
 
-        if (!_spectatorActive) return;
+        if (!_spectatorActive && !force) return;
         _spectatorActive = false;
         _skipSpectatorForNextClosure = true;
 

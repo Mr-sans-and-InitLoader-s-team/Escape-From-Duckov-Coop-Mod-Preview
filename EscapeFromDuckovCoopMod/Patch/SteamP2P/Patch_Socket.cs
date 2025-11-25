@@ -14,29 +14,15 @@ namespace EscapeFromDuckovCoopMod
     {
         static void Postfix(Socket __instance, ref int __result)
         {
-            // ✅ 只在 Steam P2P 传输模式下执行
-            if (NetService.Instance == null || NetService.Instance.TransportMode != NetworkTransportMode.SteamP2P)
-                return;
-
             if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
                 return;
-
             try
             {
                 if (__result > 0)
                     return;
-
-                // 🛡️ 修复：检查所有通道（0-3），支持 LiteNetLib 多通道系统
-                if (SteamManager.Initialized)
+                if (SteamManager.Initialized && Steamworks.SteamNetworking.IsP2PPacketAvailable(out uint packetSize, 0))
                 {
-                    for (int channel = 0; channel < 4; channel++)
-                    {
-                        if (Steamworks.SteamNetworking.IsP2PPacketAvailable(out uint packetSize, channel))
-                        {
-                            __result = (int)packetSize;
-                            return;
-                        }
-                    }
+                    __result = (int)packetSize;
                 }
                 else if (SteamP2PManager.Instance != null)
                 {
@@ -63,31 +49,17 @@ namespace EscapeFromDuckovCoopMod
         {
             if (_inPatch)
                 return true;
-
-            // ✅ 只在 Steam P2P 传输模式下执行
-            if (NetService.Instance == null || NetService.Instance.TransportMode != NetworkTransportMode.SteamP2P)
-                return true;
-
             if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
                 return true;
-
             try
             {
                 _inPatch = true;
                 if (mode != SelectMode.SelectRead)
                     return true;
-
-                // 🛡️ 修复：检查所有通道（0-3），支持 LiteNetLib 多通道系统
-                if (SteamManager.Initialized)
+                if (SteamManager.Initialized && Steamworks.SteamNetworking.IsP2PPacketAvailable(out uint packetSize, 0))
                 {
-                    for (int channel = 0; channel < 4; channel++)
-                    {
-                        if (Steamworks.SteamNetworking.IsP2PPacketAvailable(out uint packetSize, channel))
-                        {
-                            __result = true;
-                            return false;
-                        }
-                    }
+                    __result = true;
+                    return false;
                 }
                 else if (SteamP2PManager.Instance != null)
                 {
@@ -119,9 +91,6 @@ namespace EscapeFromDuckovCoopMod
     [HarmonyPatch]
     public class Patch_Socket_ReceiveFrom
     {
-        private static int _oversizeWarningCount = 0;  // 🛡️ 限制缓冲区警告的频率
-        private const int OVERSIZE_WARNING_INTERVAL = 100;  // 每100次只警告1次
-
         static MethodBase TargetMethod()
         {
             return AccessTools.Method(typeof(Socket), "ReceiveFrom", new Type[]
@@ -135,13 +104,8 @@ namespace EscapeFromDuckovCoopMod
         }
         static bool Prefix(Socket __instance, byte[] buffer, int offset, int size, SocketFlags socketFlags, ref EndPoint remoteEP, ref int __result)
         {
-            // ✅ 只在 Steam P2P 传输模式下执行
-            if (NetService.Instance == null || NetService.Instance.TransportMode != NetworkTransportMode.SteamP2P)
-                return true;
-
             if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
                 return true;
-
             try
             {
                 if (SteamP2PManager.Instance != null)
@@ -156,12 +120,7 @@ namespace EscapeFromDuckovCoopMod
                     {
                         if (length > size)
                         {
-                            // 🛡️ 限制日志频率：每100次只输出1次
-                            _oversizeWarningCount++;
-                            if (_oversizeWarningCount == 1 || _oversizeWarningCount % OVERSIZE_WARNING_INTERVAL == 0)
-                            {
-                                Debug.LogWarning($"[Patch_ReceiveFrom] 接收的数据({length} bytes)超过缓冲区大小({size} bytes) (已发生 {_oversizeWarningCount} 次)");
-                            }
+                            Debug.LogWarning($"[Patch_ReceiveFrom] 接收的数据({length} bytes)超过缓冲区大小({size} bytes)");
                             length = size;
                         }
                         Array.Copy(data, 0, buffer, offset, length);
@@ -196,24 +155,15 @@ namespace EscapeFromDuckovCoopMod
     {
         static bool Prefix(IList checkRead, IList checkWrite, IList checkError, int microSeconds)
         {
-            // ✅ 只在 Steam P2P 传输模式下执行
-            if (NetService.Instance == null || NetService.Instance.TransportMode != NetworkTransportMode.SteamP2P)
-                return true;
-
             if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
             {
                 return true;
             }
-
             try
             {
-                // 🛡️ 修复：检查所有通道（0-3），支持 LiteNetLib 多通道系统
-                for (int channel = 0; channel < 4; channel++)
+                if (Steamworks.SteamNetworking.IsP2PPacketAvailable(out _, 0))
                 {
-                    if (Steamworks.SteamNetworking.IsP2PPacketAvailable(out _, channel))
-                    {
-                        return false;
-                    }
+                    return false;
                 }
                 System.Threading.Thread.Sleep(1);
                 checkRead?.Clear();
@@ -233,10 +183,6 @@ namespace EscapeFromDuckovCoopMod
     public class Patch_Socket_SendTo
     {
         private static int _diagCount = 0;
-        private static int _unmappedWarningCount = 0;  // 🛡️ 限制未映射警告的频率
-        private const int UNMAPPED_WARNING_INTERVAL = 300;  // 每300次只警告1次
-        private static int _nonIpWarningCount = 0;  // 🛡️ 限制非IP警告的频率
-        private const int NON_IP_WARNING_INTERVAL = 100;  // 每100次只警告1次
         static MethodBase TargetMethod()
         {
             return AccessTools.Method(typeof(Socket), "SendTo", new Type[]
@@ -250,24 +196,14 @@ namespace EscapeFromDuckovCoopMod
         }
         static bool Prefix(Socket __instance, byte[] buffer, int offset, int size, SocketFlags socketFlags, EndPoint remoteEP, ref int __result)
         {
-            // ✅ 只在 Steam P2P 传输模式下执行
-            if (NetService.Instance == null || NetService.Instance.TransportMode != NetworkTransportMode.SteamP2P)
-                return true;
-
             if (!SteamP2PLoader.Instance.UseSteamP2P || !SteamManager.Initialized)
                 return true;
-
             try
             {
                 IPEndPoint ipEndPoint = remoteEP as IPEndPoint;
                 if (ipEndPoint == null)
                 {
-                    // 🛡️ 限制日志频率：每100次只输出1次
-                    _nonIpWarningCount++;
-                    if (_nonIpWarningCount == 1 || _nonIpWarningCount % NON_IP_WARNING_INTERVAL == 0)
-                    {
-                        Debug.LogWarning($"[Patch_SendTo] remoteEP不是IPEndPoint类型，使用原始方法 (已发生 {_nonIpWarningCount} 次)");
-                    }
+                    Debug.LogWarning("[Patch_SendTo] remoteEP不是IPEndPoint类型，使用原始方法");
                     return true;
                 }
                 if (SteamEndPointMapper.Instance != null &&
@@ -275,18 +211,38 @@ namespace EscapeFromDuckovCoopMod
                 {
                     if (SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out CSteamID targetSteamID))
                     {
-                        // 🛡️ 修复：获取通道号
-                        byte channel = 0;
-                        DeliveryMethod deliveryMethod;
-                        if (!PacketSignature.TryGetPacketInfo(buffer, offset, size, out deliveryMethod, out channel))
-                        {
-                            deliveryMethod = DeliveryMethod.ReliableOrdered;
-                            channel = 0;
-                        }
-
+                        DeliveryMethod? deliveryMethod = PacketSignature.TryGetDeliveryMethod(buffer, offset, size);
                         _diagCount++;
                         EP2PSend sendMode;
-                        switch (deliveryMethod)
+                        if (deliveryMethod == null && size > offset)
+                        {
+                            byte packetProperty = (byte)(buffer[offset] & 0x1F);
+                            switch (packetProperty)
+                            {
+                                case 0:
+                                    deliveryMethod = DeliveryMethod.Unreliable;
+                                    break;
+                                case 1:
+                                    deliveryMethod = DeliveryMethod.ReliableOrdered;
+                                    break;
+                                case 2:
+                                    deliveryMethod = DeliveryMethod.ReliableOrdered;
+                                    break;
+                                case 3:
+                                case 4:
+                                    deliveryMethod = DeliveryMethod.Unreliable;
+                                    break;
+                                case 5:
+                                case 6:
+                                case 7:
+                                    deliveryMethod = DeliveryMethod.ReliableOrdered;
+                                    break;
+                                default:
+                                    deliveryMethod = DeliveryMethod.ReliableOrdered;
+                                    break;
+                            }
+                        }
+                        switch (deliveryMethod ?? DeliveryMethod.ReliableOrdered)
                         {
                             case DeliveryMethod.Unreliable:
                                 sendMode = EP2PSend.k_EP2PSendUnreliableNoDelay;
@@ -318,14 +274,12 @@ namespace EscapeFromDuckovCoopMod
                                 }
                             }
                         }
-                        // 🛡️ 修复：传递通道号
                         bool success = SteamP2PManager.Instance.SendPacket(
                             targetSteamID,
                             buffer,
                             offset,
                             size,
-                            sendMode,
-                            channel
+                            sendMode
                         );
                         if (success)
                         {
@@ -334,23 +288,18 @@ namespace EscapeFromDuckovCoopMod
                         }
                         else
                         {
-                            Debug.LogError($"[Patch_SendTo] ❌ Steam P2P发送失败！DeliveryMethod={deliveryMethod}, Channel={channel}, Size={size}");
+                            Debug.LogError($"[Patch_SendTo] ❌ Steam P2P发送失败！DeliveryMethod={deliveryMethod}, Size={size}");
                             return true;
                         }
                     }
                     else
                     {
-                        // 🛡️ 限制日志频率：每300次只输出1次，避免刷屏
-                        _unmappedWarningCount++;
-                        if (_unmappedWarningCount == 1 || _unmappedWarningCount % UNMAPPED_WARNING_INTERVAL == 0)
+                        Debug.LogWarning($"[Patch_SendTo] ❌ 虚拟端点 {ipEndPoint} 没有对应的Steam ID映射");
+                        Debug.LogWarning($"[Patch_SendTo] 当前已映射的端点:");
+                        var allEndPoints = SteamEndPointMapper.Instance.GetAllEndPoints();
+                        foreach (var ep in allEndPoints)
                         {
-                            Debug.LogWarning($"[Patch_SendTo] ❌ 虚拟端点 {ipEndPoint} 没有对应的Steam ID映射 (已发生 {_unmappedWarningCount} 次)");
-                            Debug.LogWarning($"[Patch_SendTo] 当前已映射的端点:");
-                            var allEndPoints = SteamEndPointMapper.Instance.GetAllEndPoints();
-                            foreach (var ep in allEndPoints)
-                            {
-                                Debug.LogWarning($"  - {ep}");
-                            }
+                            Debug.LogWarning($"  - {ep}");
                         }
                     }
                 }

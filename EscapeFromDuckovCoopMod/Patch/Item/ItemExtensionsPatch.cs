@@ -26,27 +26,24 @@ public static class Patch_Item_Drop
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true;
 
-
         if (NetSilenceGuards.InPickupItem || NetSilenceGuards.InCapacityShrinkCleanup)
         {
             Debug.Log("[ITEM] 静音丢弃：拾取失败/容量清理导致的自动 Drop，不上报主机");
             return true;
         }
 
+        var net = COOPManager.ItemNet;
+        if (net == null) return true;
+
         if (mod.IsServer)
-            // 服务器：正常执行，由 Postfix 负责广播（除非来自客户端请求）
             return true;
 
-        // 客户端：若是"来自主机同步"的生成，放行且不再发请求
-        if (COOPManager.ItemHandle._clientSpawnByServerItems.Remove(item))
+        if (net.Client_ShouldSuppressLocalDrop(item))
             return true;
 
-
-        // 客户端本地丢：先发送请求，再允许本地正常丢（这样本地背包立即变化）
-        var token = ++ItemTool.nextLocalDropToken;
-        COOPManager.ItemHandle.pendingLocalDropTokens.Add(token);
-        COOPManager.ItemHandle.pendingTokenItems[token] = item;
-        COOPManager.ItemRequest.SendItemDropRequest(token, item, pos, createRigidbody, dropDirection, randomAngle);
+        var token = net.Client_NextDropToken();
+        net.Client_RecordPendingDrop(token, item);
+        net.Client_SendDropRequest(token, item, pos, createRigidbody, dropDirection, randomAngle);
         return true;
     }
 
@@ -55,33 +52,21 @@ public static class Patch_Item_Drop
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted || !mod.IsServer) return;
 
-        // 若这是“处理客户端请求”时生成的，别再次广播
-        if (COOPManager.ItemHandle._serverSpawnedFromClientItems.Remove(item))
-            return;
-
-        // 仅在服务器分支
         if (NetSilenceGuards.InPickupItem)
         {
             Debug.Log("[SVR] 自动Drop（拾取失败回滚）——不广播SPAWN，避免复制");
             return;
         }
 
+        var net = COOPManager.ItemNet;
+        if (net == null) return;
+
+        if (net.Server_ShouldSuppressLocalDrop(item))
+            return;
+
         try
         {
-            // 主机自身（或 AI）本地丢弃：广播给客户端
-            var w = mod.writer;
-            w.Reset();
-            w.Put((byte)Op.ITEM_SPAWN);
-            w.Put((uint)0); // token=0，表示主机自发
-            var id = ItemTool.AllocateDropId();
-            COOPManager.ItemHandle.serverDroppedItems[id] = item;
-            w.Put(id);
-            w.PutV3cm(pos);
-            w.PutDir(dropDirection);
-            w.Put(randomAngle);
-            w.Put(createRigidbody);
-            ItemTool.WriteItemSnapshot(w, item);
-            CoopTool.BroadcastReliable(w);
+            net.Server_RegisterHostDrop(item, __result, pos, dropDirection, randomAngle, createRigidbody);
         }
         catch (Exception e)
         {

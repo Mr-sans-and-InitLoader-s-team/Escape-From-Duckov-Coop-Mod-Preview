@@ -1,299 +1,631 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
-// Copyright (C) 2025  Mr.sans and InitLoader's team
-//
-// This program is not a free software.
-// It's distributed under a license based on AGPL-3.0,
-// with strict additional restrictions:
-//  YOU MUST NOT use this software for commercial purposes.
-//  YOU MUST NOT use this software to run a headless game server.
-//  YOU MUST include a conspicuous notice of attribution to
-//  Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview as the original author.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-
+﻿using System;
+using System.Collections.Generic;
 using System.Reflection;
+using Duckov.Scenes;
 using Duckov.Utilities;
 using Duckov.Weathers;
+using LiteNetLib;
+using UnityEngine;
 using Object = UnityEngine.Object;
-using EscapeFromDuckovCoopMod.Net;
-using EscapeFromDuckovCoopMod.Utils;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
 public class Weather
 {
+    private const float ClockBroadcastInterval = 1.0f;
+    private const float WeatherBroadcastInterval = 2.0f;
+    private const int LootChunkSize = 80;
+    private const int DoorChunkSize = 80;
+    private const float LootStateBroadcastInterval = 35f;
+
+    private readonly List<(int key, bool state)> _lootSnapshotBuffer = new();
+    private readonly List<(int key, bool closed)> _doorSnapshotBuffer = new();
+
+    private float _clockTimer;
+    private float _weatherTimer;
+    private float _lootSyncTimer;
+
+    private float _clientResyncTimer;
+    private bool _clientClockSynced;
+    private bool _clientWeatherSynced;
+
+    internal static StormSnapshot LastStormSnapshot { get; private set; } = StormSnapshot.Empty;
+
+    private long _lastDay = long.MinValue;
+    private double _lastSeconds = double.MinValue;
+    private float _lastTimeScale = float.NaN;
+
+    private int _lastSeed = int.MinValue;
+    private bool _lastForceWeather;
+    private int _lastForceWeatherValue = int.MinValue;
+    private int _lastCurrentWeather = int.MinValue;
+    private byte _lastStormLevel = byte.MaxValue;
+
     private NetService Service => NetService.Instance;
-
     private bool IsServer => Service != null && Service.IsServer;
-    private NetManager netManager => Service?.netManager;
-    private NetDataWriter writer => Service?.writer;
-    private NetPeer connectedPeer => Service?.connectedPeer;
-    private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
-
     private bool networkStarted => Service != null && Service.networkStarted;
 
-    // 【优化】缓存反射字段，避免重复的 AccessTools 警告
-    private static FieldInfo _fieldSeed;
-    private static FieldInfo _fieldForceWeather;
-    private static FieldInfo _fieldForceWeatherValue;
-    private static bool _fieldsInitialized = false;
-
-    // ========== 环境同步：主机广播 ==========
-    public void Server_BroadcastEnvSync(NetPeer target = null)
+    public void Server_Update(float deltaTime)
     {
-        if (!IsServer || netManager == null) return;
+        if (!IsServer || !networkStarted) return;
 
-        // 1) 采样主机的“当前天数 + 当天秒数 + 时钟倍率”
-        var day = GameClock.Day; // 只读属性，取值 OK :contentReference[oaicite:6]{index=6}
-        var secOfDay = GameClock.TimeOfDay.TotalSeconds; // 当天秒数（0~86300） :contentReference[oaicite:7]{index=7}
-        var timeScale = 60f;
-        try
+        _clockTimer += deltaTime;
+        if (_clockTimer >= ClockBroadcastInterval)
         {
-            timeScale = GameClock.Instance.clockTimeScale;
-        }
-        catch
-        {
-        } // 公有字段 :contentReference[oaicite:8]{index=8}
-
-        // 2) 采样天气：seed / 强制天气开关和值 / 当前天气（兜底）/（冗余）风暴等级
-        var wm = WeatherManager.Instance;
-        var seed = -1;
-        var forceWeather = false;
-        var forceWeatherVal = (int)Duckov.Weathers.Weather.Sunny;
-        var currentWeather = (int)Duckov.Weathers.Weather.Sunny;
-        byte stormLevel = 0;
-
-        if (wm != null)
-        {
-            // 【优化】只在第一次初始化时查找字段，避免重复警告
-            if (!_fieldsInitialized)
-            {
-                var wmType = wm.GetType();
-                try
-                {
-                    _fieldSeed = AccessTools.Field(wmType, "seed");
-                }
-                catch { /* 字段不存在 */ }
-
-                try
-                {
-                    _fieldForceWeather = AccessTools.Field(wmType, "forceWeather");
-                }
-                catch { /* 字段不存在或已重命名 */ }
-
-                try
-                {
-                    _fieldForceWeatherValue = AccessTools.Field(wmType, "forceWeatherValue");
-                }
-                catch { /* 字段不存在或已重命名 */ }
-
-                _fieldsInitialized = true;
-            }
-
-            // 使用缓存的字段获取值
-            try
-            {
-                if (_fieldSeed != null)
-                    seed = (int)_fieldSeed.GetValue(wm);
-            }
-            catch { }
-
-            try
-            {
-                if (_fieldForceWeather != null)
-                    forceWeather = (bool)_fieldForceWeather.GetValue(wm);
-            }
-            catch { }
-
-            try
-            {
-                if (_fieldForceWeatherValue != null)
-                    forceWeatherVal = (int)_fieldForceWeatherValue.GetValue(wm);
-            }
-            catch { }
-
-            try
-            {
-                currentWeather = (int)WeatherManager.GetWeather();
-            }
-            catch
-            {
-            } // 公共静态入口 :contentReference[oaicite:9]{index=9}
-
-            try
-            {
-                stormLevel = (byte)wm.Storm.GetStormLevel(GameClock.Now);
-            }
-            catch
-            {
-            } // 基于 Now 计算 :contentReference[oaicite:10]{index=10}
+            _clockTimer = 0f;
+            SendClockState(null, false);
         }
 
-        // 3) 打包并发出
-        var w = new NetDataWriter();
-        w.Put((byte)Op.ENV_SYNC_STATE);
-        w.Put(day);
-        w.Put(secOfDay);
-        w.Put(timeScale);
-        w.Put(seed);
-        w.Put(forceWeather);
-        w.Put(forceWeatherVal);
-        w.Put(currentWeather);
-        w.Put(stormLevel);
-
-        try
+        _weatherTimer += deltaTime;
+        if (_weatherTimer >= WeatherBroadcastInterval)
         {
-            // ✅ 优化：优先从缓存获取 LootBoxLoader，减少 FindObjectsOfType
-            IEnumerable<LootBoxLoader> loaders = GameObjectCacheManager.Instance != null
-                ? GameObjectCacheManager.Instance.Environment.GetAllLoaders()
-                : Object.FindObjectsOfType<LootBoxLoader>(true);
-
-            // 收集 (key, active)
-            var tmp = new List<(int k, bool on)>();
-            foreach (var l in loaders)
-            {
-                if (!l || !l.gameObject) continue;
-                var k = LootManager.Instance.ComputeLootKey(l.transform);
-                var on = l.gameObject.activeSelf; // 已经由 RandomActive 决定
-                tmp.Add((k, on));
-            }
-
-            w.Put(tmp.Count);
-            for (var i = 0; i < tmp.Count; ++i)
-            {
-                w.Put(tmp[i].k);
-                w.Put(tmp[i].on);
-            }
-        }
-        catch
-        {
-            // 防守式：写一个 0，避免客户端读表时越界
-            w.Put(0);
+            _weatherTimer = 0f;
+            SendWeatherState(null, false);
         }
 
-        // Door
-
-        var includeDoors = target != null;
-        if (includeDoors)
+        if (HasActiveClients())
         {
-            // ✅ 优化：优先从缓存获取 Door，减少 FindObjectsOfType
-            IEnumerable<global::Door> doors = GameObjectCacheManager.Instance != null
-                ? GameObjectCacheManager.Instance.Environment.GetAllDoors()
-                : Object.FindObjectsOfType<global::Door>(true);
-            var tmp = new List<(int key, bool closed)>();
-
-            foreach (var d in doors)
+            _lootSyncTimer += deltaTime;
+            if (_lootSyncTimer >= LootStateBroadcastInterval)
             {
-                if (!d) continue;
-                var k = 0;
-                try
-                {
-                    k = (int)AccessTools.Field(typeof(global::Door), "doorClosedDataKeyCached").GetValue(d);
-                }
-                catch
-                {
-                }
-
-                if (k == 0) k = COOPManager.Door.ComputeDoorKey(d.transform);
-
-                bool closed;
-                try
-                {
-                    closed = !d.IsOpen;
-                }
-                catch
-                {
-                    closed = true;
-                } // 兜底：没取到就当作关闭
-
-                tmp.Add((k, closed));
-            }
-
-            w.Put(tmp.Count);
-            for (var i = 0; i < tmp.Count; ++i)
-            {
-                w.Put(tmp[i].key);
-                w.Put(tmp[i].closed);
+                _lootSyncTimer = 0f;
+                SendLootSnapshot(null);
             }
         }
         else
         {
-            w.Put(0); // 周期广播不带门清单
+            _lootSyncTimer = 0f;
+        }
+    }
+
+    public void Client_RequestSnapshot()
+    {
+        if (IsServer || !networkStarted) return;
+
+        _clientClockSynced = false;
+        _clientWeatherSynced = false;
+        _clientResyncTimer = 0f;
+
+        var request = new EnvSnapshotRequestRpc();
+        CoopTool.SendRpc(in request);
+    }
+
+    public void Client_Update(float deltaTime)
+    {
+        if (IsServer || !networkStarted) return;
+
+        if (_clientClockSynced && _clientWeatherSynced) return;
+
+        _clientResyncTimer += deltaTime;
+        if (_clientResyncTimer >= 3f)
+        {
+            _clientResyncTimer = 0f;
+            Client_RequestSnapshot();
+        }
+    }
+
+    public void Server_HandleSnapshotRequest(RpcContext context)
+    {
+        if (!IsServer || context.Sender == null) return;
+
+        SendClockState(context.Sender, true);
+        SendWeatherState(context.Sender, true);
+        SendLootSnapshot(context.Sender);
+        SendDoorSnapshot(context.Sender);
+        SendDestructibleSnapshot(context.Sender);
+        SendExplosiveBarrelSnapshot(context.Sender);
+    }
+
+    public void Client_HandleClockState(EnvClockStateRpc message)
+    {
+        if (IsServer) return;
+
+        try
+        {
+            var inst = GameClock.Instance;
+            if (inst == null) return;
+
+            AccessTools.Field(inst.GetType(), "days")?.SetValue(inst, message.Day);
+            AccessTools.Field(inst.GetType(), "secondsOfDay")?.SetValue(inst, message.SecondsOfDay);
+
+            try
+            {
+                inst.clockTimeScale = message.TimeScale;
+            }
+            catch
+            {
+            }
+
+            typeof(GameClock).GetMethod("Step", BindingFlags.NonPublic | BindingFlags.Static)
+                ?.Invoke(null, new object[] { 0f });
+
+            _clientClockSynced = true;
+            _clientResyncTimer = 0f;
+        }
+        catch
+        {
+        }
+    }
+
+    public void Client_HandleWeatherState(EnvWeatherStateRpc message)
+    {
+        if (IsServer) return;
+
+        try
+        {
+            var wm = WeatherManager.Instance;
+            if (wm != null && message.Seed != -1)
+            {
+                AccessTools.Field(wm.GetType(), "seed")?.SetValue(wm, message.Seed);
+                wm.GetType().GetMethod("SetupModules", BindingFlags.NonPublic | BindingFlags.Instance)?.Invoke(wm, null);
+                AccessTools.Field(wm.GetType(), "_weatherDirty")?.SetValue(wm, true);
+            }
+        }
+        catch
+        {
         }
 
-        w.Put(COOPManager.destructible._deadDestructibleIds.Count);
-        foreach (var id in COOPManager.destructible._deadDestructibleIds) w.Put(id);
+        try
+        {
+            WeatherManager.SetForceWeather(message.ForceWeather, (Duckov.Weathers.Weather)message.ForceWeatherValue);
+        }
+        catch
+        {
+        }
 
-        if (target != null) target.SendSmart(w, Op.ENV_SYNC_STATE);
-        else netManager.SendSmart(w, Op.ENV_SYNC_STATE);
+        LastStormSnapshot = new StormSnapshot
+        {
+            HasData = true,
+            StormLevel = message.StormLevel,
+            CurrentWeather = (Duckov.Weathers.Weather)message.CurrentWeather,
+            StormEtaSeconds = message.StormEtaSeconds,
+            StormIOverSeconds = message.StormIOverSeconds,
+            StormIIOverSeconds = message.StormIIOverSeconds,
+            StormSleepPercent = message.StormSleepPercent,
+            StormRemainPercent = message.StormRemainPercent
+        };
+
+        _clientWeatherSynced = true;
+        _clientResyncTimer = 0f;
     }
 
-
-    // ========== 环境同步：客户端请求 ==========
-    public void Client_RequestEnvSync()
+    public void Client_HandleLootChunk(EnvLootChunkRpc message)
     {
-        if (IsServer || connectedPeer == null) return;
-        var w = new NetDataWriter();
-        w.Put((byte)Op.ENV_SYNC_REQUEST);
-        connectedPeer.SendSmart(w, Op.ENV_SYNC_REQUEST);
+        if (IsServer) return;
+        LootNet.Client_ApplyLootVisibilityChunk(message.Keys, message.States, message.Reset);
     }
 
-    // ========== 环境同步：客户端应用 ==========
-    public void Client_ApplyEnvSync(long day, double secOfDay, float timeScale, int seed, bool forceWeather, int forceWeatherVal, int currentWeather /*兜底*/,
-        byte stormLevel /*冗余*/)
+    public void Client_HandleDoorChunk(EnvDoorChunkRpc message)
     {
-        // 1) 绝对对时：直接改 GameClock 的私有字段（避免 StepTimeTil 无法回拨的问题）
+        if (IsServer) return;
+
+        var keys = message.Keys;
+        var states = message.ClosedStates;
+        if (keys == null || states == null) return;
+
+        var count = Math.Min(keys.Length, states.Length);
+        if (count <= 0) return;
+
+        try
+        {
+            var core = MultiSceneCore.Instance;
+            for (var i = 0; i < count; i++)
+            {
+                var key = keys[i];
+                var closed = states[i];
+
+                if (core?.inLevelData != null)
+                    core.inLevelData[key] = closed;
+
+                COOPManager.Door.Client_ApplyDoorState(key, closed);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    public void Client_HandleDestructibleState(EnvDestructibleStateRpc message)
+    {
+        if (IsServer) return;
+        COOPManager.destructible?.Client_ApplyDestructibleSnapshot(message.DeadIds, message.Reset);
+    }
+
+    private bool TrySampleClock(out long day, out double seconds, out float timeScale)
+    {
+        day = 0;
+        seconds = 0;
+        timeScale = 60f;
+
+        try
+        {
+            day = GameClock.Day;
+            seconds = GameClock.TimeOfDay.TotalSeconds;
+        }
+        catch
+        {
+            return false;
+        }
+
         try
         {
             var inst = GameClock.Instance;
             if (inst != null)
-            {
-                AccessTools.Field(inst.GetType(), "days")?.SetValue(inst, day);
-                AccessTools.Field(inst.GetType(), "secondsOfDay")?.SetValue(inst, secOfDay);
-                try
-                {
-                    inst.clockTimeScale = timeScale;
-                }
-                catch
-                {
-                }
-
-                // 触发一次 onGameClockStep（用 0 步长调用内部 Step，保证监听者能刷新）
-                typeof(GameClock).GetMethod("Step", BindingFlags.NonPublic | BindingFlags.Static)?.Invoke(null, new object[] { 0f });
-            }
+                timeScale = inst.clockTimeScale;
         }
         catch
         {
         }
 
-        // 2) 天气随机种子：设到 WeatherManager，并让它把种子分发给子模块
+        return true;
+    }
+
+    private bool TrySampleWeather(out int seed, out bool forceWeather, out int forceWeatherValue,
+        out int currentWeather, out byte stormLevel)
+    {
+        seed = -1;
+        forceWeather = false;
+        forceWeatherValue = (int)Duckov.Weathers.Weather.Sunny;
+        currentWeather = (int)Duckov.Weathers.Weather.Sunny;
+        stormLevel = 0;
+
+        var wm = WeatherManager.Instance;
+        if (wm == null) return false;
+
+        try
+        {
+            seed = (int)AccessTools.Field(wm.GetType(), "seed").GetValue(wm);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            forceWeather = (bool)AccessTools.Field(wm.GetType(), "forceWeather").GetValue(wm);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            forceWeatherValue = (int)AccessTools.Field(wm.GetType(), "forceWeatherValue").GetValue(wm);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            currentWeather = (int)WeatherManager.GetWeather();
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            stormLevel = (byte)wm.Storm.GetStormLevel(GameClock.Now);
+        }
+        catch
+        {
+        }
+
+        return true;
+    }
+
+    private void SendClockState(NetPeer target, bool force)
+    {
+        if (!TrySampleClock(out var day, out var seconds, out var timeScale)) return;
+
+        if (!force)
+        {
+            if (day == _lastDay && Math.Abs(seconds - _lastSeconds) < 0.01 && Math.Abs(timeScale - _lastTimeScale) < 0.001)
+                return;
+        }
+
+        _lastDay = day;
+        _lastSeconds = seconds;
+        _lastTimeScale = timeScale;
+
+        var rpc = new EnvClockStateRpc
+        {
+            Day = day,
+            SecondsOfDay = seconds,
+            TimeScale = timeScale
+        };
+
+        if (target != null)
+            CoopTool.SendRpcTo(target, in rpc);
+        else
+            CoopTool.SendRpc(in rpc);
+    }
+
+    private void SendWeatherState(NetPeer target, bool force)
+    {
+        if (!TrySampleWeather(out var seed, out var forceWeather, out var forceWeatherValue,
+                out var currentWeather, out var stormLevel))
+        {
+            if (!force) return;
+        }
+
+        var stormEtaSeconds = -1d;
+        var stormIOverSeconds = -1d;
+        var stormIIOverSeconds = -1d;
+        var stormSleepPercent = 0f;
+        var stormRemainPercent = 0f;
+
         try
         {
             var wm = WeatherManager.Instance;
-            if (wm != null && seed != -1)
+            var now = GameClock.Now;
+            stormEtaSeconds = wm?.Storm.GetStormETA(now).TotalSeconds ?? -1d;
+            stormIOverSeconds = wm?.Storm.GetStormIOverETA(now).TotalSeconds ?? -1d;
+            stormIIOverSeconds = wm?.Storm.GetStormIIOverETA(now).TotalSeconds ?? -1d;
+            stormSleepPercent = wm != null ? wm.Storm.GetSleepPercent(now) : 0f;
+            stormRemainPercent = wm != null ? wm.Storm.GetStormRemainPercent(now) : 0f;
+        }
+        catch
+        {
+        }
+
+        if (!force)
+        {
+            if (seed == _lastSeed && forceWeather == _lastForceWeather &&
+                forceWeatherValue == _lastForceWeatherValue && currentWeather == _lastCurrentWeather &&
+                stormLevel == _lastStormLevel)
+                return;
+        }
+
+        _lastSeed = seed;
+        _lastForceWeather = forceWeather;
+        _lastForceWeatherValue = forceWeatherValue;
+        _lastCurrentWeather = currentWeather;
+        _lastStormLevel = stormLevel;
+
+        var rpc = new EnvWeatherStateRpc
+        {
+            Seed = seed,
+            ForceWeather = forceWeather,
+            ForceWeatherValue = forceWeatherValue,
+            CurrentWeather = currentWeather,
+            StormLevel = stormLevel,
+            StormEtaSeconds = stormEtaSeconds,
+            StormIOverSeconds = stormIOverSeconds,
+            StormIIOverSeconds = stormIIOverSeconds,
+            StormSleepPercent = stormSleepPercent,
+            StormRemainPercent = stormRemainPercent
+        };
+
+        if (target != null)
+            CoopTool.SendRpcTo(target, in rpc);
+        else
+            CoopTool.SendRpc(in rpc);
+    }
+
+    private void SendLootSnapshot(NetPeer target)
+    {
+        _lootSnapshotBuffer.Clear();
+
+        foreach (var entry in CoopSyncDatabase.Loot.Entries)
+        {
+            if (entry == null) continue;
+            var key = entry.PositionKey;
+            if (key == 0) continue;
+
+            GameObject go = null;
+            try
             {
-                AccessTools.Field(wm.GetType(), "seed")?.SetValue(wm, seed); // 写 seed :contentReference[oaicite:11]{index=11}
-                wm.GetType().GetMethod("SetupModules", BindingFlags.NonPublic | BindingFlags.Instance)
-                    ?.Invoke(wm, null); // 把 seed 带给 Storm/Precipitation :contentReference[oaicite:12]{index=12}
-                AccessTools.Field(wm.GetType(), "_weatherDirty")?.SetValue(wm, true); // 标脏以便下帧重新取 GetWeather
+                if (entry.Loader)
+                    go = entry.Loader.gameObject;
+                else if (entry.Lootbox)
+                    go = entry.Lootbox.gameObject;
             }
-        }
-        catch
-        {
+            catch
+            {
+                go = null;
+            }
+
+            if (go == null) continue;
+
+            var active = false;
+            try
+            {
+                active = go.activeSelf;
+            }
+            catch
+            {
+            }
+
+            _lootSnapshotBuffer.Add((key, active));
         }
 
-        // 3) 强制天气（兜底）：若主机处于强制状态，则客户端也强制到同一值
-        try
+        if (_lootSnapshotBuffer.Count == 0)
         {
-            WeatherManager.SetForceWeather(forceWeather, (Duckov.Weathers.Weather)forceWeatherVal); // 公共静态入口 :contentReference[oaicite:13]{index=13}
-        }
-        catch
-        {
+            var empty = new EnvLootChunkRpc
+            {
+                Reset = true,
+                Keys = Array.Empty<int>(),
+                States = Array.Empty<bool>()
+            };
+            if (target != null)
+                CoopTool.SendRpcTo(target, in empty);
+            else
+                CoopTool.SendRpc(in empty);
+            return;
         }
 
-        // 4) 无需专门同步风暴 ETA：基于 Now+seed，Storm.* 会得到一致的结果（UI 每 0.5s 刷新，见 TimeOfDayDisplay） :contentReference[oaicite:14]{index=14}
+        for (var offset = 0; offset < _lootSnapshotBuffer.Count; offset += LootChunkSize)
+        {
+            var count = Math.Min(LootChunkSize, _lootSnapshotBuffer.Count - offset);
+            var keys = new int[count];
+            var states = new bool[count];
+
+            for (var i = 0; i < count; i++)
+            {
+                var tuple = _lootSnapshotBuffer[offset + i];
+                keys[i] = tuple.key;
+                states[i] = tuple.state;
+            }
+
+            var rpc = new EnvLootChunkRpc
+            {
+                Reset = offset == 0,
+                Keys = keys,
+                States = states
+            };
+
+            if (target != null)
+                CoopTool.SendRpcTo(target, in rpc);
+            else
+                CoopTool.SendRpc(in rpc);
+        }
+    }
+
+    private void SendDoorSnapshot(NetPeer target)
+    {
+        _doorSnapshotBuffer.Clear();
+
+        var registry = CoopSyncDatabase.Environment.Doors;
+
+        var entries = registry.Entries;
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            if (entry == null) continue;
+
+            var door = entry.Door;
+            if (!door) continue;
+
+            registry.Register(door);
+
+            var key = entry.Key;
+            if (key == 0)
+                key = Door.TryGetDoorKey(door);
+
+            if (key == 0) continue;
+
+            var closed = true;
+            try
+            {
+                closed = !door.IsOpen;
+            }
+            catch
+            {
+            }
+
+            _doorSnapshotBuffer.Add((key, closed));
+        }
+
+        if (_doorSnapshotBuffer.Count == 0) return;
+
+        for (var offset = 0; offset < _doorSnapshotBuffer.Count; offset += DoorChunkSize)
+        {
+            var count = Math.Min(DoorChunkSize, _doorSnapshotBuffer.Count - offset);
+            var keys = new int[count];
+            var states = new bool[count];
+
+            for (var i = 0; i < count; i++)
+            {
+                var tuple = _doorSnapshotBuffer[offset + i];
+                keys[i] = tuple.key;
+                states[i] = tuple.closed;
+            }
+
+            var rpc = new EnvDoorChunkRpc
+            {
+                Reset = offset == 0,
+                Keys = keys,
+                ClosedStates = states
+            };
+
+            CoopTool.SendRpcTo(target, in rpc);
+        }
+    }
+
+    private void SendDestructibleSnapshot(NetPeer target)
+    {
+        var destructible = COOPManager.destructible;
+        if (destructible == null)
+        {
+            var empty = new EnvDestructibleStateRpc
+            {
+                Reset = true,
+                DeadIds = Array.Empty<uint>()
+            };
+            CoopTool.SendRpcTo(target, in empty);
+            return;
+        }
+
+        var source = destructible._deadDestructibleIds;
+        var count = source?.Count ?? 0;
+        if (count == 0)
+        {
+            var empty = new EnvDestructibleStateRpc
+            {
+                Reset = true,
+                DeadIds = Array.Empty<uint>()
+            };
+            CoopTool.SendRpcTo(target, in empty);
+            return;
+        }
+
+        var ids = new uint[count];
+        var idx = 0;
+        foreach (var id in source)
+            ids[idx++] = id;
+
+        var rpc = new EnvDestructibleStateRpc
+        {
+            Reset = true,
+            DeadIds = ids
+        };
+
+        CoopTool.SendRpcTo(target, in rpc);
+    }
+
+    private void SendExplosiveBarrelSnapshot(NetPeer target)
+    {
+        var barrels = COOPManager.ExplosiveBarrels;
+        if (barrels == null)
+        {
+            var empty = new EnvExplosiveOilBarrelStateRpc
+            {
+                Reset = true,
+                Ids = Array.Empty<uint>(),
+                ActiveStates = Array.Empty<bool>()
+            };
+            CoopTool.SendRpcTo(target, in empty);
+            return;
+        }
+
+        barrels.Server_BroadcastSnapshot(target);
+    }
+
+    private bool HasActiveClients()
+    {
+        var manager = Service?.netManager;
+        return manager != null && manager.ConnectedPeersCount > 0;
     }
 }
+
+internal struct StormSnapshot
+{
+    public static readonly StormSnapshot Empty = new()
+    {
+        HasData = false,
+        StormLevel = byte.MaxValue,
+        CurrentWeather = Duckov.Weathers.Weather.Sunny
+    };
+
+    public bool HasData;
+    public byte StormLevel;
+    public Duckov.Weathers.Weather CurrentWeather;
+    public double StormEtaSeconds;
+    public double StormIOverSeconds;
+    public double StormIIOverSeconds;
+    public float StormSleepPercent;
+    public float StormRemainPercent;
+}
+

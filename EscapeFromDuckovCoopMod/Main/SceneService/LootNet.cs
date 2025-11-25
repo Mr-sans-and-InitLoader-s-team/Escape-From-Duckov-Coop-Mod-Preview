@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,6 +14,7 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System;
 using System.Text;
 using Duckov.Scenes;
 using Duckov.UI;
@@ -125,7 +126,7 @@ public class LootNet
     }
 
 
-    public void Client_ApplyLootboxState(NetDataReader r)
+    public void Client_ApplyLootboxState(NetPacketReader r)
     {
         var scene = r.GetInt();
         var posKey = r.GetInt();
@@ -292,7 +293,7 @@ public class LootNet
 
 
     // 主机：处理 PUT（客户端 -> 主机）
-    public void Server_HandleLootPutRequest(NetPeer peer, NetDataReader r)
+    public void Server_HandleLootPutRequest(NetPeer peer, NetPacketReader r)
     {
         var scene = r.GetInt();
         var posKey = r.GetInt();
@@ -376,7 +377,7 @@ public class LootNet
     }
 
 
-    public void Server_HandleLootTakeRequest(NetPeer peer, NetDataReader r)
+    public void Server_HandleLootTakeRequest(NetPeer peer, NetPacketReader r)
     {
         var scene = r.GetInt();
         var posKey = r.GetInt();
@@ -454,7 +455,7 @@ public class LootNet
     }
 
     // 客户端：收到 PUT_OK -> 把“本地发起的那件物品”从自己背包删掉
-    public void Client_OnLootPutOk(NetDataReader r)
+    public void Client_OnLootPutOk(NetPacketReader r)
     {
         var token = r.GetUInt();
 
@@ -565,7 +566,7 @@ public class LootNet
     }
 
 
-    public void Client_OnLootTakeOk(NetDataReader r)
+    public void Client_OnLootTakeOk(NetPacketReader r)
     {
         var token = r.GetUInt();
 
@@ -757,33 +758,86 @@ public class LootNet
 
     public static void Client_ApplyLootVisibility(Dictionary<int, bool> vis)
     {
+        if (vis == null || vis.Count == 0)
+        {
+            Client_ApplyLootVisibilityChunk(Array.Empty<int>(), Array.Empty<bool>(), false);
+            return;
+        }
+
+        var keys = new int[vis.Count];
+        var states = new bool[vis.Count];
+        var idx = 0;
+
+        foreach (var kv in vis)
+        {
+            keys[idx] = kv.Key;
+            states[idx] = kv.Value;
+            idx++;
+        }
+
+        Client_ApplyLootVisibilityChunk(keys, states, false);
+    }
+
+    public static void Client_ApplyLootVisibilityChunk(int[] keys, bool[] states, bool reset)
+    {
         try
         {
             var core = MultiSceneCore.Instance;
-            if (core == null || vis == null) return;
+            if (core == null) return;
 
-            foreach (var kv in vis)
-                core.inLevelData[kv.Key] = kv.Value; // 没有就加，有就覆盖
-
-            // 刷新当前场景已存在的 LootBoxLoader 显示
-            var loaders = Object.FindObjectsOfType<LootBoxLoader>(true);
-            foreach (var l in loaders)
+            if (reset)
+            {
                 try
                 {
-                    var k = LootManager.Instance.ComputeLootKey(l.transform);
-                    if (vis.TryGetValue(k, out var on))
-                        l.gameObject.SetActive(on);
+                    core.inLevelData?.Clear();
                 }
                 catch
                 {
                 }
+            }
+
+            var count = Math.Min(keys?.Length ?? 0, states?.Length ?? 0);
+            for (var i = 0; i < count; i++)
+            {
+                var key = keys[i];
+                var state = states[i];
+
+                try
+                {
+                    core.inLevelData[key] = state;
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    if (!CoopSyncDatabase.Loot.TryGetByPositionKey(key, out var entry) || entry == null)
+                        continue;
+
+                    var loader = entry.Loader;
+                    if (!loader && entry.Lootbox)
+                    {
+                        loader = entry.Lootbox.GetComponent<LootBoxLoader>();
+                        if (loader)
+                            entry.Loader = loader;
+                    }
+
+                    var target = loader ? loader.gameObject : entry.Lootbox ? entry.Lootbox.gameObject : null;
+                    if (target)
+                        target.SetActive(state);
+                }
+                catch
+                {
+                }
+            }
         }
         catch
         {
         }
     }
 
-    public void Server_HandleLootSlotPlugRequest(NetPeer peer, NetDataReader r)
+    public void Server_HandleLootSlotPlugRequest(NetPeer peer, NetPacketReader r)
     {
         // 1) 容器定位
         var scene = r.GetInt();
@@ -1029,7 +1083,7 @@ public class LootNet
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
     }
 
-    public void Server_HandleLootSlotUnplugRequest(NetPeer peer, NetDataReader r)
+    public void Server_HandleLootSlotUnplugRequest(NetPeer peer, NetPacketReader r)
     {
         // 1) 容器定位
         var scene = r.GetInt();
@@ -1157,7 +1211,7 @@ public class LootNet
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
     }
 
-    public void Server_HandleLootSplitRequest(NetPeer peer, NetDataReader r)
+    public void Server_HandleLootSplitRequest(NetPeer peer, NetPacketReader r)
     {
         var scene = r.GetInt();
         var posKey = r.GetInt();

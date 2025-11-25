@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -58,6 +58,11 @@ public class AnimParamInterpolator : MonoBehaviour
     //sans这个类你就不用看你了，你不会的
     private void Awake()
     {
+        if (!anim && GetComponentInChildren<RemoteReplicaTag>())
+        {
+            if (!anim) anim = GetComponentInChildren<CharacterMainControl>(true)?.characterModel?.GetComponentInChildren<CharacterAnimationControl>()?.animator;
+            if (!anim) anim = GetComponentInChildren<CharacterMainControl>(true)?.characterModel?.GetComponentInChildren<CharacterAnimationControl_MagicBlend>()?.animator;
+        }
         if (!anim) anim = GetComponentInChildren<Animator>(true);
         if (anim) anim.applyRootMotion = false;
 

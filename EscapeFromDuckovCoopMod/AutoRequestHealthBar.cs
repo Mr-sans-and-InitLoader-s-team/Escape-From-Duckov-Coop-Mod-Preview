@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -33,7 +33,7 @@ public class AutoRequestHealthBar : MonoBehaviour
 
     private void OnEnable()
     {
-        StartCoroutine(Bootstrap());
+        //StartCoroutine(Bootstrap());
     }
 
     private IEnumerator Bootstrap()

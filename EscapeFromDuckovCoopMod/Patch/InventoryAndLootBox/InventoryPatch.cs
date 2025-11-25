@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -18,7 +18,7 @@ using System.Reflection;
 using Duckov.UI;
 using ItemStatsSystem;
 using Object = UnityEngine.Object;
-using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
+using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -30,6 +30,16 @@ internal static class Patch_Inventory_AddAt_FromLoot
         var m = ModBehaviourF.Instance;
         if (m == null || !m.networkStarted || m.IsServer) return true;
         if (COOPManager.LootNet._applyingLootState) return true;
+
+        // 本地 OnDead 场景：让墓碑填充走原生逻辑，避免被 LootNet 拦截
+        try
+        {
+            if (DeadLootSpawnContext.LocalOnDead)
+                return true;
+        }
+        catch
+        {
+        }
 
         var srcInv = item ? item.InInventory : null;
         if (srcInv == null || srcInv == __instance) return true;
@@ -116,6 +126,16 @@ internal static class Patch_Inventory_AddAt_BlockLocalInLoot
     {
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.IsClient) return true;
+
+        // 本地死亡掉落的墓碑填充，放行原生 AddAt 避免吞掉战利品
+        try
+        {
+            if (DeadLootSpawnContext.LocalOnDead)
+                return true;
+        }
+        catch
+        {
+        }
 
         if (LootboxDetectUtil.IsPrivateInventory(__instance)) return true; // 私有库存放行
 
@@ -266,14 +286,6 @@ internal static class Patch_Inventory_RemoveAt_BlockLocalInLoot
 [HarmonyPatch(typeof(Inventory), "NotifyContentChanged")]
 public static class Patch_Inventory_NotifyContentChanged
 {
-    private const float PICK_RADIUS = 2.5f; // 你可按手感调 2~3
-    private const QueryTriggerInteraction QTI = QueryTriggerInteraction.Collide;
-    private const int LAYER_MASK = ~0; // 如有专用 Layer，可替换成它
-    private const int LAYER_MASK_ANY = ~0;
-
-    // 在主角附近找最近的带 NetDropTag 的拾取体
-    private static readonly Collider[] _nearbyBuf = new Collider[64];
-
     private static void Postfix(Inventory __instance, Item item)
     {
         var mod = ModBehaviourF.Instance;
@@ -284,123 +296,10 @@ public static class Patch_Inventory_NotifyContentChanged
         if (LootboxDetectUtil.IsLootboxInventory(__instance) && !LootboxDetectUtil.IsPrivateInventory(__instance))
             return;
 
-        // --- 客户端 ---
-        if (!mod.IsServer)
-        {
-            // A) 引用命中（少见：非合并）
-            if (TryFindId(COOPManager.ItemHandle.clientDroppedItems, item, out var cid))
-            {
-                LocalDestroyAgent(item);
-                SendPickupReq(mod, cid);
-                return;
-            }
+        var net = COOPManager.ItemNet;
+        if (net == null) return;
 
-            // B) 合并堆叠：引用不同，用近场 NetDropTag 反查
-            if (TryFindNearestTaggedId(out var nearId))
-            {
-                LocalDestroyAgentById(COOPManager.ItemHandle.clientDroppedItems, nearId);
-                SendPickupReq(mod, nearId);
-            }
-
-            return;
-        }
-
-        // --- 主机 ---
-        if (TryFindId(COOPManager.ItemHandle.serverDroppedItems, item, out var sid))
-        {
-            ServerDespawn(mod, sid);
-            return;
-        }
-
-        if (TryFindNearestTaggedId(out var nearSid)) ServerDespawn(mod, nearSid);
-    }
-
-    private static void SendPickupReq(ModBehaviourF mod, uint id)
-    {
-        var w = mod.writer;
-        w.Reset();
-        w.Put((byte)Op.ITEM_PICKUP_REQUEST);
-        w.Put(id);
-        mod.connectedPeer?.SendSmart(w, Op.ITEM_PICKUP_REQUEST);
-    }
-
-    private static void ServerDespawn(ModBehaviourF mod, uint id)
-    {
-        if (COOPManager.ItemHandle.serverDroppedItems.TryGetValue(id, out var it) && it != null)
-            LocalDestroyAgent(it);
-        COOPManager.ItemHandle.serverDroppedItems.Remove(id);
-
-        var w = mod.writer;
-        w.Reset();
-        w.Put((byte)Op.ITEM_DESPAWN);
-        w.Put(id);
-        mod.netManager.SendSmart(w, Op.ITEM_DESPAWN);
-    }
-
-    private static void LocalDestroyAgent(Item it)
-    {
-        try
-        {
-            var ag = it.ActiveAgent;
-            if (ag && ag.gameObject) Object.Destroy(ag.gameObject);
-        }
-        catch
-        {
-        }
-    }
-
-    private static void LocalDestroyAgentById(Dictionary<uint, Item> dict, uint id)
-    {
-        if (dict.TryGetValue(id, out var it) && it != null) LocalDestroyAgent(it);
-    }
-
-    private static bool TryFindId(Dictionary<uint, Item> dict, Item it, out uint id)
-    {
-        foreach (var kv in dict)
-            if (ReferenceEquals(kv.Value, it))
-            {
-                id = kv.Key;
-                return true;
-            }
-
-        id = 0;
-        return false;
-    }
-
-    private static bool TryFindNearestTaggedId(out uint id)
-    {
-        id = 0;
-        var main = CharacterMainControl.Main;
-        if (main == null) return false;
-
-        var pos = main.transform.position;
-        var n = Physics.OverlapSphereNonAlloc(pos, PICK_RADIUS, _nearbyBuf, LAYER_MASK_ANY, QTI);
-
-        var best = float.MaxValue;
-        NetDropTag bestTag = null;
-
-        for (var i = 0; i < n; i++)
-        {
-            var c = _nearbyBuf[i];
-            if (!c) continue;
-            var t = c.GetComponentInParent<NetDropTag>() ?? c.GetComponent<NetDropTag>();
-            if (t == null || t.id == 0) continue;
-
-            var d2 = (t.transform.position - pos).sqrMagnitude;
-            if (d2 < best)
-            {
-                best = d2;
-                bestTag = t;
-            }
-        }
-
-        if (bestTag != null)
-        {
-            id = bestTag.id;
-            return true;
-        }
-
-        return false;
+        net.HandleInventoryItemAdded(__instance, item);
     }
 }
 
@@ -415,6 +314,16 @@ internal static class Patch_Inventory_AddAt_LootPut
         // 只在客户端、且不是“应用服务器快照”阶段时干预
         if (!m.IsServer && !COOPManager.LootNet._applyingLootState)
         {
+            // 本地 OnDead 的墓碑生成/填充：直接走原生 AddAt
+            try
+            {
+                if (DeadLootSpawnContext.LocalOnDead)
+                    return true;
+            }
+            catch
+            {
+            }
+
             var targetIsLoot = LootboxDetectUtil.IsLootboxInventory(__instance) && !LootboxDetectUtil.IsPrivateInventory(__instance);
             var srcInv = item ? item.InInventory : null;
             var srcIsLoot = LootboxDetectUtil.IsLootboxInventory(srcInv) && !LootboxDetectUtil.IsPrivateInventory(srcInv);
@@ -530,55 +439,11 @@ internal static class Patch_Inventory_AddAt_BroadcastOnServer
         var m = ModBehaviourF.Instance;
         if (m == null || !m.networkStarted || !m.IsServer) return;
         if (!__result || COOPManager.LootNet._serverApplyingLoot) return;
+        if (!LootboxDetectUtil.IsLootboxInventory(__instance)) return;
 
-        // ✅ 修复：场景切换时 LevelManager 可能正在初始化，跳过同步避免崩溃
-        try
-        {
-            if (LevelManager.Instance == null || LevelManager.LootBoxInventories == null)
-            {
-                return; // 场景初始化中，跳过
-            }
-        }
-        catch
-        {
-            return; // 访问 LootBoxInventories 失败，说明场景正在切换
-        }
+        if (!LootboxDetectUtil.IsLootboxInventory(__instance) || LootboxDetectUtil.IsPrivateInventory(__instance)) return;
 
-        // ✅ 性能监控：记录检查耗时
-        var checkStartTime = Time.realtimeSinceStartup;
-        bool isLootbox = LootboxDetectUtil.IsLootboxInventory(__instance);
-        bool isPrivate = LootboxDetectUtil.IsPrivateInventory(__instance);
-        var checkDuration = (Time.realtimeSinceStartup - checkStartTime) * 1000f;
-
-        if (checkDuration > 1f) // 超过1ms记录
-        {
-            Debug.LogWarning($"[InventoryPatch] IsLootboxInventory 检查耗时: {checkDuration:F2}ms, isLootbox={isLootbox}, isPrivate={isPrivate}");
-        }
-
-        // ✅ 关键：排除私有库存和非箱子 Inventory（墓碑等）
-        if (!isLootbox || isPrivate)
-        {
-            return; // 墓碑、仓库、宠物包等不同步
-        }
-
-        // ✅ 优化：延迟到帧结束时执行，减少场景加载时的性能压力
-        DeferedRunner.EndOfFrame(() =>
-        {
-            // ✅ 二次检查：确保 Inventory 仍然有效且可同步
-            if (!LootboxDetectUtil.IsLootboxInventory(__instance) || LootboxDetectUtil.IsPrivateInventory(__instance))
-            {
-                return;
-            }
-
-            var broadcastStartTime = Time.realtimeSinceStartup;
-            COOPManager.LootNet.Server_SendLootboxState(null, __instance);
-            var broadcastDuration = (Time.realtimeSinceStartup - broadcastStartTime) * 1000f;
-
-            if (broadcastDuration > 5f) // 超过5ms记录
-            {
-                Debug.LogWarning($"[InventoryPatch] 广播 LootboxState 耗时: {broadcastDuration:F2}ms");
-            }
-        });
+        COOPManager.LootNet.Server_SendLootboxState(null, __instance);
     }
 }
 
@@ -592,39 +457,14 @@ internal static class Patch_Inventory_AddItem_BroadcastLootState
         if (m == null || !m.networkStarted || !m.IsServer) return;
         if (!__result || COOPManager.LootNet._serverApplyingLoot) return;
 
-        // ✅ 修复：场景切换时 LevelManager 可能正在初始化，跳过同步避免崩溃
-        try
-        {
-            if (LevelManager.Instance == null || LevelManager.LootBoxInventories == null)
-            {
-                return; // 场景初始化中，跳过
-            }
-        }
-        catch
-        {
-            return; // 访问 LootBoxInventories 失败，说明场景正在切换
-        }
-
         if (!LootboxDetectUtil.IsLootboxInventory(__instance) || LootboxDetectUtil.IsPrivateInventory(__instance)) return;
 
-        // ✅ 再次确认容器确实在 LootBoxInventories 中
-        try
-        {
-            var dict = InteractableLootbox.Inventories;
-            var isLootInv = dict != null && dict.ContainsValue(__instance);
-            if (!isLootInv) return;
-        }
-        catch
-        {
-            return; // 访问失败，跳过
-        }
 
-        // ✅ 优化：延迟到帧结束时执行，减少场景加载时的性能压力
-        DeferedRunner.EndOfFrame(() =>
-        {
-            if (!LootboxDetectUtil.IsLootboxInventory(__instance) || LootboxDetectUtil.IsPrivateInventory(__instance)) return;
-            COOPManager.LootNet.Server_SendLootboxState(null, __instance);
-        });
+        var dict = InteractableLootbox.Inventories;
+        var isLootInv = dict != null && dict.ContainsValue(__instance);
+        if (!isLootInv) return;
+
+        COOPManager.LootNet.Server_SendLootboxState(null, __instance);
     }
 }
 
@@ -640,35 +480,16 @@ internal static class Patch_Inventory_RemoveAt_BroadcastOnServer
         return AccessTools.Method(tInv, "RemoveAt", new[] { typeof(int), tItemByRef });
     }
 
-    // Postfix：当主机本地从"公共战利品容器"取出成功后，广播一次全量状态
+    // Postfix：当主机本地从“公共战利品容器”取出成功后，广播一次全量状态
     private static void Postfix(Inventory __instance, int position, Item __1, bool __result)
     {
         var m = ModBehaviourF.Instance;
         if (m == null || !m.networkStarted || !m.IsServer) return; // 仅主机
         if (!__result || COOPManager.LootNet._serverApplyingLoot) return; // 跳过失败/网络路径内部调用
-
-        // ✅ 修复：场景切换时 LevelManager 可能正在初始化，跳过同步避免崩溃
-        try
-        {
-            if (LevelManager.Instance == null || LevelManager.LootBoxInventories == null)
-            {
-                return; // 场景初始化中，跳过
-            }
-        }
-        catch
-        {
-            return; // 访问 LootBoxInventories 失败，说明场景正在切换
-        }
-
         if (!LootboxDetectUtil.IsLootboxInventory(__instance)) return; // 只处理战利品容器
         if (LootboxDetectUtil.IsPrivateInventory(__instance)) return; // 跳过玩家仓库/宠物包等私有库存
 
-        // ✅ 优化：延迟到帧结束时执行，减少场景加载时的性能压力
-        DeferedRunner.EndOfFrame(() =>
-        {
-            if (!LootboxDetectUtil.IsLootboxInventory(__instance) || LootboxDetectUtil.IsPrivateInventory(__instance)) return;
-            COOPManager.LootNet.Server_SendLootboxState(null, __instance); // 广播给所有客户端
-        });
+        COOPManager.LootNet.Server_SendLootboxState(null, __instance); // 广播给所有客户端
     }
 }
 
@@ -753,7 +574,17 @@ internal static class Patch_ServerBroadcast_OnAddAt
         if (m == null || !m.networkStarted || !m.IsServer) return;
 
         // 仅在 AI 死亡 OnDead 流程里触发（你项目里已有这个上下文标记）
-        if (DeadLootSpawnContext.InOnDead == null) return;
+        var deadOwner = DeadLootSpawnContext.InOnDead;
+        if (deadOwner == null) return;
+
+        // 如果是本地玩家死亡，放行原逻辑，避免静音窗口吞掉墓碑的物品填充/广播
+        try
+        {
+            if (CharacterMainControl.Main == deadOwner) return;
+        }
+        catch
+        {
+        }
 
         if (!LootboxDetectUtil.IsLootboxInventory(__instance) || LootboxDetectUtil.IsPrivateInventory(__instance)) return;
         LootManager.Instance.Server_MuteLoot(__instance, 1.0f); // 1秒静音足够覆盖整次填充
@@ -792,14 +623,21 @@ internal static class Patch_Inventory_AddAt_FlagUninspected_WhenApplyingLoot
         if (LootboxDetectUtil.IsPrivateInventory(inv)) return;
         if (!(LootboxDetectUtil.IsLootboxInventory(inv) || LootManager.IsCurrentLootInv(inv))) return;
 
-        TryClearNeedInspection(inv);
-    }
-
-    private static void TryClearNeedInspection(Inventory inv)
-    {
         try
         {
-            inv.NeedInspection = false;
+            var last = inv.GetLastItemPosition();
+            var hasUninspected = false;
+            for (var i = 0; i <= last; i++)
+            {
+                var it = inv.GetItemAt(i);
+                if (it != null && !it.Inspected)
+                {
+                    hasUninspected = true;
+                    break;
+                }
+            }
+
+            inv.NeedInspection = hasUninspected;
         }
         catch
         {
@@ -825,14 +663,21 @@ internal static class Patch_Inventory_AddItem_FlagUninspected_WhenApplyingLoot
         if (LootboxDetectUtil.IsPrivateInventory(inv)) return;
         if (!(LootboxDetectUtil.IsLootboxInventory(inv) || LootManager.IsCurrentLootInv(inv))) return;
 
-        TryClearNeedInspection(inv);
-    }
-
-    private static void TryClearNeedInspection(Inventory inv)
-    {
         try
         {
-            inv.NeedInspection = false;
+            var last = inv.GetLastItemPosition();
+            var hasUninspected = false;
+            for (var i = 0; i <= last; i++)
+            {
+                var it = inv.GetItemAt(i);
+                if (it != null && !it.Inspected)
+                {
+                    hasUninspected = true;
+                    break;
+                }
+            }
+
+            inv.NeedInspection = hasUninspected;
         }
         catch
         {

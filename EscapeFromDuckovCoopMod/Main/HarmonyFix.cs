@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,116 +14,62 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System;
 using System.Reflection;
 using Duckov.Utilities;
-using FX;
+using Duckov.Weathers;
+using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
-
-public sealed class LocalMeleeOncePerFrame : MonoBehaviour
-{
-    public int lastFrame;
-}
 
 public static class MeleeLocalGuard
 {
     [ThreadStatic] public static bool LocalMeleeTryingToHurt;
 }
 
-[HarmonyPatch(typeof(DamageReceiver), "Hurt")]
-internal static class Patch_ClientReportMeleeHit
+public sealed class RemoteReplicaTag : MonoBehaviour
 {
+}
+
+public sealed class RemoteAIReplicaTag : MonoBehaviour
+{
+    public int Id;
+    public bool SuppressBuffForward;
+}
+
+[HarmonyPatch(typeof(DamageReceiver), "Hurt")]
+internal static class Patch_ServerForwardRemotePlayerDamage
+{
+    [HarmonyPriority(Priority.High)]
     private static bool Prefix(DamageReceiver __instance, ref DamageInfo __0)
     {
         var mod = ModBehaviourF.Instance;
+        if (mod == null || !mod.networkStarted || !mod.IsServer) return true;
 
-        // 不在联网、在主机、或没到“本地近战结算阶段”，都不拦
-        if (mod == null || !mod.networkStarted || mod.IsServer || !MeleeLocalGuard.LocalMeleeTryingToHurt)
-            return true;
+        var health = __instance ? __instance.health : null;
+        var cmc = health ? health.TryGetCharacter() : null;
+        if (!cmc) return true;
 
-        if (mod.connectedPeer == null)
+        if (!cmc.GetComponentInChildren<RemoteReplicaTag>()) return true;
+
+        var peer = CoopTool.TryGetPeerForCharacter(cmc);
+        if (peer == null) return true;
+
+        var service = NetService.Instance;
+        var playerId = service != null ? service.GetPlayerId(peer) : string.Empty;
+
+        if (service != null && !string.IsNullOrEmpty(playerId) && service.IsPlayerInvincible(playerId))
+            return false;
+
+        var rpc = new PlayerDamageForwardRpc
         {
-            Debug.LogWarning("[CLIENT] MELEE_HIT_REPORT aborted: connectedPeer==null, fallback to local Hurt");
-            return true; // 让原始 Hurt 生效，避免“无伤”
-        }
+            PlayerId = playerId,
+            Damage = DamageForwardPayload.FromDamageInfo(__0)
+        };
 
-        try
-        {
-            var w = new NetDataWriter();
-            w.Put((byte)Op.MELEE_HIT_REPORT);
-            w.Put(mod.localPlayerStatus != null ? mod.localPlayerStatus.EndPoint : "");
-
-            // DamageInfo 关键字段
-            w.Put(__0.damageValue);
-            w.Put(__0.armorPiercing);
-            w.Put(__0.critDamageFactor);
-            w.Put(__0.critRate);
-            w.Put(__0.crit);
-
-            w.PutV3cm(__0.damagePoint);
-            w.PutDir(__0.damageNormal);
-
-            w.Put(__0.fromWeaponItemID);
-            w.Put(__0.bleedChance);
-            w.Put(__0.isExplosion);
-
-            // 近战范围（主机用于邻域搜）
-            var range = 1.2f;
-            try
-            {
-                var main = CharacterMainControl.Main;
-                var melee = main ? main.CurrentHoldItemAgent as ItemAgent_MeleeWeapon : null;
-                if (melee != null) range = Mathf.Max(0.6f, melee.AttackRange);
-            }
-            catch
-            {
-            }
-
-            w.Put(range);
-
-
-            mod.connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
-        }
-        catch (Exception e)
-        {
-            Debug.LogWarning("[CLIENT] Melee hit report failed: " + e);
-            return true; // 发送失败时回退到本地 Hurt，避免“无伤”
-        }
-
-        try
-        {
-            if (PopText.instance)
-            {
-                // 取默认物理伤害的弹字样式（跟 Health.Hurt 一致的来源）
-                var look = GameplayDataSettings.UIStyle
-                    .GetElementDamagePopTextLook(ElementTypes.physics);
-
-                // 位置：优先用伤害点；没有就用受击者位置；整体上抬一点更清晰
-                var pos = (__0.damagePoint.sqrMagnitude > 1e-6f ? __0.damagePoint : __instance.transform.position)
-                          + Vector3.up * 2f;
-
-                // 暴击大小/图标
-                var size = __0.crit > 0 ? look.critSize : look.normalSize;
-                var sprite = __0.crit > 0 ? GameplayDataSettings.UIStyle.CritPopSprite : null;
-
-                // 文本：有数值就显示数值，没有就显示“HIT”
-                var text = __0.damageValue > 0f ? __0.damageValue.ToString("F1") : "HIT";
-
-                PopText.Pop(text, pos, look.color, size, sprite);
-            }
-        }
-        catch
-        {
-        }
-
-
-        // 成功上报，由主机权威结算
+        CoopTool.SendRpcTo(peer, in rpc);
         return false;
     }
-}
-
-public sealed class RemoteReplicaTag : MonoBehaviour
-{
 }
 
 [HarmonyPatch(typeof(SetActiveByPlayerDistance), "FixedUpdate")]
@@ -183,40 +129,6 @@ internal static class Patch_SABPD_FixedUpdate_AllPlayersUnion
         }
 
         return false; // 跳过原方法
-    }
-}
-
-[HarmonyPatch(typeof(DamageReceiver), "Hurt")]
-internal static class Patch_BlockClientAiVsAi_AtReceiver
-{
-    [HarmonyPriority(Priority.First)]
-    private static bool Prefix(DamageReceiver __instance, ref DamageInfo __0)
-    {
-        var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted || mod.IsServer) return true;
-
-        var target = __instance ? __instance.GetComponentInParent<CharacterMainControl>() : null;
-        var victimIsAI = target && (target.GetComponent<AICharacterController>() != null || target.GetComponent<NetAiTag>() != null);
-        if (!victimIsAI) return true;
-
-        var attacker = __0.fromCharacter;
-        var attackerIsAI = attacker && (attacker.GetComponent<NetAiTag>() != null || attacker.GetComponent<NetAiTag>() != null);
-        if (attackerIsAI) return false; // 不让伤害继续走向 Health
-
-        return true;
-    }
-}
-
-[HarmonyPatch(typeof(SetActiveByPlayerDistance), "FixedUpdate")]
-internal static class Patch_SABD_KeepRemoteAIActive_Client
-{
-    private static void Postfix(SetActiveByPlayerDistance __instance)
-    {
-        var m = ModBehaviourF.Instance;
-        if (m == null || !m.networkStarted || m.IsServer) return;
-
-        var forceAll = m.Client_ForceShowAllRemoteAI;
-        if (forceAll) Traverse.Create(__instance).Field<float>("distance").Value = 9999f;
     }
 }
 
@@ -290,6 +202,63 @@ internal static class Patch_ClosureView_ShowAndReturnTask_SpectatorGate
     }
 }
 
+//[HarmonyPatch(typeof(TimeOfDayDisplay), "RefreshStormText")]
+//internal static class Patch_TimeOfDayDisplay_UseSyncedStorm
+//{
+//    private static bool Prefix(TimeOfDayDisplay __instance, Duckov.Weathers.Weather _weather)
+//    {
+//        var mod = ModBehaviourF.Instance;
+//        if (mod == null || mod.IsServer || !mod.networkStarted) return true;
+
+//        var snapshot = EscapeFromDuckovCoopMod.Weather.LastStormSnapshot;
+//        if (!snapshot.HasData) return true;
+
+//        TimeSpan timeSpan;
+//        float fillAmount;
+
+//        switch (_weather)
+//        {
+//            case Duckov.Weathers.Weather.Stormy_I:
+//                __instance.stormIndicatorAnimator.SetBool("Grow", false);
+//                __instance.stormTitleText.text = __instance.StormPhaseIIETAKey.ToPlainText();
+//                timeSpan = TimeSpan.FromSeconds(snapshot.StormIOverSeconds);
+//                fillAmount = snapshot.StormRemainPercent;
+//                __instance.stormDescObject.SetActive(LevelManager.Instance.IsBaseLevel);
+//                break;
+//            case Duckov.Weathers.Weather.Stormy_II:
+//                __instance.stormIndicatorAnimator.SetBool("Grow", false);
+//                __instance.stormTitleText.text = __instance.StormOverETAKey.ToPlainText();
+//                timeSpan = TimeSpan.FromSeconds(snapshot.StormIIOverSeconds);
+//                fillAmount = snapshot.StormRemainPercent;
+//                __instance.stormDescObject.SetActive(LevelManager.Instance.IsBaseLevel);
+//                break;
+//            default:
+//                __instance.stormIndicatorAnimator.SetBool("Grow", true);
+//                timeSpan = TimeSpan.FromSeconds(snapshot.StormEtaSeconds);
+//                fillAmount = snapshot.StormSleepPercent;
+//                if (timeSpan.TotalHours < 24.0)
+//                {
+//                    __instance.stormTitleText.text = __instance.StormComingOneDayKey.ToPlainText();
+//                    __instance.stormDescObject.SetActive(LevelManager.Instance.IsBaseLevel);
+//                }
+//                else
+//                {
+//                    __instance.stormTitleText.text = __instance.StormComingETAKey.ToPlainText();
+//                    __instance.stormDescObject.SetActive(false);
+//                }
+
+//                break;
+//        }
+
+//        if (timeSpan.TotalSeconds < 0)
+//            return true;
+
+//        __instance.stormFillImage.fillAmount = Mathf.Clamp01(fillAmount);
+//        __instance.stormText.text = string.Format("{0:000}:{1:00}", Mathf.FloorToInt((float)timeSpan.TotalHours), timeSpan.Minutes);
+//        return false;
+//    }
+//}
+
 [HarmonyPatch(typeof(GameManager), "get_Paused")]
 internal static class Patch_Paused_AlwaysFalse
 {
@@ -299,7 +268,7 @@ internal static class Patch_Paused_AlwaysFalse
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true;
 
-        __result = mod.Pausebool;
+        __result = false;
 
         return false;
     }

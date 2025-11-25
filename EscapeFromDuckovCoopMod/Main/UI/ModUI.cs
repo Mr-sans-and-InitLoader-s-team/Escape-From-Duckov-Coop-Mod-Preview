@@ -31,7 +31,7 @@ public class ModUI : MonoBehaviour
     private readonly List<string> _hostList = new();
     private readonly HashSet<string> _hostSet = new();
     public readonly KeyCode readyKey = KeyCode.J;
-    private string _manualIP = "192.168.123.1";
+    private string _manualIP = "127.0.0.1";
     private string _manualPort = "9050";
     private int _port = 9050;
     private string _status = "";
@@ -119,8 +119,7 @@ public class ModUI : MonoBehaviour
             var h = 220f;
             var area = new Rect(10, Screen.height * 0.5f - h * 0.5f, 320, h);
             GUILayout.BeginArea(area, GUI.skin.box);
-            // 🌏 使用中文场景名称
-            GUILayout.Label(CoopLocalization.Get("ui.vote.mapVote", Utils.SceneNameMapper.GetDisplayName(SceneNet.Instance.sceneTargetId)));
+            GUILayout.Label(CoopLocalization.Get("ui.vote.mapVote", SceneInfoCollection.GetSceneInfo(SceneNet.Instance.sceneTargetId).DisplayName));
             var readyStatus = SceneNet.Instance.localReady ? CoopLocalization.Get("ui.vote.ready") : CoopLocalization.Get("ui.vote.notReady");
             GUILayout.Label(CoopLocalization.Get("ui.vote.pressKey", readyKey, readyStatus));
 

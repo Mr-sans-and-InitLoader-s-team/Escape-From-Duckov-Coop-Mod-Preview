@@ -14,7 +14,8 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
+using System;
+using System.Collections.Generic;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -30,6 +31,8 @@ public class SendLocalPlayerStatus : MonoBehaviour
     private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
     private bool networkStarted => Service != null && Service.networkStarted;
     private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+    private Vector3 _lastSentPosition;
+    private double _lastSentTime;
 
     public void Init()
     {
@@ -40,39 +43,54 @@ public class SendLocalPlayerStatus : MonoBehaviour
     {
         if (!IsServer) return;
 
-        var statuses = new List<PlayerStatus> { localPlayerStatus };
-        foreach (var kvp in playerStatuses) statuses.Add(kvp.Value);
+        var statuses = new List<PlayerStatusPayload>();
 
-        writer.Reset();
-        writer.Put((byte)Op.PLAYER_STATUS_UPDATE); // opcode
-        writer.Put(statuses.Count);
+        var localEquipment = LocalPlayerManager.Instance.GetLocalEquipment();
+        var localWeapons = LocalPlayerManager.Instance.GetLocalWeapons();
 
-        foreach (var st in statuses)
+        statuses.Add(new PlayerStatusPayload
         {
-            writer.Put(st.EndPoint);
-            writer.Put(st.PlayerName);
-            writer.Put(st.Latency);
-            writer.Put(st.IsInGame);
-            writer.PutVector3(st.Position);
-            writer.PutQuaternion(st.Rotation);
+            PlayerId = localPlayerStatus.EndPoint,
+            PlayerName = localPlayerStatus.PlayerName,
+            Latency = 0,
+            IsInGame = localPlayerStatus.IsInGame,
+            Position = localPlayerStatus.Position,
+            Rotation = localPlayerStatus.Rotation,
+            SceneId = localPlayerStatus.SceneId,
+            CustomFaceJson = localPlayerStatus.CustomFaceJson,
+            Equipment = localEquipment.ToArray(),
+            Weapons = localWeapons.ToArray()
+        });
 
-            var sid = st.SceneId;
-            writer.Put(sid ?? string.Empty);
+        foreach (var kvp in playerStatuses)
+        {
+            var st = kvp.Value;
+            if (st == null) continue;
 
-            // ✅ 不再发送 faceJson，保持小包快速传输
-            // writer.Put(st.CustomFaceJson ?? "");
+            var equipmentList = st.EquipmentList ?? new List<EquipmentSyncData>();
+            var weaponList = st.WeaponList ?? new List<WeaponSyncData>();
 
-            var equipmentList = st == localPlayerStatus ? LocalPlayerManager.Instance.GetLocalEquipment() : st.EquipmentList ?? new List<EquipmentSyncData>();
-            writer.Put(equipmentList.Count);
-            foreach (var e in equipmentList) e.Serialize(writer);
-
-            var weaponList = st == localPlayerStatus ? LocalPlayerManager.Instance.GetLocalWeapons() : st.WeaponList ?? new List<WeaponSyncData>();
-            writer.Put(weaponList.Count);
-            foreach (var w in weaponList) w.Serialize(writer);
+            statuses.Add(new PlayerStatusPayload
+            {
+                PlayerId = st.EndPoint,
+                PlayerName = st.PlayerName,
+                Latency = st.Latency,
+                IsInGame = st.IsInGame,
+                Position = st.Position,
+                Rotation = st.Rotation,
+                SceneId = st.SceneId,
+                CustomFaceJson = st.CustomFaceJson,
+                Equipment = equipmentList.ToArray(),
+                Weapons = weaponList.ToArray()
+            });
         }
 
-        // 使用 SendSmart 自动选择传输方式（PLAYER_STATUS_UPDATE → Important → ReliableSequenced）
-        netManager.SendSmart(writer, Op.PLAYER_STATUS_UPDATE);
+        var rpc = new PlayerStatusUpdateRpc
+        {
+            Players = statuses.ToArray()
+        };
+
+        CoopTool.SendRpc(in rpc);
     }
 
 
@@ -90,33 +108,41 @@ public class SendLocalPlayerStatus : MonoBehaviour
         var fwd = mr ? mr.forward : tr.forward;
         if (fwd.sqrMagnitude < 1e-12f) fwd = Vector3.forward;
 
+        var now = Time.unscaledTimeAsDouble;
+        var vel = Vector3.zero;
+        if (_lastSentTime > 0d)
+        {
+            var dt = now - _lastSentTime;
+            if (dt > 1e-6) vel = (pos - _lastSentPosition) / (float)dt;
+        }
 
-        writer.Reset();
-        writer.Put((byte)Op.POSITION_UPDATE);
-        writer.Put(localPlayerStatus.EndPoint);
+        _lastSentPosition = pos;
+        _lastSentTime = now;
 
-        // 统一：量化坐标 + 方向
-        writer.PutV3cm(pos);
-        writer.PutDir(fwd);
+        var rpc = new PlayerPositionUpdateRpc
+        {
+            EndPoint = localPlayerStatus.EndPoint,
+            Position = pos,
+            Forward = fwd,
+            Velocity = vel,
+            Timestamp = now
+        };
 
-        // 使用 SendSmart 自动选择传输方式（POSITION_UPDATE → Frequent → Unreliable）
-        if (IsServer) netManager.SendSmart(writer, Op.POSITION_UPDATE);
-        else connectedPeer?.SendSmart(writer, Op.POSITION_UPDATE);
+        CoopTool.SendRpc(in rpc);
     }
 
     public void SendEquipmentUpdate(EquipmentSyncData equipmentData)
     {
         if (localPlayerStatus == null || !networkStarted) return;
 
-        writer.Reset();
-        writer.Put((byte)Op.EQUIPMENT_UPDATE);
-        writer.Put(localPlayerStatus.EndPoint);
-        writer.Put(equipmentData.SlotHash);
-        writer.Put(equipmentData.ItemId ?? "");
+        var rpc = new EquipmentUpdateRpc
+        {
+            PlayerId = localPlayerStatus.EndPoint,
+            SlotHash = equipmentData.SlotHash,
+            ItemId = equipmentData.ItemId ?? string.Empty
+        };
 
-        // 使用 SendSmart 自动选择传输方式（EQUIPMENT_UPDATE → Important → ReliableSequenced）
-        if (IsServer) netManager.SendSmart(writer, Op.EQUIPMENT_UPDATE);
-        else connectedPeer?.SendSmart(writer, Op.EQUIPMENT_UPDATE);
+        CoopTool.SendRpc(in rpc);
     }
 
 
@@ -124,15 +150,14 @@ public class SendLocalPlayerStatus : MonoBehaviour
     {
         if (localPlayerStatus == null || !networkStarted) return;
 
-        writer.Reset();
-        writer.Put((byte)Op.PLAYERWEAPON_UPDATE); // opcode
-        writer.Put(localPlayerStatus.EndPoint);
-        writer.Put(weaponSyncData.SlotHash);
-        writer.Put(weaponSyncData.ItemId ?? "");
+        var rpc = new WeaponUpdateRpc
+        {
+            PlayerId = localPlayerStatus.EndPoint,
+            SlotHash = weaponSyncData.SlotHash,
+            ItemId = weaponSyncData.ItemId ?? string.Empty
+        };
 
-        // 使用 SendSmart 自动选择传输方式（PLAYERWEAPON_UPDATE → Important → ReliableSequenced）
-        if (IsServer) netManager.SendSmart(writer, Op.PLAYERWEAPON_UPDATE);
-        else connectedPeer?.SendSmart(writer, Op.PLAYERWEAPON_UPDATE);
+        CoopTool.SendRpc(in rpc);
     }
 
     public void SendAnimationStatus()
@@ -153,66 +178,20 @@ public class SendLocalPlayerStatus : MonoBehaviour
         var stateHash = state.shortNameHash;
         var normTime = state.normalizedTime;
 
-        writer.Reset();
-        writer.Put((byte)Op.ANIM_SYNC); // opcode
-
-        if (IsServer)
+        var rpc = new PlayerAnimationSyncRpc
         {
-            // 主机广播：带 playerId
-            writer.Put(localPlayerStatus.EndPoint);
-            writer.Put(anim.GetFloat("MoveSpeed"));
-            writer.Put(anim.GetFloat("MoveDirX"));
-            writer.Put(anim.GetFloat("MoveDirY"));
-            writer.Put(anim.GetBool("Dashing"));
-            writer.Put(anim.GetBool("Attack"));
-            writer.Put(anim.GetInteger("HandState"));
-            writer.Put(anim.GetBool("GunReady"));
-            writer.Put(stateHash);
-            writer.Put(normTime);
-            // 使用 SendSmart 自动选择传输方式（ANIM_SYNC → Frequent → Unreliable）
-            netManager.SendSmart(writer, Op.ANIM_SYNC);
-        }
-        else
-        {
-            // 客户端 -> 主机：不带 playerId
-            if (connectedPeer == null) return;
-            writer.Put(anim.GetFloat("MoveSpeed"));
-            writer.Put(anim.GetFloat("MoveDirX"));
-            writer.Put(anim.GetFloat("MoveDirY"));
-            writer.Put(anim.GetBool("Dashing"));
-            writer.Put(anim.GetBool("Attack"));
-            writer.Put(anim.GetInteger("HandState"));
-            writer.Put(anim.GetBool("GunReady"));
-            writer.Put(stateHash);
-            writer.Put(normTime);
-            // 使用 SendSmart 自动选择传输方式（ANIM_SYNC → Frequent → Unreliable）
-            connectedPeer.SendSmart(writer, Op.ANIM_SYNC);
-        }
-    }
+            PlayerId = localPlayerStatus?.EndPoint,
+            MoveSpeed = anim.GetFloat("MoveSpeed"),
+            MoveDirX = anim.GetFloat("MoveDirX"),
+            MoveDirY = anim.GetFloat("MoveDirY"),
+            IsDashing = anim.GetBool("Dashing"),
+            IsAttacking = anim.GetBool("Attack"),
+            HandState = anim.GetInteger("HandState"),
+            GunReady = anim.GetBool("GunReady"),
+            StateHash = stateHash,
+            NormTime = normTime
+        };
 
-
-    public void Net_ReportPlayerDeadTree(CharacterMainControl who)
-    {
-        // 仅客户端上报；主机不需要发
-        if (!networkStarted || IsServer || connectedPeer == null || who == null) return;
-
-        var item = who.CharacterItem; // 本机一定能拿到
-        if (item == null) return;
-
-        // 尸体位置/朝向尽量贴近角色模型
-        var pos = who.transform.position;
-        var rot = who.characterModel ? who.characterModel.transform.rotation : who.transform.rotation;
-
-        // 组包并发送
-        writer.Reset();
-        writer.Put((byte)Op.PLAYER_DEAD_TREE);
-        writer.PutV3cm(pos);
-        writer.PutQuaternion(rot);
-
-        // 把整棵物品"快照"写进包里
-        ItemTool.WriteItemSnapshot(writer, item);
-
-        // 使用 SendSmart 自动选择传输方式（PLAYER_DEAD_TREE → Critical → ReliableOrdered）
-        connectedPeer.SendSmart(writer, Op.PLAYER_DEAD_TREE);
+        CoopTool.SendRpc(in rpc);
     }
 }

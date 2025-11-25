@@ -36,7 +36,7 @@
     { "key": "ui.vote.readyIcon", "value": "준비됨" },
     { "key": "ui.vote.notReadyIcon", "value": "준비 안 됨" },
     { "key": "ui.vote.cancel", "value": "투표 취소" },
-    { "key": "ui.spectator.mode", "value": "관전 모드: 좌클릭 ▶ 다음 | 우클릭 ◀ 이전 | 관전 중" },
+    { "key": "ui.spectator.mode", "value": "관전 모드: 좌클릭 ▶ 다음 | 우클릭 ◀ 이전 | F8을 눌러 바로 결과 화면 (프리징 방지)" },
     { "key": "scene.waitingForHost", "value": "[Coop] 호스트 로딩 대기 중… (입장이 지연되면 100초 후 자동 입장)" },
     { "key": "scene.hostReady", "value": "호스트 준비 완료, 입장 중…" },
     { "key": "net.connectionSuccess", "value": "연결 성공: {0}" },
@@ -121,6 +121,14 @@
     { "key": "ui.manualConnect.hint", "value": "힌트: 연결하려면 레벨에 있어야 합니다" },
     { "key": "ui.actions.quickActions", "value": "빠른 작업" },
     { "key": "ui.debug.lootBoxCount", "value": "{0}개의 전리품 상자가 출력됨" },
+    { "key": "ui.difficulty.title", "value": "난이도" },
+    { "key": "ui.difficulty.hint", "value": "호스트가 AI 반응 속도와 전투력을 조정합니다." },
+    { "key": "ui.difficulty.current", "value": "현재: {0}" },
+    { "key": "ui.difficulty.easy", "value": "쉬움" },
+    { "key": "ui.difficulty.normal", "value": "보통" },
+    { "key": "ui.difficulty.hard", "value": "어려움" },
+    { "key": "ui.difficulty.veryHard", "value": "매우 어려움" },
+    { "key": "ui.difficulty.impossible", "value": "불가능" },
     { "key": "ui.hint.toggleUI", "value": "{0} 표시/숨기기" }
   ]
 }

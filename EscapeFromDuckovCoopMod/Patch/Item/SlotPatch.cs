@@ -16,18 +16,12 @@
 
 using ItemStatsSystem;
 using ItemStatsSystem.Items;
-using Object = UnityEngine.Object;
-using EscapeFromDuckovCoopMod.Net;  // 引入智能发送扩展方法
 
 namespace EscapeFromDuckovCoopMod;
 
 [HarmonyPatch(typeof(Slot), nameof(Slot.Plug))]
 public static class Patch_Slot_Plug_PickupCleanup
 {
-    private const float PICK_RADIUS = 2.5f; // 与库存补丁保持一致的半径
-    private const QueryTriggerInteraction QTI = QueryTriggerInteraction.Collide;
-    private const int LAYER_MASK = ~0;
-
     // 原签名：bool Plug(Item otherItem, out Item unpluggedItem, bool dontForce = false, Slot[] acceptableSlot = null, int acceptableSlotMask = 0)
     private static void Postfix(Slot __instance, Item otherItem, Item unpluggedItem, bool __result)
     {
@@ -36,130 +30,10 @@ public static class Patch_Slot_Plug_PickupCleanup
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return;
 
-        // --- 客户端：发拾取请求 + 本地销毁地上Agent ---
-        if (!mod.IsServer)
-        {
-            // A) 直接命中：字典里就是这个 item 引用（非合堆最常见）
-            if (TryFindId(COOPManager.ItemHandle.clientDroppedItems, otherItem, out var cid))
-            {
-                LocalDestroyAgent(otherItem);
-                SendPickupReq(mod, cid);
-                return;
-            }
+        var net = COOPManager.ItemNet;
+        if (net == null) return;
 
-            // B) 合堆/引用变化：用近场 NetDropTag 反查 ID
-            if (TryFindNearestTaggedId(otherItem, out var nearId))
-            {
-                LocalDestroyAgentById(COOPManager.ItemHandle.clientDroppedItems, nearId);
-                SendPickupReq(mod, nearId);
-            }
-
-            return;
-        }
-
-        // --- 主机：本地销毁并广播 DESPAWN ---
-        if (TryFindId(COOPManager.ItemHandle.serverDroppedItems, otherItem, out var sid))
-        {
-            ServerDespawn(mod, sid);
-            return;
-        }
-
-        if (TryFindNearestTaggedId(otherItem, out var nearSid)) ServerDespawn(mod, nearSid);
-    }
-
-    // ========= 工具函数（与库存补丁同等逻辑，自包含） =========
-    private static void SendPickupReq(ModBehaviourF mod, uint id)
-    {
-        var w = mod.writer;
-        w.Reset();
-        w.Put((byte)Op.ITEM_PICKUP_REQUEST);
-        w.Put(id);
-        mod.connectedPeer?.SendSmart(w, Op.ITEM_PICKUP_REQUEST);
-    }
-
-    private static void ServerDespawn(ModBehaviourF mod, uint id)
-    {
-        if (COOPManager.ItemHandle.serverDroppedItems.TryGetValue(id, out var it) && it != null)
-            LocalDestroyAgent(it);
-        COOPManager.ItemHandle.serverDroppedItems.Remove(id);
-
-        var w = mod.writer;
-        w.Reset();
-        w.Put((byte)Op.ITEM_DESPAWN);
-        w.Put(id);
-        mod.netManager.SendSmart(w, Op.ITEM_DESPAWN);
-    }
-
-    private static void LocalDestroyAgent(Item it)
-    {
-        try
-        {
-            var ag = it.ActiveAgent;
-            if (ag && ag.gameObject) Object.Destroy(ag.gameObject);
-        }
-        catch
-        {
-        }
-    }
-
-    private static void LocalDestroyAgentById(Dictionary<uint, Item> dict, uint id)
-    {
-        if (dict.TryGetValue(id, out var it) && it != null) LocalDestroyAgent(it);
-    }
-
-    private static bool TryFindId(Dictionary<uint, Item> dict, Item it, out uint id)
-    {
-        foreach (var kv in dict)
-            if (ReferenceEquals(kv.Value, it))
-            {
-                id = kv.Key;
-                return true;
-            }
-
-        id = 0;
-        return false;
-    }
-
-    // 近场反查：以“被装备的物品”的位置（或其 ActiveAgent 位置）为圆心搜 NetDropTag
-    private static bool TryFindNearestTaggedId(Item item, out uint id)
-    {
-        id = 0;
-        if (item == null) return false;
-
-        Vector3 center;
-        try
-        {
-            var ag = item.ActiveAgent;
-            center = ag ? ag.transform.position : item.transform.position;
-        }
-        catch
-        {
-            center = item.transform.position;
-        }
-
-        var cols = Physics.OverlapSphere(center, PICK_RADIUS, LAYER_MASK, QTI);
-        var best = float.MaxValue;
-        uint bestId = 0;
-
-        foreach (var c in cols)
-        {
-            var tag = c.GetComponentInParent<NetDropTag>();
-            if (tag == null) continue;
-            var d2 = (c.transform.position - center).sqrMagnitude;
-            if (d2 < best)
-            {
-                best = d2;
-                bestId = tag.id;
-            }
-        }
-
-        if (bestId != 0)
-        {
-            id = bestId;
-            return true;
-        }
-
-        return false;
+        net.HandleSlotItemEquipped(otherItem);
     }
 }
 
@@ -284,23 +158,16 @@ internal static class Patch_Slot_Unplug_ClientRedirect
         if (COOPManager.LootNet.ApplyingLootState) return true;
 
         // 关键：用 Master.InInventory 判断该槽位属于哪个容器
-        var master = __instance?.Master;
-        var inv = master ? master.InInventory : null;
+        var inv = __instance?.Master ? __instance.Master.InInventory : null;
         if (inv == null) return true;
-        // 仅在"公共战利品容器且非私有"时拦截
+        // 仅在“公共战利品容器且非私有”时拦截
         if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv))
             return true;
 
-        // ✅ 修复：发送卸载请求给服务端，而不是直接阻断
-        var slotKey = __instance?.Key;
-        if (!string.IsNullOrEmpty(slotKey) && master != null)
-        {
-            Debug.Log($"[Coop] Slot.Unplug@Loot -> 发送卸载请求: master={master.DisplayName}, slot={slotKey}");
-            COOPManager.LootNet.Client_RequestLootSlotUnplug(inv, master, slotKey);
-        }
-
+        // 统一做法：本地完全不执行 Unplug，等待我们在 AddAt/​AddAndMerge/​SendToInventory 的前缀里走网络
+        Debug.Log("[Coop] Slot.Unplug@Loot -> ignore (network-handled)");
         __result = null; // 别生成本地分离物
-        return false; // 阻断原始 Unplug，等待服务端广播
+        return false; // 阻断原始 Unplug
     }
 }
 
@@ -314,36 +181,17 @@ internal static class Patch_ServerBroadcast_OnSlotPlug
         if (m == null || !m.networkStarted || !m.IsServer) return;
         if (!__result || COOPManager.LootNet._serverApplyingLoot) return;
 
-        // ✅ 修复：场景切换时 LevelManager 可能正在初始化，跳过同步避免崩溃
-        try
-        {
-            if (LevelManager.Instance == null || LevelManager.LootBoxInventories == null)
-            {
-                return; // 场景初始化中，跳过
-            }
-        }
-        catch
-        {
-            return; // 访问 LootBoxInventories 失败，说明场景正在切换
-        }
-
         var master = __instance?.Master;
         var inv = master ? master.InInventory : null;
         if (!inv) return;
         if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
 
-        if (LootManager.Instance.Server_IsLootMuted(inv)) return; // ★ 静音期跳过
-
-        // ✅ 优化：延迟到帧结束时执行，减少场景加载时的性能压力
-        DeferedRunner.EndOfFrame(() =>
-        {
-            if (!inv || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
-            COOPManager.LootNet.Server_SendLootboxState(null, inv);
-        });
+        if (LootManager.Instance.Server_IsLootMuted(inv)) return; // ★ 新增
+        COOPManager.LootNet.Server_SendLootboxState(null, inv);
     }
 }
 
-// Slot.Unplug 主机在"容器里的武器"上拆配件
+// Slot.Unplug 主机在“容器里的武器”上拆配件
 [HarmonyPatch(typeof(Slot), nameof(Slot.Unplug))]
 internal static class Patch_ServerBroadcast_OnSlotUnplug
 {
@@ -353,29 +201,11 @@ internal static class Patch_ServerBroadcast_OnSlotUnplug
         if (m == null || !m.networkStarted || !m.IsServer) return;
         if (COOPManager.LootNet._serverApplyingLoot) return;
 
-        // ✅ 修复：场景切换时 LevelManager 可能正在初始化，跳过同步避免崩溃
-        try
-        {
-            if (LevelManager.Instance == null || LevelManager.LootBoxInventories == null)
-            {
-                return; // 场景初始化中，跳过
-            }
-        }
-        catch
-        {
-            return; // 访问 LootBoxInventories 失败，说明场景正在切换
-        }
-
         var master = __instance?.Master;
         var inv = master ? master.InInventory : null;
         if (!inv) return;
         if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
 
-        // ✅ 优化：延迟到帧结束时执行，减少场景加载时的性能压力
-        DeferedRunner.EndOfFrame(() =>
-        {
-            if (!inv || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
-            COOPManager.LootNet.Server_SendLootboxState(null, inv);
-        });
+        COOPManager.LootNet.Server_SendLootboxState(null, inv);
     }
 }

@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -21,28 +21,81 @@ public class WeaponRequest
     private NetService Service => NetService.Instance;
 
     private bool IsServer => Service != null && Service.IsServer;
-    private NetManager netManager => Service?.netManager;
-    private NetDataWriter writer => Service?.writer;
-    private NetPeer connectedPeer => Service?.connectedPeer;
     private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
     private bool networkStarted => Service != null && Service.networkStarted;
 
-    public void BroadcastMeleeSwing(string playerId, float dealDelay)
+    private static ProjectileContext BuildPayload(ItemAgent_Gun gun, out bool hasPayload)
     {
-        foreach (var p in netManager.ConnectedPeerList)
+        var ctx = new ProjectileContext();
+        hasPayload = false;
+        if (!gun) return ctx;
+
+        var hasBulletItem = gun.BulletItem != null;
+        try
         {
-            var w = new NetDataWriter();
-            w.Put((byte)Op.MELEE_ATTACK_SWING);
-            w.Put(playerId);
-            w.Put(dealDelay);
-            p.Send(w, DeliveryMethod.ReliableOrdered);
+            var charMul = gun.CharacterDamageMultiplier;
+            var bulletMul = hasBulletItem ? Mathf.Max(0.0001f, gun.BulletDamageMultiplier) : 1f;
+            var shots = Mathf.Max(1, gun.ShotCount);
+            ctx.damage = gun.Damage * bulletMul * charMul / shots;
+            if (gun.Damage > 1f && ctx.damage < 1f) ctx.damage = 1f;
+            hasPayload |= ctx.damage > 0f;
         }
+        catch { }
+
+        try
+        {
+            var bulletCritRateGain = hasBulletItem ? gun.bulletCritRateGain : 0f;
+            var bulletCritDmgGain = hasBulletItem ? gun.BulletCritDamageFactorGain : 0f;
+            ctx.critDamageFactor = (gun.CritDamageFactor + bulletCritDmgGain) * (1f + gun.CharacterGunCritDamageGain);
+            ctx.critRate = gun.CritRate * (1f + gun.CharacterGunCritRateGain + bulletCritRateGain);
+            hasPayload |= ctx.critDamageFactor > 0f || ctx.critRate > 0f;
+        }
+        catch { }
+
+        try
+        {
+            var apGain = hasBulletItem ? gun.BulletArmorPiercingGain : 0f;
+            var abGain = hasBulletItem ? gun.BulletArmorBreakGain : 0f;
+            ctx.armorPiercing = gun.ArmorPiercing + apGain;
+            ctx.armorBreak = gun.ArmorBreak + abGain;
+            hasPayload |= ctx.armorPiercing > 0f || ctx.armorBreak > 0f;
+        }
+        catch { }
+
+        try
+        {
+            var setting = gun.GunItemSetting;
+            if (setting != null)
+                switch (setting.element)
+                {
+                    case ElementTypes.physics: ctx.element_Physics = 1f; break;
+                    case ElementTypes.fire: ctx.element_Fire = 1f; break;
+                    case ElementTypes.poison: ctx.element_Poison = 1f; break;
+                    case ElementTypes.electricity: ctx.element_Electricity = 1f; break;
+                    case ElementTypes.space: ctx.element_Space = 1f; break;
+                }
+
+            ctx.explosionRange = gun.BulletExplosionRange;
+            ctx.explosionDamage = gun.BulletExplosionDamage * gun.ExplosionDamageMultiplier;
+            if (hasBulletItem)
+            {
+                ctx.buffChance = gun.BulletBuffChanceMultiplier * gun.BuffChance;
+                ctx.bleedChance = gun.BulletBleedChance;
+            }
+
+            ctx.penetrate = gun.Penetrate;
+            ctx.fromWeaponItemID = gun.Item != null ? gun.Item.TypeID : 0;
+            hasPayload |= ctx.explosionRange > 0f || ctx.explosionDamage > 0f || ctx.penetrate != 0;
+        }
+        catch { }
+
+        return ctx;
     }
 
-    // 客户端：拦截本地生成后，向主机发开火请求（带上 clientScatter / ads01）
+    // 客户端：拦截本地生成后，向主机发开火请求
     public void Net_OnClientShoot(ItemAgent_Gun gun, Vector3 muzzle, Vector3 baseDir, Vector3 firstCheckStart)
     {
-        if (IsServer || connectedPeer == null) return;
+        if (IsServer || !networkStarted || localPlayerStatus == null) return;
 
         if (baseDir.sqrMagnitude < 1e-8f)
         {
@@ -56,89 +109,47 @@ public class WeaponRequest
             FxManager.Client_PlayLocalShotFx(gun, gun.muzzle, weaponType);
         }
 
-        writer.Reset();
-        writer.Put((byte)Op.FIRE_REQUEST); // opcode
-        writer.Put(localPlayerStatus.EndPoint); // shooterId
-        writer.Put(gun.Item.TypeID); // weaponType
-        writer.PutV3cm(muzzle);
-        writer.PutDir(baseDir);
-        writer.PutV3cm(firstCheckStart);
+        var speed = gun.BulletSpeed * (gun.Holder ? gun.Holder.GunBulletSpeedMultiplier : 1f);
+        var distance = gun.BulletDistance + 0.4f;
 
-        // === 新增：把当前这一枪的散布与ADS状态作为提示发给主机 ===
-        var clientScatter = 0f;
-        var ads01 = 0f;
-        try
+        var payload = BuildPayload(gun, out var hasPayload);
+        payload.firstFrameCheckStartPoint = firstCheckStart;
+        payload.team = gun.Holder ? gun.Holder.Team : (int)Teams.player;
+
+        var rpc = new WeaponFireRequestRpc
         {
-            clientScatter = Mathf.Max(0f, gun.CurrentScatter); // 客户端这帧真实散布（已包含ADS影响）
-            ads01 = gun.IsInAds ? 1f : 0f;
-        }
-        catch
-        {
-        }
+            ShooterId = localPlayerStatus.EndPoint,
+            WeaponTypeId = gun.Item.TypeID,
+            MuzzlePosition = muzzle,
+            Direction = baseDir,
+            Speed = speed,
+            Distance = distance,
+            PlayFx = true,
+            Team = (int)payload.team,
+            AiId = 0,
+            HasPayload = hasPayload,
+            Payload = payload
+        };
 
-        writer.Put(clientScatter);
-        writer.Put(ads01);
-
-        // 仍旧带原有的“提示载荷”，用于爆炸等参数兜底
-        var hint = new ProjectileContext();
-        try
-        {
-            var hasBulletItem = gun.BulletItem != null;
-
-            // 伤害
-            var charMul = gun.CharacterDamageMultiplier;
-            var bulletMul = hasBulletItem ? Mathf.Max(0.0001f, gun.BulletDamageMultiplier) : 1f;
-            var shots = Mathf.Max(1, gun.ShotCount);
-            hint.damage = gun.Damage * bulletMul * charMul / shots;
-            if (gun.Damage > 1f && hint.damage < 1f) hint.damage = 1f;
-
-            // 暴击
-            var bulletCritRateGain = hasBulletItem ? gun.bulletCritRateGain : 0f;
-            var bulletCritDmgGain = hasBulletItem ? gun.BulletCritDamageFactorGain : 0f;
-            hint.critDamageFactor = (gun.CritDamageFactor + bulletCritDmgGain) * (1f + gun.CharacterGunCritDamageGain);
-            hint.critRate = gun.CritRate * (1f + gun.CharacterGunCritRateGain + bulletCritRateGain);
-
-            // 元素/破甲/爆炸/流血等（保持你原有写法）
-            switch (gun.GunItemSetting.element)
-            {
-                case ElementTypes.physics: hint.element_Physics = 1f; break;
-                case ElementTypes.fire: hint.element_Fire = 1f; break;
-                case ElementTypes.poison: hint.element_Poison = 1f; break;
-                case ElementTypes.electricity: hint.element_Electricity = 1f; break;
-                case ElementTypes.space: hint.element_Space = 1f; break;
-            }
-
-            hint.armorPiercing = gun.ArmorPiercing + (hasBulletItem ? gun.BulletArmorPiercingGain : 0f);
-            hint.armorBreak = gun.ArmorBreak + (hasBulletItem ? gun.BulletArmorBreakGain : 0f);
-            hint.explosionRange = gun.BulletExplosionRange;
-            hint.explosionDamage = gun.BulletExplosionDamage * gun.ExplosionDamageMultiplier;
-            if (hasBulletItem)
-            {
-                hint.buffChance = gun.BulletBuffChanceMultiplier * gun.BuffChance;
-                hint.bleedChance = gun.BulletBleedChance;
-            }
-
-            hint.penetrate = gun.Penetrate;
-            hint.fromWeaponItemID = gun.Item != null ? gun.Item.TypeID : 0;
-        }
-        catch
-        {
-            /* 忽略 */
-        }
-
-        writer.PutProjectilePayload(hint); // 带着提示载荷发给主机
-        connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+        CoopTool.SendRpc(in rpc);
     }
 
     // 客户端：近战起手用于远端看得见
     public void Net_OnClientMeleeAttack(float dealDelay, Vector3 snapPos, Vector3 snapDir)
     {
-        if (!networkStarted || IsServer || connectedPeer == null) return;
-        writer.Reset();
-        writer.Put((byte)Op.MELEE_ATTACK_REQUEST);
-        writer.Put(dealDelay);
-        writer.PutV3cm(snapPos);
-        writer.PutDir(snapDir);
-        connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
+        if (!networkStarted || IsServer) return;
+        var pid = localPlayerStatus?.EndPoint;
+        if (string.IsNullOrEmpty(pid))
+            pid = NetService.Instance?.GetSelfNetworkId();
+
+        var rpc = new MeleeSwingRequestRpc
+        {
+            PlayerId = pid ?? string.Empty,
+            DealDelay = dealDelay,
+            SnapshotPosition = snapPos,
+            SnapshotDirection = snapDir
+        };
+        Debug.Log("Net_OnClientMeleeAttack "+ rpc.PlayerId);
+        CoopTool.SendRpc(in rpc);
     }
 }

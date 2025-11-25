@@ -42,3 +42,15 @@ internal static class Patch_MagicBlend_Update_ForRemote
         return true;
     }
 }
+
+[HarmonyPatch(typeof(CharacterAnimationControl), "Update")]
+internal static class Patch_CharacterAnimationControl_Update_ForRemote
+{
+    private static bool Prefix(CharacterAnimationControl __instance)
+    {
+        // 远端实体：禁用本地“写Animator参数”的逻辑，避免覆盖网络同步
+        if (__instance && __instance.GetComponentInParent<RemoteReplicaTag>() != null)
+            return false;
+        return true;
+    }
+}

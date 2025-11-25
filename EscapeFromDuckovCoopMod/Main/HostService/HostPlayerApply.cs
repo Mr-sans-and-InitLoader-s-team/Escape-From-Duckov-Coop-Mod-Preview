@@ -15,6 +15,7 @@
 // GNU Affero General Public License for more details.
 
 using Duckov.Utilities;
+using ItemStatsSystem;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -53,64 +54,70 @@ public class HostPlayerApply
             if (slotHash == 500) COOPManager.ChangeHeadsetModel(characterModel, null);
             return;
         }
+        if(int.TryParse(itemId, out var ids1))
+        {
+            var item = await COOPManager.GetItemAsync(ids1);
+            remoteObj.GetComponent<CharacterMainControl>().CharacterItem.TryPlug(item);
+        }
+       
 
-        string slotName = null;
-        if (slotHash == CharacterEquipmentController.armorHash)
-        {
-            slotName = "armorSlot";
-        }
-        else if (slotHash == CharacterEquipmentController.helmatHash)
-        {
-            slotName = "helmatSlot";
-        }
-        else if (slotHash == CharacterEquipmentController.faceMaskHash)
-        {
-            slotName = "faceMaskSlot";
-        }
-        else if (slotHash == CharacterEquipmentController.backpackHash)
-        {
-            slotName = "backpackSlot";
-        }
-        else if (slotHash == CharacterEquipmentController.headsetHash)
-        {
-            slotName = "headsetSlot";
-        }
-        else
-        {
-            if (!string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var ids))
-            {
-                Debug.Log($"尝试更新装备: {peer.EndPoint}, Slot={slotHash}, ItemId={itemId}");
-                var item = await COOPManager.GetItemAsync(ids);
-                if (item == null) Debug.LogWarning($"无法获取物品: ItemId={itemId}，槽位 {slotHash} 未更新");
-                if (slotHash == 100) COOPManager.ChangeArmorModel(characterModel, item);
-                if (slotHash == 200) COOPManager.ChangeHelmatModel(characterModel, item);
-                if (slotHash == 300) COOPManager.ChangeFaceMaskModel(characterModel, item);
-                if (slotHash == 400) COOPManager.ChangeBackpackModel(characterModel, item);
-                if (slotHash == 500) COOPManager.ChangeHeadsetModel(characterModel, item);
-            }
+        //string slotName = null;
+        //if (slotHash == CharacterEquipmentController.armorHash)
+        //{
+        //    slotName = "armorSlot";
+        //}
+        //else if (slotHash == CharacterEquipmentController.helmatHash)
+        //{
+        //    slotName = "helmatSlot";
+        //}
+        //else if (slotHash == CharacterEquipmentController.faceMaskHash)
+        //{
+        //    slotName = "faceMaskSlot";
+        //}
+        //else if (slotHash == CharacterEquipmentController.backpackHash)
+        //{
+        //    slotName = "backpackSlot";
+        //}
+        //else if (slotHash == CharacterEquipmentController.headsetHash)
+        //{
+        //    slotName = "headsetSlot";
+        //}
+        //else
+        //{
+        //    if (!string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var ids))
+        //    {
+        //        Debug.Log($"尝试更新装备: {peer.EndPoint}, Slot={slotHash}, ItemId={itemId}");
+        //        var item = await COOPManager.GetItemAsync(ids);
+        //        if (item == null) Debug.LogWarning($"无法获取物品: ItemId={itemId}，槽位 {slotHash} 未更新");
+        //        if (slotHash == 100) COOPManager.ChangeArmorModel(characterModel, item);
+        //        if (slotHash == 200) COOPManager.ChangeHelmatModel(characterModel, item);
+        //        if (slotHash == 300) COOPManager.ChangeFaceMaskModel(characterModel, item);
+        //        if (slotHash == 400) COOPManager.ChangeBackpackModel(characterModel, item);
+        //        if (slotHash == 500) COOPManager.ChangeHeadsetModel(characterModel, item);
+        //    }
 
-            return;
-        }
+        //    return;
+        //}
 
-        try
-        {
-            if (int.TryParse(itemId, out var ids))
-            {
-                var item = await COOPManager.GetItemAsync(ids);
-                if (item != null)
-                {
-                    if (slotName == "armorSlot") COOPManager.ChangeArmorModel(characterModel, item);
-                    if (slotName == "helmatSlot") COOPManager.ChangeHelmatModel(characterModel, item);
-                    if (slotName == "faceMaskSlot") COOPManager.ChangeFaceMaskModel(characterModel, item);
-                    if (slotName == "backpackSlot") COOPManager.ChangeBackpackModel(characterModel, item);
-                    if (slotName == "headsetSlot") COOPManager.ChangeHeadsetModel(characterModel, item);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"更新装备失败(主机): {peer.EndPoint}, SlotHash={slotHash}, ItemId={itemId}, 错误: {ex.Message}");
-        }
+        //try
+        //{
+        //    if (int.TryParse(itemId, out var ids))
+        //    {
+        //        var item = await COOPManager.GetItemAsync(ids);
+        //        if (item != null)
+        //        {
+        //            if (slotName == "armorSlot") COOPManager.ChangeArmorModel(characterModel, item);
+        //            if (slotName == "helmatSlot") COOPManager.ChangeHelmatModel(characterModel, item);
+        //            if (slotName == "faceMaskSlot") COOPManager.ChangeFaceMaskModel(characterModel, item);
+        //            if (slotName == "backpackSlot") COOPManager.ChangeBackpackModel(characterModel, item);
+        //            if (slotName == "headsetSlot") COOPManager.ChangeHeadsetModel(characterModel, item);
+        //        }
+        //    }
+        //}
+        //catch (Exception ex)
+        //{
+        //    Debug.LogError($"更新装备失败(主机): {peer.EndPoint}, SlotHash={slotHash}, ItemId={itemId}, 错误: {ex.Message}");
+        //}
     }
 
     public async UniTask ApplyWeaponUpdate(NetPeer peer, int slotHash, string itemId)
@@ -143,17 +150,9 @@ public class HostPlayerApply
                 var item = await COOPManager.GetItemAsync(typeId);
                 if (item != null)
                 {
-                    CoopTool.SafeKillItemAgent(item);
 
-                    // 只清目标插槽，避免多余的三处全清
-                    CoopTool.ClearWeaponSlot(model, socket);
-
-                    // 等一帧让销毁真正完成，避免“已有 agent”撞车
-                    await UniTask.NextFrame();
-
-                    // 挂载目标
-                    COOPManager.ChangeWeaponModel(model, item, socket);
-
+                    cm.CharacterItem.TryPlug(item);
+                    cm.ChangeHoldItem(item);
                     try
                     {
                         await UniTask.NextFrame(); // 让挂载真正生效，避免同帧取不到组件

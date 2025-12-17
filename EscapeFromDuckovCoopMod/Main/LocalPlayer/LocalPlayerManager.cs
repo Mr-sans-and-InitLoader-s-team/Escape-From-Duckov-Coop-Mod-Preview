@@ -17,6 +17,7 @@
 using Duckov.Scenes;
 using Duckov.Utilities;
 using ItemStatsSystem.Items;
+using Steamworks;
 using System;
 using UnityEngine.SceneManagement;
 
@@ -68,10 +69,13 @@ public class LocalPlayerManager : MonoBehaviour
         var selfId = Service != null
             ? Service.GetSelfNetworkId()
             : (IsServer ? $"Host:{port}" : $"Client:{Guid.NewGuid().ToString().Substring(0, 8)}");
+
+        var playerName = GetSteamPlayerName();
+
         Service.localPlayerStatus = new PlayerStatus
         {
             EndPoint = selfId,
-            PlayerName = IsServer ? "Host" : "Client",
+            PlayerName = playerName,
             Latency = 0,
             IsInGame = bool1,
             LastIsInGame = bool1,
@@ -81,6 +85,23 @@ public class LocalPlayerManager : MonoBehaviour
             CustomFaceJson = CustomFace.LoadLocalCustomFaceJson()
         };
         _localInvincibleUntil = 0f;
+    }
+
+    public static string GetSteamPlayerName()
+    {
+        try
+        {
+            if (SteamManager.Initialized)
+            {
+                var steamName = SteamFriends.GetPersonaName();
+                if (!string.IsNullOrWhiteSpace(steamName))
+                    return steamName;
+            }
+        }
+        catch
+        {
+        }
+        return "Player";
     }
 
     public bool IsLocalInvincible()

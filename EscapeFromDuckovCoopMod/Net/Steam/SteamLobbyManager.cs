@@ -305,7 +305,7 @@ namespace EscapeFromDuckovCoopMod
             _isHost = true;
 
             Debug.Log($"[SteamLobby] Lobby创建成功: {_currentLobbyId}");
-            Debug.Log("[SteamLobby] ✓ 设置为主机模式");
+            Debug.Log("[SteamLobby] Set as host mode");
 
             ApplyLobbyMetadata(_pendingLobbyOptions);
         }
@@ -382,13 +382,13 @@ namespace EscapeFromDuckovCoopMod
 
                 if (hostId == myId)
                 {
-                    Debug.Log("[SteamLobby] ✓ 我是主机，启动联机服务器");
+                    Debug.Log("[SteamLobby] I am host, starting multiplayer server");
                     _isHost = true;
                     SteamLobbyHelper.TriggerMultiplayerHost();
                 }
                 else
                 {
-                    Debug.Log("[SteamLobby] ✓ 我是客户端，准备连接到主机");
+                    Debug.Log("[SteamLobby] I am client, preparing to connect to host");
                     _isHost = false;
 
                     if (SteamEndPointMapper.Instance != null)

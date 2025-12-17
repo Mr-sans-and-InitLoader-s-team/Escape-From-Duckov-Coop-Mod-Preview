@@ -362,3 +362,27 @@ internal static class NcMainRedirector
 //        return true;
 //    }
 //}
+
+[HarmonyPatch(typeof(Duckov.MiniMaps.SimplePointOfInterest), "get_DisplayName")]
+public class SimplePointOfInterest_DisplayName_Patch
+{
+    static bool Prefix(Duckov.MiniMaps.SimplePointOfInterest __instance, ref string __result)
+    {
+        try
+        {
+            GameObject obj = __instance.gameObject;
+
+            if (ModBehaviourF.PhantomPlayerNames.TryGetValue(obj, out var playerName))
+            {
+                __result = playerName;
+                return false;
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[联机] SimplePointOfInterest_DisplayName_Patch出错: {e.Message}");
+        }
+
+        return true;
+    }
+}

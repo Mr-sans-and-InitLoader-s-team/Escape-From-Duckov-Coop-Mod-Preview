@@ -183,10 +183,10 @@ public class NetService : MonoBehaviour, INetEventListener
                 Debug.Log($"[Patch_OnPeerDisconnected] 关闭Steam P2P会话: {remoteSteamID}");
                 if (SteamNetworking.CloseP2PSessionWithUser(remoteSteamID))
                 {
-                    Debug.Log($"[Patch_OnPeerDisconnected] ✓ 成功关闭P2P会话");
+                    Debug.Log($"[Patch_OnPeerDisconnected] P2P session closed");
                 }
                 SteamEndPointMapper.Instance.UnregisterSteamID(remoteSteamID);
-                Debug.Log($"[Patch_OnPeerDisconnected] ✓ 已清理映射");
+                Debug.Log($"[Patch_OnPeerDisconnected] Mapping cleared");
                 if (SteamP2PManager.Instance != null)
                 {
                     SteamP2PManager.Instance.ClearAcceptedSession(remoteSteamID);
@@ -342,7 +342,7 @@ public class NetService : MonoBehaviour, INetEventListener
             {
                 // 使用 Steam P2P 时让 LiteNetLib 不去占 UDP socket
                 netManager.UseNativeSockets = false;
-                Debug.Log("[StartNetwork] ✓ UseNativeSockets=false（P2P 模式）");
+                Debug.Log("[StartNetwork] UseNativeSockets=false (P2P mode)");
             }
 
             // 保险：确保必要组件存在（Loader.Init 一般已创建）

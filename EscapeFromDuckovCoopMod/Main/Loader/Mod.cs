@@ -56,6 +56,8 @@ public class ModBehaviourF : MonoBehaviour
 
     public static readonly Dictionary<int, Pending> map = new();
 
+    public static readonly Dictionary<GameObject, string> PhantomPlayerNames = new();
+
     private static Transform _fallbackMuzzleAnchor;
     public float broadcastTimer;
     public float syncTimer;
@@ -226,7 +228,7 @@ public class ModBehaviourF : MonoBehaviour
                 {
                     NetService.Instance.netManager.UpdateTime = 1;
                     SteamP2PLoader.Instance._isOptimized = true;
-                    Debug.Log("[SteamP2P扩展] ✓ LiteNetLib网络线程已优化 (1ms 更新周期)");
+                    Debug.Log("[SteamP2P] LiteNetLib thread optimized (1ms update cycle)");
                 }
             }
         }
@@ -685,5 +687,21 @@ public class ModBehaviourF : MonoBehaviour
         public Inventory inv;
         public int srcPos;
         public int count;
+    }
+
+    public void AddPhantomMapMarker(GameObject phantom, string playerName)
+    {
+        try
+        {
+            var pointOfInterest = phantom.AddComponent<Duckov.MiniMaps.SimplePointOfInterest>();
+
+            PhantomPlayerNames[phantom] = playerName;
+
+            Debug.Log($"[联机幻影] 已为幻影 {playerName} 添加地图标记");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[联机幻影] 添加地图标记失败: {ex.Message}");
+        }
     }
 }

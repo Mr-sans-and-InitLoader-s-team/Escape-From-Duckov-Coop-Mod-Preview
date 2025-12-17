@@ -82,7 +82,7 @@ namespace EscapeFromDuckovCoopMod
             }
             if (!sessionEstablished)
             {
-                Debug.LogError($"[SteamEndPointMapper] ❌ P2P会话建立超时（{timeoutSeconds}秒）");
+                Debug.LogError($"[SteamEndPointMapper] P2P session timeout ({timeoutSeconds}s)");
                 callback?.Invoke(false);
             }
             else

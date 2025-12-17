@@ -2862,7 +2862,7 @@ public class MModUI : MonoBehaviour
 
         if (lobby.RequiresPassword)
         {
-            CreateBadge(nameRow.transform, "🔒", ModernColors.Warning);
+            CreateBadge(nameRow.transform, "PWD", ModernColors.Warning);
         }
 
         // 房间信息

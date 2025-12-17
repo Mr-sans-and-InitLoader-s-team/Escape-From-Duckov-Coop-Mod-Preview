@@ -282,9 +282,9 @@ namespace EscapeFromDuckovCoopMod
             currentTranslations["ui.vote.ready"] = "Ready";
             currentTranslations["ui.vote.notReady"] = "Not Ready";
             currentTranslations["ui.vote.playerReadyStatus"] = "Player Ready Status:";
-            currentTranslations["ui.vote.readyIcon"] = "✅ Ready";
-            currentTranslations["ui.vote.notReadyIcon"] = "⌛ Not Ready";
-            currentTranslations["ui.spectator.mode"] = "Spectator Mode: LMB ▶ Next | RMB ◀ Previous | Press F8 to end and view results (failsafe)";
+            currentTranslations["ui.vote.readyIcon"] = "[Ready]";
+            currentTranslations["ui.vote.notReadyIcon"] = "[Not Ready]";
+            currentTranslations["ui.spectator.mode"] = "Spectator Mode: LMB > Next | RMB < Previous | Press F8 to end and view results (failsafe)";
 
             // Scene 관련
             currentTranslations["scene.waitingForHost"] = "[Coop] Waiting for host to finish loading… (Auto-enter after 100s if delayed)";

@@ -352,7 +352,7 @@ public class ModUI : MonoBehaviour
                 var lobbyLabel = $"{lobby.LobbyName} ({lobby.MemberCount}/{lobby.MaxMembers})";
                 if (lobby.RequiresPassword)
                 {
-                    lobbyLabel += " 🔒";
+                    lobbyLabel += " [PWD]";
                 }
 
                 GUILayout.Label(lobbyLabel);

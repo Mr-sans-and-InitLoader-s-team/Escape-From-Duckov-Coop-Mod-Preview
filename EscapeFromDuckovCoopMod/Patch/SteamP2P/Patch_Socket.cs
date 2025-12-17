@@ -270,7 +270,7 @@ namespace EscapeFromDuckovCoopMod
                             {
                                 if (sessionState.m_nBytesQueuedForSend > 50000)
                                 {
-                                    Debug.LogWarning($"[Patch_SendTo] ⚠️ 发送队列积压: {sessionState.m_nBytesQueuedForSend} bytes");
+                                    Debug.LogWarning($"[Patch_SendTo] Send queue backlog: {sessionState.m_nBytesQueuedForSend} bytes");
                                 }
                             }
                         }
@@ -288,13 +288,13 @@ namespace EscapeFromDuckovCoopMod
                         }
                         else
                         {
-                            Debug.LogError($"[Patch_SendTo] ❌ Steam P2P发送失败！DeliveryMethod={deliveryMethod}, Size={size}");
+                            Debug.LogError($"[Patch_SendTo] Steam P2P send failed! DeliveryMethod={deliveryMethod}, Size={size}");
                             return true;
                         }
                     }
                     else
                     {
-                        Debug.LogWarning($"[Patch_SendTo] ❌ 虚拟端点 {ipEndPoint} 没有对应的Steam ID映射");
+                        Debug.LogWarning($"[Patch_SendTo] Virtual endpoint {ipEndPoint} has no Steam ID mapping");
                         Debug.LogWarning($"[Patch_SendTo] 当前已映射的端点:");
                         var allEndPoints = SteamEndPointMapper.Instance.GetAllEndPoints();
                         foreach (var ep in allEndPoints)

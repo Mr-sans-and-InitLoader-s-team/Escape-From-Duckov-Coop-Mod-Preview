@@ -54,10 +54,8 @@ public class ClientHandle
             playerStatuses[peer] = new PlayerStatus();
 
         var st = playerStatuses[peer];
-        // ⚠️ 重要：服务器端必须保持使用 peer.EndPoint（虚拟IP格式），不能用客户端自报的 Client:xxxxx
-        // st.EndPoint = endPoint;  // ❌ 错误：不要覆盖服务器端的虚拟IP EndPoint
         if (string.IsNullOrEmpty(st.EndPoint))
-            st.EndPoint = peer.EndPoint.ToString();  // ✅ 使用服务器端的虚拟IP EndPoint
+            st.EndPoint = peer.EndPoint.ToString();
 
         st.PlayerName = playerName;
         st.Latency = peer.Ping;

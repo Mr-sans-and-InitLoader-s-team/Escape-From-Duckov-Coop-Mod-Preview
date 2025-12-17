@@ -105,6 +105,11 @@ public static class CreateRemoteCharacter
         cmc.gameObject.SetActive(false);
         remoteCharacters[peer] = instance;
         cmc.gameObject.SetActive(true);
+
+        var playerName = playerStatuses.TryGetValue(peer, out var pst) ? pst.PlayerName : peer.EndPoint.ToString();
+        instance.name = $"RemotePlayer_{playerName}";
+        ModBehaviourF.Instance?.AddPhantomMapMarker(instance, playerName);
+
         return instance;
     }
 
@@ -187,6 +192,10 @@ public static class CreateRemoteCharacter
         cmc.gameObject.SetActive(false);
         clientRemoteCharacters[playerId] = instance;
         cmc.gameObject.SetActive(true);
+
+        var playerName = Service.clientPlayerStatuses.TryGetValue(playerId, out var pst) ? pst.PlayerName : playerId;
+        instance.name = $"RemotePlayer_{playerName}";
+        ModBehaviourF.Instance?.AddPhantomMapMarker(instance, playerName);
     }
 
     private static void MakeRemotePhysicsPassive(GameObject go)

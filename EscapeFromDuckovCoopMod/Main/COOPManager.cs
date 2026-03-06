@@ -85,7 +85,7 @@ public class COOPManager
         }
 
         var faceMaskSocket = characterModel.ArmorSocket;
-        var itemAgent = item.AgentUtilities.CreateAgent(item.AgentUtilities.GetPrefab(CharacterEquipmentController.equipmentModelHash), ItemAgent.AgentTypes.equipment);
+        var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
         if (itemAgent == null)
         {
             Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
@@ -121,7 +121,7 @@ public class COOPManager
         characterModel.CustomFace.hairSocket.gameObject.SetActive(false);
         characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(false);
         var faceMaskSocket = characterModel.HelmatSocket;
-        var itemAgent = item.AgentUtilities.CreateAgent(item.AgentUtilities.GetPrefab(CharacterEquipmentController.equipmentModelHash), ItemAgent.AgentTypes.equipment);
+        var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
         if (itemAgent == null)
         {
             Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
@@ -156,7 +156,7 @@ public class COOPManager
         characterModel.CustomFace.hairSocket.gameObject.SetActive(false);
         characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(false);
         var faceMaskSocket = characterModel.HelmatSocket;
-        var itemAgent = item.AgentUtilities.CreateAgent(item.AgentUtilities.GetPrefab(CharacterEquipmentController.equipmentModelHash), ItemAgent.AgentTypes.equipment);
+        var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
         if (itemAgent == null)
         {
             Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
@@ -187,7 +187,7 @@ public class COOPManager
         }
 
         var faceMaskSocket = characterModel.BackpackSocket;
-        var itemAgent = item.AgentUtilities.CreateAgent(item.AgentUtilities.GetPrefab(CharacterEquipmentController.equipmentModelHash), ItemAgent.AgentTypes.equipment);
+        var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
         if (itemAgent == null)
         {
             Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
@@ -219,7 +219,7 @@ public class COOPManager
         }
 
         var faceMaskSocket = characterModel.FaceMaskSocket;
-        var itemAgent = item.AgentUtilities.CreateAgent(item.AgentUtilities.GetPrefab(CharacterEquipmentController.equipmentModelHash), ItemAgent.AgentTypes.equipment);
+        var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
         if (itemAgent == null)
         {
             Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);

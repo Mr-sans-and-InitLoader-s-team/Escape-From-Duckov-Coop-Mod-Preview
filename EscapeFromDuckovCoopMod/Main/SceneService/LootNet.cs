@@ -86,6 +86,99 @@ public class LootNet
         connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
     }
 
+    public void Server_HandlePlayerDeathWithInventory(NetPacketReader reader)
+    {
+        var pos = reader.GetV3cm();
+        
+        // Spawn dead client loot on server
+        Server_SpawnDeadPlayerLoot(pos, reader);
+    }
+
+    private async void Server_SpawnDeadPlayerLoot(Vector3 position,  NetPacketReader reader)
+    {
+        try
+        {            
+            // Get the loot box prefab
+            var prefab = LootManager.Instance.ResolveDeadLootPrefabOnServer();
+            if (!prefab)
+            {
+                Debug.LogError("[DEATH] Cannot find loot box prefab!");
+                return;
+            }
+            
+            // Spawn the loot container
+            var lootObj = GameObject.Instantiate(prefab.gameObject, position, Quaternion.identity);
+
+            var lootBox = lootObj.GetComponent<InteractableLootbox>();
+            if (!lootBox)
+            {
+                Debug.LogError("[DEATH] Spawned object doesn't have InteractableLootbox!");
+                GameObject.Destroy(lootObj);
+                return;
+            }
+            
+            var inventory = lootBox.Inventory;
+            if (!inventory)
+            {
+                Debug.LogError("[DEATH] Loot box doesn't have inventory!");
+                GameObject.Destroy(lootObj);
+                return;
+            }
+
+            var itemCount = reader.GetInt();
+            Debug.Log($"[DEATH] Client had {itemCount} items. Spawning loot at {position} with capacity {itemCount}");
+            
+            inventory.SetCapacity(itemCount);
+            
+            try
+            {
+                for (int i = 0; i < itemCount; i++)
+                {
+                    var snap = ItemTool.ReadItemSnapshot(reader);
+                    var tmpItem = await ItemAssetsCollection.InstantiateAsync(snap.typeId);
+                    ItemTool.ApplySnapshotToItem(tmpItem, snap);
+                    inventory.AddAt(tmpItem, i);
+                }
+                
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[DEATH] Error creating items: {ex}");
+            }
+            
+            // Register the loot box
+            var posKey = LootManager.Instance.ComputeLootKey(lootObj.transform);
+            Debug.Log($"[DEATH] Computed position key: {posKey}");
+            
+            if (posKey != 0)
+            {
+                CoopSyncDatabase.Loot.Register(lootBox, inventory);
+                Debug.Log($"[DEATH] Registered in CoopSyncDatabase");
+            }
+            
+            // Also register in InteractableLootbox.Inventories
+            try
+            {
+                var dict = InteractableLootbox.Inventories;
+                if (dict != null && posKey != 0)
+                {
+                    dict[posKey] = inventory;
+                    Debug.Log($"[DEATH] Registered in InteractableLootbox.Inventories");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[DEATH] Could not register in InteractableLootbox.Inventories: {ex}");
+            }
+            
+            Debug.Log($"[DEATH] Loot container spawned successfully!");
+            
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[DEATH] FATAL Error spawning loot: {ex}");
+        }
+    }    
 
     // 主机：应答快照（发给指定 peer 或广播）
     public void Server_SendLootboxState(NetPeer toPeer, Inventory inv)

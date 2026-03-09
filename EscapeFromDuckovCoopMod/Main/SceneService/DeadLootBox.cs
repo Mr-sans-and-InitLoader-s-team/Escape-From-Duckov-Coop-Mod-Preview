@@ -14,8 +14,11 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System;
+using System.Collections.Generic;
 using Duckov.Utilities;
 using ItemStatsSystem;
+using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace EscapeFromDuckovCoopMod;
@@ -23,6 +26,8 @@ namespace EscapeFromDuckovCoopMod;
 public class DeadLootBox : MonoBehaviour
 {
     public static DeadLootBox Instance;
+
+    private readonly Dictionary<string, GameObject> _prefabCache = new();
 
     private NetService Service => NetService.Instance;
     private bool IsServer => Service != null && Service.IsServer;
@@ -36,13 +41,24 @@ public class DeadLootBox : MonoBehaviour
     public void Init()
     {
         Instance = this;
+        SceneManager.sceneLoaded += OnSceneLoaded;
     }
 
-    public void SpawnDeadLootboxAt(int lootUid, Vector3 pos, Quaternion rot, bool useTombPrefab)
+    private void OnDestroy()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+    }
+
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        _prefabCache.Clear();
+    }
+
+    public void SpawnDeadLootboxAt(int lootUid, Vector3 pos, Quaternion rot, bool useTombPrefab, string prefabName)
     {
         try
         {
-            var prefab = useTombPrefab ? GetDeadLootTombPrefabOnClient() : GetDeadLootPrefabOnClient();
+            var prefab = ResolveDeadLootPrefab(prefabName, useTombPrefab);
             if (!prefab)
             {
                 Debug.LogWarning("[LOOT] DeadLoot prefab not found on client, spawn aborted.");
@@ -96,6 +112,81 @@ public class DeadLootBox : MonoBehaviour
     }
 
 
+    private GameObject ResolveDeadLootPrefab(string prefabName, bool useTombPrefab)
+    {
+        if (useTombPrefab)
+            return GetDeadLootTombPrefabOnClient();
+
+        var normalized = NormalizePrefabName(prefabName);
+        if (!string.IsNullOrEmpty(normalized) && _prefabCache.TryGetValue(normalized, out var cached) && cached)
+            return cached;
+
+        GameObject resolved = null;
+        if (!string.IsNullOrEmpty(normalized))
+        {
+            resolved = FindDeadLootPrefabInScene(normalized) ?? FindDeadLootPrefabInResources(normalized);
+            if (resolved)
+                _prefabCache[normalized] = resolved;
+        }
+
+        return resolved ? resolved : GetDeadLootPrefabOnClient();
+    }
+
+    private static string NormalizePrefabName(string prefabName)
+    {
+        if (string.IsNullOrEmpty(prefabName))
+            return string.Empty;
+
+        return prefabName.Replace("(Clone)", string.Empty, StringComparison.Ordinal).Trim();
+    }
+
+    private GameObject FindDeadLootPrefabInScene(string normalizedName)
+    {
+        try
+        {
+            var boxes = FindObjectsOfType<InteractableLootbox>(true);
+            foreach (var box in boxes)
+            {
+                var go = box ? box.gameObject : null;
+                if (go && string.Equals(NormalizePrefabName(go.name), normalizedName, StringComparison.Ordinal))
+                    return go;
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
+    private GameObject FindDeadLootPrefabInResources(string normalizedName)
+    {
+        try
+        {
+            var all = Resources.FindObjectsOfTypeAll<GameObject>();
+            foreach (var go in all)
+            {
+                if (go && string.Equals(NormalizePrefabName(go.name), normalizedName, StringComparison.Ordinal))
+                    return go;
+            }
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            var loaded = Resources.Load<GameObject>(normalizedName);
+            if (loaded)
+                return loaded;
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
     private GameObject GetDeadLootPrefabOnClient()
     {
         // 沿用现有逻辑（Main 或任意 CMC）
@@ -138,11 +229,28 @@ public class DeadLootBox : MonoBehaviour
         return GetDeadLootPrefabOnClient();
     }
 
+    private string TryGetPrefabNameFromVictim(CharacterMainControl whoDied)
+    {
+        try
+        {
+            var prefab = whoDied ? whoDied.deadLootBoxPrefab : null;
+            var go = prefab ? prefab.gameObject : null;
+            return go ? go.name : string.Empty;
+        }
+        catch
+        {
+        }
+
+        return string.Empty;
+    }
+
     public void Server_OnDeadLootboxSpawned(InteractableLootbox box, CharacterMainControl whoDied, bool useTombPrefab = false, string playerId = null)
     {
         if (!IsServer || box == null) return;
         try
         {
+            var prefabName = NormalizePrefabName(TryGetPrefabNameFromVictim(whoDied));
+
             // 生成稳定 ID 并登记
             var lootUid = LootManager.Instance._nextLootUid++;
             var inv = box.Inventory;
@@ -179,7 +287,8 @@ public class DeadLootBox : MonoBehaviour
                 Position = box.transform.position,
                 Rotation = box.transform.rotation,
                 UseTombPrefab = useTombPrefab,
-                PlayerId = playerId ?? string.Empty
+                PlayerId = playerId ?? string.Empty,
+                PrefabName = prefabName
             };
 
             CoopTool.SendRpc(in rpc);

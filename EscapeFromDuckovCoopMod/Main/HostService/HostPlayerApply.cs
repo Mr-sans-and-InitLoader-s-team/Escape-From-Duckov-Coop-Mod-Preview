@@ -120,7 +120,7 @@ public class HostPlayerApply
         //}
     }
 
-    public async UniTask ApplyWeaponUpdate(NetPeer peer, int slotHash, string itemId)
+    public async UniTask ApplyWeaponUpdate(NetPeer peer, int slotHash, string itemId, ItemSnapshot snapshot)
     {
         if (!remoteCharacters.TryGetValue(peer, out var remoteObj) || remoteObj == null) return;
 
@@ -144,14 +144,24 @@ public class HostPlayerApply
 
         try
         {
-            if (!string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var typeId))
+            var typeId = snapshot.TypeId;
+            if (typeId == 0 && !string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var parsed))
+                typeId = parsed;
+
+            if (typeId != 0)
             {
                 // 准备 Item，挂载前先杀残留 agent
-                var item = await COOPManager.GetItemAsync(typeId);
+                Item item = null;
+                if (snapshot.TypeId != 0)
+                    item = ItemTool.BuildItemFromSnapshot(snapshot);
+
+                if (item == null)
+                    item = await COOPManager.GetItemAsync(typeId);
+
                 if (item != null)
                 {
 
-                    cm.CharacterItem.TryPlug(item);
+                   // cm.CharacterItem.TryPlug(item);
                     cm.ChangeHoldItem(item);
                     try
                     {

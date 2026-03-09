@@ -16,10 +16,12 @@
 
 using Cysharp.Threading.Tasks;
 using Cysharp.Threading.Tasks.Triggers;
+using Duckov.MiniMaps;
 using Duckov.Scenes;
 using ECM2;
 using HarmonyLib;
 using System;
+using static Unity.Burst.Intrinsics.X86.Avx;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -33,6 +35,9 @@ public static class Patch_CharacterSpawnerRoot_StartSpawn
         if(MultiSceneCore.Instance.SceneInfo.ID == "Base" && svc.networkStarted)
             return true;
 
+        if(!svc.networkStarted)
+           return true;
+        
         if (svc != null && !svc.IsServer)
             return false;   
         return true;
@@ -47,6 +52,10 @@ public static class Patch_CharacterSpawnerGroup_StartSpawn
         var svc = NetService.Instance;
         if (MultiSceneCore.Instance.SceneInfo.ID == "Base" && svc.networkStarted)
             return true;
+
+        if (!svc.networkStarted)
+            return true;
+
         if (svc != null && !svc.IsServer)
             return false;
         return true;
@@ -61,6 +70,10 @@ public static class Patch_CharacterSpawnerGroupSelector_StartSpawn
         var svc = NetService.Instance;
         if (MultiSceneCore.Instance.SceneInfo.ID == "Base" && svc.networkStarted)
             return true;
+
+        if (!svc.networkStarted)
+            return true;
+
         if (svc != null && !svc.IsServer)
             return false;
         return true;
@@ -73,7 +86,7 @@ public static class Patch_AICharacterController_Init
     public static void Postfix(AICharacterController __instance)
     {
         if (__instance == null) return;
-
+        if (!NetService.Instance.IsServer) { return; }
         DelayedRegister(__instance).Forget();
     }
 
@@ -87,13 +100,15 @@ public static class Patch_AICharacterController_Init
         var token = ai.GetCancellationTokenOnDestroy();
         try
         {
-            await UniTask.Delay(1000, cancellationToken: token);
+            await UniTask.Delay(800, cancellationToken: token);
         }
         catch (OperationCanceledException)
         {
             return;
         }
-
+        var modelRoot = ai.CharacterMainControl.characterModel;
+        if (modelRoot != null && modelRoot.name.Contains("0_CharacterModel_Custom_Enemy_Invisable"))
+            ai.CharacterMainControl.Health.showHealthBar = false;
         //if (MultiSceneCore.Instance.SceneInfo.ID == "Base" && !ModBehaviourF.Instance.IsServer && ai.hideIfFoundEnemy == null)
         //{
         //    GameObject.Destroy(ai.CharacterMainControl.gameObject);
@@ -107,6 +122,21 @@ public static class Patch_AICharacterController_Init
         DifficultyManager.ApplyToAI(ai);
 
         COOPManager.AI?.Server_RegisterCharacter(ai);
+
+        try
+        {
+            var cmc = ai.CharacterMainControl;
+            if (cmc)
+            {
+                var id = 0;
+                if (CoopSyncDatabase.AI.TryGet(ai, out var entry) && entry != null)
+                    id = entry.Id;
+                ModApiEvents.RaiseAiSpawned(id, cmc);
+            }
+        }
+        catch
+        {
+        }
     }
 }
 
@@ -163,6 +193,7 @@ static class Patch_CharacterSoundMaker_Update
         if (cmc == null)
             return true; // 没角色就让原版随便跑
 
+        if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         // 只改：主机 + 远端玩家
         if (!ModBehaviourF.Instance.IsServer || cmc == LevelManager.Instance.MainCharacter || !cmc.GetComponentInParent<RemoteReplicaTag>())
             return true; // 本地玩家、客户端直接走原版

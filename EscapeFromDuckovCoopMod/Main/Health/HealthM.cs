@@ -19,8 +19,10 @@ using ItemStatsSystem;
 using LiteNetLib;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.ConstrainedExecution;
+using Unity.VisualScripting;
 using UnityEngine;
 using static Unity.Burst.Intrinsics.X86.Avx;
 
@@ -30,11 +32,13 @@ public class HealthM : MonoBehaviour
 {
     private const float CLIENT_SEND_INTERVAL = 0.05f; // 20Hz
     private const float SERVER_SEND_INTERVAL = 0.05f;
+    private const float SERVER_DAMAGE_REQUEST_INTERVAL = 0.05f; // 20Hz per sender->target
 
     public static HealthM Instance;
 
     private readonly Dictionary<string, (float max, float cur)> _srvPlayerSnapshots = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, float> _srvNextBroadcast = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, float> _srvNextDamageRequestBySenderTarget = new(StringComparer.Ordinal);
 
     private (float max, float cur) _cliLastSentHp;
     private float _cliNextSendHp;
@@ -43,8 +47,6 @@ public class HealthM : MonoBehaviour
     private NetService Service => NetService.Instance;
     private bool IsServer => Service != null && Service.IsServer;
     private bool networkStarted => Service != null && Service.networkStarted;
-
-    private bool _clientDeathReported = false;
 
     private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
     private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
@@ -90,13 +92,6 @@ public class HealthM : MonoBehaviour
         Debug.Log($"Client_SendSnapshot {health.CurrentHealth} max:{health.MaxHealth}");
         var now = Time.time;
         force |= damage.HasValue;
-
-        if (cur > 0f && _clientDeathReported)
-        {
-            // Reset lock when player is alive again (e.g. after respawn)
-            _clientDeathReported = false;
-        }
-
         if (!force)
         {
             if (Mathf.Approximately(max, _cliLastSentHp.max) && Mathf.Approximately(cur, _cliLastSentHp.cur))
@@ -115,60 +110,6 @@ public class HealthM : MonoBehaviour
 
         _cliLastSentHp = (max, cur);
         _cliNextSendHp = now + CLIENT_SEND_INTERVAL;
-
-        if(cur < 0f && !_clientDeathReported)
-        {
-            // Lock to avoid sending multiple death reports before player respawns
-            _clientDeathReported = true;
-            Client_SendDeadLoot();
-        }
-    }
-
-    private void Client_SendDeadLoot()
-    {
-        var w = new NetDataWriter();
-        w.Put((byte)Op.PLAYER_DEAD_LOOT_SPAWN);
-
-        Debug.Log($"[Client Report Dead] Writing Op: {(byte)Op.PLAYER_DEAD_LOOT_SPAWN}");
-
-        var main = CharacterMainControl.Main;
-        w.PutV3cm(main.transform.position);
-        var inventory = CharacterMainControl.Main.CharacterItem.Inventory;
-        var equipedItems = new[]
-        {
-            CharacterMainControl.Main.PrimWeaponSlot().Content,
-            CharacterMainControl.Main.SecWeaponSlot().Content,
-            CharacterMainControl.Main.HelmatSlot().Content,
-            CharacterMainControl.Main.ArmorSlot().Content,
-            CharacterMainControl.Main.GetSlot(CharacterEquipmentController.faceMaskHash).Content,
-            CharacterMainControl.Main.GetSlot(CharacterEquipmentController.headsetHash).Content,
-            CharacterMainControl.Main.BackpackSlot().Content
-        };
-        var items = new List<Item>();
-        
-        foreach (var item in equipedItems)
-        {
-            if (item != null) items.Add(item);
-        }
-
-        if (inventory != null)
-        {
-            foreach (var item in inventory)
-            {
-                if (item != null) items.Add(item);
-            }
-        }
-
-        Debug.Log($"Sending {items.Count} items to server");
-
-        w.Put(items.Count);
-        foreach (var item in items)
-        {
-            ItemTool.WriteItemSnapshot(w, item);
-        }
-    
-        CoopTool.SendReliable(w);
-        Debug.Log($"Reporting Death message to server!");
     }
 
     private void Server_BroadcastHostSnapshot(Health health, DamageInfo? damage)
@@ -187,12 +128,8 @@ public class HealthM : MonoBehaviour
 
     private static (float max, float cur) ReadHealth(Health health)
     {
-        float max = 0f, cur = 0f;
-        try { max = health.MaxHealth; }
-        catch { }
-
-        try { cur = health.CurrentHealth; }
-        catch { }
+        float max = health.MaxHealth;
+        float cur = health.CurrentHealth;
 
         return (max, cur);
     }
@@ -240,6 +177,60 @@ public class HealthM : MonoBehaviour
         BroadcastPlayerSnapshot(playerId, max, cur, message.HasDamage ? message.Damage : (DamageForwardPayload?)null, sender);
     }
 
+    public void Server_HandlePlayerDamageRequest(NetPeer sender, PlayerDamageRequestRpc message)
+    {
+        if (!IsServer || sender == null) return;
+        var service = Service;
+        if (service == null) return;
+        if (string.IsNullOrEmpty(message.TargetPlayerId)) return;
+        if (service.IsPlayerInvincible(message.TargetPlayerId)) return;
+
+        var now = Time.unscaledTime;
+        if (_srvNextDamageRequestBySenderTarget.Count > 2048)
+        {
+            foreach (var entry in _srvNextDamageRequestBySenderTarget.Where(e => now >= e.Value).Take(256).ToList())
+                _srvNextDamageRequestBySenderTarget.Remove(entry.Key);
+        }
+
+        var key = $"{sender.Id}:{message.TargetPlayerId}";
+        if (_srvNextDamageRequestBySenderTarget.TryGetValue(key, out var nextAllowed) && now < nextAllowed)
+            return;
+        _srvNextDamageRequestBySenderTarget[key] = now + SERVER_DAMAGE_REQUEST_INTERVAL;
+
+        var damage = message.Damage.ToDamageInfo(null, null);
+        LocalHitKillFx.RememberLastBaseDamage(damage.damageValue);
+
+        // Host self hurt
+        if (service.IsSelfId(message.TargetPlayerId))
+        {
+            var main = CharacterMainControl.Main;
+            var health = main ? main.GetComponentInChildren<Health>(true) : null;
+            var receiver = main ? main.mainDamageReceiver : null;
+            if (!receiver && main)
+                receiver = main.GetComponentInChildren<DamageReceiver>(true);
+
+            if (health && receiver)
+            {
+                damage.toDamageReceiver = receiver;
+                health.Hurt(damage);
+            }
+
+            return;
+        }
+
+        // Forward to the owning peer so他们按本地路径结算
+        if (service.TryGetPeerByPlayerId(message.TargetPlayerId, out var targetPeer) && targetPeer != null)
+        {
+            var forward = new PlayerDamageForwardRpc
+            {
+                PlayerId = message.TargetPlayerId,
+                Damage = message.Damage
+            };
+
+            CoopTool.SendRpcTo(targetPeer, in forward);
+        }
+    }
+
     public void Client_HandlePlayerHealthBroadcast(PlayerHealthBroadcastRpc message)
     {
         if (IsServer || string.IsNullOrEmpty(message.PlayerId)) return;
@@ -274,13 +265,7 @@ public class HealthM : MonoBehaviour
         var receiver = main ? main.mainDamageReceiver : null;
         var damage = message.Damage.ToDamageInfo(null, receiver);
 
-        try
-        {
-            health.Hurt(damage);
-        }
-        catch
-        {
-        }
+        health.Hurt(damage);
     }
 
     public void Server_ApplyCachedHealth(NetPeer peer, GameObject instance)
@@ -333,37 +318,20 @@ public class HealthM : MonoBehaviour
         for (var i = 0; i < attempts; i++)
         {
             if (h == null) yield break;
-            try
+            if (NetService.Instance.IsServer)
+            {
+                if (h.TryGetCharacter().aiCharacterController == null)
+                {
+                    h.showHealthBar = true;
+                }
+            }
+            if (!NetService.Instance.IsServer)
             {
                 h.showHealthBar = true;
             }
-            catch
-            {
-            }
-
-            try
-            {
-                h.RequestHealthBar();
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                h.OnMaxHealthChange?.Invoke(h);
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                h.OnHealthChange?.Invoke(h);
-            }
-            catch
-            {
-            }
+            h.RequestHealthBar();
+            h.OnMaxHealthChange?.Invoke(h);
+            h.OnHealthChange?.Invoke(h);
 
             yield return new WaitForSeconds(interval);
         }
@@ -373,129 +341,64 @@ public class HealthM : MonoBehaviour
     {
         if (!h) return;
 
-        var nowMax = 0f;
-        try
-        {
-            nowMax = h.MaxHealth;
-        }
-        catch
-        {
-        }
+        var nowMax = h.MaxHealth;
 
-        var defMax = 0;
-        try
-        {
-            defMax = (int)(HealthTool.FI_defaultMax?.GetValue(h) ?? 0);
-        }
-        catch
-        {
-        }
+        var defMax = (int)(HealthTool.FI_defaultMax?.GetValue(h) ?? 0);
 
         if (max > 0f && (nowMax <= 0f || max > nowMax + 0.0001f || defMax <= 0))
-            try
+        {
+            HealthTool.FI_defaultMax?.SetValue(h, Mathf.RoundToInt(max));
+            HealthTool.FI_lastMax?.SetValue(h, -12345f);
+            h.OnMaxHealthChange?.Invoke(h);
+            var characterItemInstance = h.TryGetCharacter().CharacterItem;
+            if (characterItemInstance != null)
             {
-                HealthTool.FI_defaultMax?.SetValue(h, Mathf.RoundToInt(max));
-                HealthTool.FI_lastMax?.SetValue(h, -12345f);
-                h.OnMaxHealthChange?.Invoke(h);
-                var characterItemInstance = h.TryGetCharacter().CharacterItem;
-                if (characterItemInstance != null)
+                var stat = characterItemInstance.GetStat("MaxHealth".GetHashCode());
+                if (stat != null)
                 {
-                    var stat = characterItemInstance.GetStat("MaxHealth".GetHashCode());
-                    if (stat != null)
-                    {
-                        var rule = LevelManager.Rule;
-                        var factor = rule != null ? rule.EnemyHealthFactor : 1f;
-                        stat.BaseValue = max;
-                    }
-                    ApplyArmorStats(characterItemInstance, bodyArmor, headArmor);
+                    var rule = LevelManager.Rule;
+                    var factor = rule != null ? rule.EnemyHealthFactor : 1f;
+                    stat.BaseValue = max;
                 }
+                ApplyArmorStats(characterItemInstance, bodyArmor, headArmor);
             }
-            catch
-            {
-            }
+        }
         else
         {
-            try
-            {
-                var characterItemInstance = h.TryGetCharacter().CharacterItem;
-                if (characterItemInstance != null)
-                    ApplyArmorStats(characterItemInstance, bodyArmor, headArmor);
-            }
-            catch
-            {
-            }
+            var characterItemInstance = h.TryGetCharacter().CharacterItem;
+            if (characterItemInstance != null)
+                ApplyArmorStats(characterItemInstance, bodyArmor, headArmor);
         }
 
-        var effMax = 0f;
-        try
-        {
-            effMax = h.MaxHealth;
-        }
-        catch
-        {
-        }
+        var effMax = h.MaxHealth;
 
         if (effMax > 0f && cur > effMax + 0.0001f)
         {
-            try
-            {
-                HealthTool.FI__current?.SetValue(h, cur);
-            }
-            catch
-            {
-            }
+            HealthTool.FI__current?.SetValue(h, cur);
 
-            try
-            {
-                h.OnHealthChange?.Invoke(h);
-            }
-            catch
-            {
-            }
+            h.OnHealthChange?.Invoke(h);
         }
         else
         {
-            try
-            {
-                h.SetHealth(cur);
-            }
-            catch
-            {
-                try
-                {
-                    HealthTool.FI__current?.SetValue(h, cur);
-                }
-                catch
-                {
-                }
-            }
-
-            try
-            {
-                h.OnHealthChange?.Invoke(h);
-            }
-            catch
-            {
-            }
+            h.SetHealth(cur);
+            h.OnHealthChange?.Invoke(h);
         }
 
         if (ensureBar)
         {
-            try
+            if (NetService.Instance.IsServer)
+            {
+                if (h.TryGetCharacter().aiCharacterController == null)
+                {
+                    h.showHealthBar = true;
+                }
+            }
+            if (!NetService.Instance.IsServer)
             {
                 h.showHealthBar = true;
             }
-            catch
-            {
-            }
 
-            try
-            {
-                h.RequestHealthBar();
-            }
-            catch
-            {
-            }
+            h.RequestHealthBar();
 
             StartCoroutine(EnsureBarRoutine(h, 2, 0.1f));
         }
@@ -505,32 +408,20 @@ public class HealthM : MonoBehaviour
     {
         if (characterItemInstance == null) return;
 
-        try
+        if (bodyArmor.HasValue)
         {
-            if (bodyArmor.HasValue)
-            {
-                Item item = characterItemInstance;
-                var stat = item.GetStat("BodyArmor".GetHashCode());
-                if (stat != null)
-                    stat.BaseValue = bodyArmor.Value;
-            }
-        }
-        catch
-        {
+            Item item = characterItemInstance;
+            var stat = item.GetStat("BodyArmor".GetHashCode());
+            if (stat != null)
+                Traverse.Create(stat).Field<float>("cachedValue").Value = bodyArmor.Value;
         }
 
-        try
+        if (headArmor.HasValue)
         {
-            if (headArmor.HasValue)
-            {
-                Item item = characterItemInstance;
-                var stat = item.GetStat("HeadArmor".GetHashCode());
-                if (stat != null)
-                    stat.BaseValue = headArmor.Value;
-            }
-        }
-        catch
-        {
+            Item item = characterItemInstance;
+            var stat = item.GetStat("HeadArmor".GetHashCode());
+            if (stat != null)
+                Traverse.Create(stat).Field<float>("cachedValue").Value = headArmor.Value;
         }
     }
 
@@ -542,50 +433,27 @@ public class HealthM : MonoBehaviour
         var h = cmc.Health;
         if (!cmc || !h) return;
 
-        try
-        {
-            h.autoInit = false;
-        }
-        catch
-        {
-        }
+        h.autoInit = false;
       //  Debug.Log("ApplyHealthAndEnsureBar "+cmc.Health.MaxHealth);
         HealthTool.BindHealthToCharacter(h, cmc);
 
         var clampedCur = Mathf.Max(0f, cur);
         ForceSetHealth(h, max, clampedCur, false);
 
-        try
+        if(NetService.Instance.IsServer)
+        {
+            if(cmc.aiCharacterController == null)
+            {
+                h.showHealthBar = true;
+            }
+        }
+        if(!NetService.Instance.IsServer)
         {
             h.showHealthBar = true;
         }
-        catch
-        {
-        }
-
-        try
-        {
-            h.RequestHealthBar();
-        }
-        catch
-        {
-        }
-
-        try
-        {
-            h.OnMaxHealthChange?.Invoke(h);
-        }
-        catch
-        {
-        }
-
-        try
-        {
-            h.OnHealthChange?.Invoke(h);
-        }
-        catch
-        {
-        }
+        h.RequestHealthBar();
+        h.OnMaxHealthChange?.Invoke(h);
+        h.OnHealthChange?.Invoke(h);
 
         StartCoroutine(EnsureBarRoutine(h, 2, 0.25f));
 

@@ -89,6 +89,13 @@ public class WeaponRequest
         }
         catch { }
 
+        try
+        {
+            ctx.traceAbility = gun.TraceAbility;
+            hasPayload |= ctx.traceAbility > 0f;
+        }
+        catch { }
+
         return ctx;
     }
 

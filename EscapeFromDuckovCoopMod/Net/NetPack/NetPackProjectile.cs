@@ -38,6 +38,7 @@ public static class NetPackProjectile
         w.Put(c.explosionDamage);
         w.Put(c.buffChance);
         w.Put(c.bleedChance);
+        w.Put(c.traceAbility);
         // 其它
         w.Put(c.penetrate);
         w.Put(c.fromWeaponItemID);
@@ -48,8 +49,8 @@ public static class NetPackProjectile
     {
         if (r.AvailableBytes < 1) return false;
         if (!r.GetBool()) return false; // hasPayload
-        // 14 个 float + 2 个 int = 64 字节
-        if (r.AvailableBytes < 64) return false;
+        // 15 个 float + 2 个 int = 68 字节
+        if (r.AvailableBytes < 68) return false;
 
         c.damage = r.GetFloat();
         c.critRate = r.GetFloat();
@@ -67,6 +68,7 @@ public static class NetPackProjectile
         c.explosionDamage = r.GetFloat();
         c.buffChance = r.GetFloat();
         c.bleedChance = r.GetFloat();
+        c.traceAbility = r.GetFloat();
 
         c.penetrate = r.GetInt();
         c.fromWeaponItemID = r.GetInt();

@@ -15,13 +15,20 @@
 // GNU Affero General Public License for more details.
 
 using Duckov;
+using FMOD.Studio;
+using FMODUnity;
+using System.Reflection;
 using UnityEngine;
+using STOP_MODE = FMOD.Studio.STOP_MODE;
 
 namespace EscapeFromDuckovCoopMod;
 
 public sealed class CoopAudioEmitter : MonoBehaviour
 {
     private float _lifeTime;
+    private EventInstance? _playing;
+    private bool _stopAfterLife;
+    private bool _isKazoo;
 
     public static CoopAudioEmitter Spawn()
     {
@@ -33,14 +40,20 @@ public sealed class CoopAudioEmitter : MonoBehaviour
 
     private void Awake()
     {
-        _lifeTime = 4f;
+        _lifeTime = 3f;
     }
 
     private void Update()
     {
+        var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
+        if (serverLoading)
+        {
+            return;
+        }
         _lifeTime -= Time.deltaTime;
         if (_lifeTime <= 0f)
         {
+            StopPlaying();
             Destroy(gameObject);
         }
     }
@@ -49,13 +62,70 @@ public sealed class CoopAudioEmitter : MonoBehaviour
     {
         transform.position = payload.Position;
 
+        var eventName = payload.EventName ?? string.Empty;
+        _isKazoo = eventName.IndexOf("kazoo", StringComparison.OrdinalIgnoreCase) >= 0;
+        _stopAfterLife = _isKazoo;
+        if (_isKazoo && _lifeTime > 2.25f)
+            _lifeTime = 2.25f;
+
         if (payload.HasSwitch || payload.HasSoundKey)
         {
-            AudioManager.Post(payload.EventName, gameObject);
+            _playing = AudioManager.Post(payload.EventName, gameObject);
         }
         else
         {
-            AudioManager.Post(payload.EventName, gameObject);
+            _playing = AudioManager.Post(payload.EventName, gameObject);
+        }
+
+        if (_isKazoo)
+        {
+            var pitch = payload.HasKazooPitch ? payload.KazooPitch : 0f;
+            SetKazooParameter("Kazoo/Pitch", pitch, gameObject);
+            SetKazooParameter("Kazoo/Intensity", 0.55f, gameObject);
+        }
+    }
+
+    private static void SetKazooParameter(string parameter, float value, GameObject target)
+    {
+        try
+        {
+            var method = typeof(AudioManager).GetMethod("SetRTPC", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            if (method != null)
+            {
+                method.Invoke(null, new object[] { parameter, value, target });
+                return;
+            }
+
+            RuntimeManager.StudioSystem.setParameterByName($"parameter:/{parameter}", value, false);
+        }
+        catch
+        {
+            // Ignore parameter failures so coop audio continues even if RTPCs are unavailable.
+        }
+    }
+
+    private void OnDestroy()
+    {
+        StopPlaying();
+    }
+
+    private void StopPlaying()
+    {
+        if (!_stopAfterLife)
+            return;
+
+        _stopAfterLife = false;
+        AudioManager.StopAll(gameObject, STOP_MODE.ALLOWFADEOUT);
+        if (_playing.HasValue)
+        {
+            try
+            {
+                _playing.Value.stop(STOP_MODE.ALLOWFADEOUT);
+            }
+            catch
+            {
+                // ignore FMOD stop errors on dispose
+            }
         }
     }
 }

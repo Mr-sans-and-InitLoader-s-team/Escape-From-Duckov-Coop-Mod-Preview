@@ -15,1350 +15,1473 @@
 // GNU Affero General Public License for more details.
 
 using System;
-using System.Text;
-using Duckov.Scenes;
-using Duckov.UI;
-using Duckov.Utilities;
+using System.Collections.Generic;
+using Cysharp.Threading.Tasks;
+using System.Linq;
+using LiteNetLib;
 using ItemStatsSystem;
 using ItemStatsSystem.Items;
-using Object = UnityEngine.Object;
+using Duckov.Scenes;
+using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
 
-public class LootNet
-{
+    public class LootNet
+    {
     public readonly Dictionary<uint, Item> _cliPendingPut = new();
-
-    private readonly Dictionary<uint, Item> _cliPendingSlotPlug = new();
-
-    public readonly Dictionary<Item, (Item newItem,
-            Inventory destInv, int destPos,
-            Slot destSlot)>
-        _cliSwapByVictim = new();
-
-    // ====== Lootbox 同步：运行期标识/状态 ======
-    public bool _applyingLootState; // 客户端：应用主机快照时抑制 Prefix
-
-    // 客户端：本地 put 请求的 token -> Item 实例（用于 put 成功后从玩家背包删去这个本地实例）
+    public readonly Dictionary<Item, (Item newItem, Inventory destInv, int destPos, Slot destSlot)> _cliSwapByVictim = new();
+    public bool _applyingLootState;
     public uint _nextLootToken = 1;
-    public bool _serverApplyingLoot; // 主机：处理客户端请求时抑制 Postfix 二次广播
+    public bool _serverApplyingLoot;
+    private readonly HashSet<Inventory> _cliActiveLoot = new(new InventoryRefEq());
+    private readonly HashSet<Item> _srvPlayerPlaced = new();
+    private readonly Dictionary<int, bool> _cliLootVisibility = new();
+    private readonly Dictionary<Item, string> _cliSlotOrigins = new();
+
+    private sealed class InventoryRefEq : IEqualityComparer<Inventory>
+    {
+        public bool Equals(Inventory x, Inventory y) => ReferenceEquals(x, y);
+        public int GetHashCode(Inventory obj) => obj ? obj.GetHashCode() : 0;
+    }
+
+    private readonly Dictionary<Inventory, int> _cliVersions = new(new InventoryRefEq());
+    private readonly Dictionary<Inventory, int> _srvVersions = new(new InventoryRefEq());
+    private readonly Dictionary<Inventory, HashSet<NetPeer>> _srvViewers = new(new InventoryRefEq());
+    private readonly HashSet<Inventory> _srvHookedInventories = new(new InventoryRefEq());
+    private readonly HashSet<Item> _srvHookedItems = new();
+
     private NetService Service => NetService.Instance;
-
-    private bool IsServer => Service != null && Service.IsServer;
-    private NetManager netManager => Service?.netManager;
-    private NetDataWriter writer => Service?.writer;
+    private LootManager LootManagerInstance => EscapeFromDuckovCoopMod.LootManager.Instance;
+    public bool IsServer => Service != null && Service.IsServer;
     private NetPeer connectedPeer => Service?.connectedPeer;
-    private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
-
     private bool networkStarted => Service != null && Service.networkStarted;
 
-    // 暴露客户端是否正在应用服务器下发的容器快照
     public bool ApplyingLootState => _applyingLootState;
 
-    private uint _cliLocalToken
+    private static bool IsQuestTagged(Item item) => ItemTool.HasQuestTag(item);
+
+    public void Client_RecordSlotOrigin(Item item, string slotKey)
     {
-        get => _nextLootToken;
-        set => _nextLootToken = value;
+        if (item == null || string.IsNullOrEmpty(slotKey)) return;
+        _cliSlotOrigins[item] = slotKey;
     }
 
-    public void Client_RequestLootState(Inventory lootInv)
+    private string Client_ConsumeSlotOrigin(Item item)
     {
-        if (!networkStarted || IsServer || connectedPeer == null || lootInv == null) return;
-
-        if (LootboxDetectUtil.IsPrivateInventory(lootInv)) return;
-
-        var w = writer;
-        if (w == null) return;
-        w.Reset();
-        w.Put((byte)Op.LOOT_REQ_OPEN);
-
-        // 原有三元标识（scene + posKey + instanceId）
-        LootManager.Instance.PutLootId(w, lootInv);
-
-        // 请求版本 + 位置提示（cm 压缩）
-        byte reqVer = 1;
-        w.Put(reqVer);
-
-        Vector3 pos;
-        if (!LootManager.Instance.TryGetLootboxWorldPos(lootInv, out pos)) pos = Vector3.zero;
-        w.PutV3cm(pos);
-
-        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
-    }
-
-    public void Server_HandlePlayerDeathWithInventory(NetPacketReader reader)
-    {
-        var pos = reader.GetV3cm();
-        
-        // Spawn dead client loot on server
-        Server_SpawnDeadPlayerLoot(pos, reader);
-    }
-
-    private async void Server_SpawnDeadPlayerLoot(Vector3 position,  NetPacketReader reader)
-    {
-        try
-        {            
-            // Get the loot box prefab
-            var prefab = LootManager.Instance.ResolveDeadLootPrefabOnServer();
-            if (!prefab)
-            {
-                Debug.LogError("[DEATH] Cannot find loot box prefab!");
-                return;
-            }
-            
-            // Spawn the loot container
-            var lootObj = GameObject.Instantiate(prefab.gameObject, position, Quaternion.identity);
-
-            var lootBox = lootObj.GetComponent<InteractableLootbox>();
-            if (!lootBox)
-            {
-                Debug.LogError("[DEATH] Spawned object doesn't have InteractableLootbox!");
-                GameObject.Destroy(lootObj);
-                return;
-            }
-            
-            var inventory = lootBox.Inventory;
-            if (!inventory)
-            {
-                Debug.LogError("[DEATH] Loot box doesn't have inventory!");
-                GameObject.Destroy(lootObj);
-                return;
-            }
-
-            var itemCount = reader.GetInt();
-            Debug.Log($"[DEATH] Client had {itemCount} items. Spawning loot at {position} with capacity {itemCount}");
-            
-            inventory.SetCapacity(itemCount);
-            
-            try
-            {
-                for (int i = 0; i < itemCount; i++)
-                {
-                    var snap = ItemTool.ReadItemSnapshot(reader);
-                    var tmpItem = await ItemAssetsCollection.InstantiateAsync(snap.typeId);
-                    ItemTool.ApplySnapshotToItem(tmpItem, snap);
-                    inventory.AddAt(tmpItem, i);
-                }
-                
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[DEATH] Error creating items: {ex}");
-            }
-            
-            // Register the loot box
-            var posKey = LootManager.Instance.ComputeLootKey(lootObj.transform);
-            Debug.Log($"[DEATH] Computed position key: {posKey}");
-            
-            if (posKey != 0)
-            {
-                CoopSyncDatabase.Loot.Register(lootBox, inventory);
-                Debug.Log($"[DEATH] Registered in CoopSyncDatabase");
-            }
-            
-            // Also register in InteractableLootbox.Inventories
-            try
-            {
-                var dict = InteractableLootbox.Inventories;
-                if (dict != null && posKey != 0)
-                {
-                    dict[posKey] = inventory;
-                    Debug.Log($"[DEATH] Registered in InteractableLootbox.Inventories");
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[DEATH] Could not register in InteractableLootbox.Inventories: {ex}");
-            }
-            
-            Debug.Log($"[DEATH] Loot container spawned successfully!");
-            
-        }
-        catch (Exception ex)
+        if (item != null && _cliSlotOrigins.TryGetValue(item, out var key))
         {
-            Debug.LogError($"[DEATH] FATAL Error spawning loot: {ex}");
+            _cliSlotOrigins.Remove(item);
+            return key;
         }
-    }    
 
-    // 主机：应答快照（发给指定 peer 或广播）
+        return string.Empty;
+    }
+
+    public void Reset()
+    {
+        _applyingLootState = false;
+        _serverApplyingLoot = false;
+        _nextLootToken = 1;
+
+        _cliPendingPut.Clear();
+        _cliSwapByVictim.Clear();
+        _cliActiveLoot.Clear();
+        _srvPlayerPlaced.Clear();
+        _cliLootVisibility.Clear();
+        _cliSlotOrigins.Clear();
+
+        _cliVersions.Clear();
+        _srvVersions.Clear();
+        _srvViewers.Clear();
+
+        foreach (var inv in _srvHookedInventories.ToArray())
+        {
+            if (inv)
+                inv.onContentChanged -= Server_OnInventoryContentChanged;
+        }
+
+        _srvHookedInventories.Clear();
+
+        foreach (var item in _srvHookedItems.ToArray())
+        {
+            if (!item) continue;
+            try
+            {
+                var slots = item.Slots;
+                if (slots == null) continue;
+                foreach (var slot in slots)
+                {
+                    if (slot == null) continue;
+                    slot.onSlotContentChanged -= Server_OnItemSlotContentChanged;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        _srvHookedItems.Clear();
+    }
+
+    private int NextVersion(Inventory inv)
+    {
+        if (IsServer)
+        {
+            var v = _srvVersions.TryGetValue(inv, out var cur) ? cur : 0;
+            v++;
+            _srvVersions[inv] = v;
+            return v;
+        }
+
+        var cliV = _cliVersions.TryGetValue(inv, out var curCli) ? curCli : 0;
+        cliV++;
+        _cliVersions[inv] = cliV;
+        return cliV;
+    }
+
+    private int GetCurrentVersion(Inventory inv)
+    {
+        if (IsServer) return _srvVersions.TryGetValue(inv, out var v) ? v : 0;
+        return _cliVersions.TryGetValue(inv, out var cv) ? cv : 0;
+    }
+
+    public void Client_SetLootActive(Inventory inv, bool active)
+    {
+        if (IsServer || inv == null) return;
+        if (active)
+            _cliActiveLoot.Add(inv);
+        else
+            _cliActiveLoot.Remove(inv);
+    }
+
+    public bool Client_ShouldSendLootChange(Inventory inv)
+    {
+        if (IsServer || inv == null) return false;
+        return _cliActiveLoot.Contains(inv);
+    }
+
+    public void Server_OnInventorySlotChanged(Inventory inv, int slot)
+    {
+        if (!IsServer || inv == null) return;
+        if (LootManagerInstance != null && LootManagerInstance.Server_IsLootMuted(inv)) return;
+
+        var item = inv.GetItemAt(slot);
+        if (item != null && IsQuestTagged(item))
+            return;
+        var cleared = item == null;
+        var typeId = cleared ? -1 : item.TypeID;
+        var stack = cleared ? 0 : item.StackCount;
+
+        BroadcastLootDelta(inv, slot, typeId, stack, cleared);
+    }
+
+    public void Server_BroadcastHostSlotChange(Inventory inv, int slot)
+    {
+        if (!IsServer || inv == null) return;
+
+        var lm = LootManagerInstance;
+        if (lm == null) return;
+        if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
+
+        var item = inv.GetItemAt(slot);
+        if (item != null && IsQuestTagged(item))
+            return;
+        if (item != null)
+        {
+            var placed = _srvPlayerPlaced.Contains(item);
+            ResetInspectionFlags(inv, item, placed);
+        }
+        var cleared = item == null;
+        var typeId = cleared ? -1 : item.TypeID;
+        var stack = cleared ? 0 : item.StackCount;
+
+        BroadcastLootDelta(inv, slot, typeId, stack, cleared);
+    }
+
+    private static void ResetInspectionFlags(Inventory inv, Item item, bool placedByPlayer = false)
+    {
+        if (inv == null || item == null) return;
+
+        var need = false;
+        var inspected = false;
+        try
+        {
+            need = inv.NeedInspection;
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            inspected = inv.hasBeenInspectedInLootBox;
+        }
+        catch
+        {
+        }
+
+        if (placedByPlayer)
+        {
+            item.Inspected = true;
+            item.Inspecting = false;
+            return;
+        }
+
+        if (need && !inspected)
+        {
+            // 保留已经鉴定过的物品，未鉴定的保持迷雾，只是停止检查动画
+            item.Inspecting = false;
+            if (!item.Inspected)
+            {
+                item.Inspected = false;
+            }
+        }
+        else
+        {
+            item.Inspected = true;
+            item.Inspecting = false;
+        }
+    }
+
+    public void Client_RequestLootState(Inventory lootInv, bool forceSnapshot = false)
+    {
+        if (IsServer || connectedPeer == null || lootInv == null || !networkStarted) return;
+        if (!LootboxDetectUtil.IsLootboxInventory(lootInv)) return;
+
+        var lm = LootManagerInstance;
+        if (lm == null) return;
+
+        var rpc = new LootOpenRequestRpc
+        {
+            Id = lm.BuildLootIdentifier(lootInv),
+            PositionHint = lootInv.transform.position,
+            ForceSnapshot = forceSnapshot
+        };
+
+        CoopTool.SendRpc(in rpc);
+    }
+
+    public void Server_HandleLootOpenRequest(RpcContext context, LootOpenRequestRpc rpc)
+    {
+        var lm = LootManagerInstance;
+        if (!context.IsServer || lm == null) return;
+
+        var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
+        if (inv == null && rpc.PositionHint != Vector3.zero)
+            lm.Server_TryResolveLootAggressive(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.PositionHint,
+                out inv);
+
+        if (!LootboxDetectUtil.IsLootboxInventory(inv) || inv == null)
+        {
+            Server_SendLootDeny(context.Sender, "no_inv");
+            return;
+        }
+
+        Server_SendLootboxState(context.Sender, inv);
+    }
+
     public void Server_SendLootboxState(NetPeer toPeer, Inventory inv)
     {
-        // ★ 新增：仅当群发(toPeer==null)时才受静音窗口影响
-        if (toPeer == null && LootManager.Instance.Server_IsLootMuted(inv)) return;
+        if (!IsServer || toPeer == null || inv == null) return;
+        var lm = LootManagerInstance;
+        if (lm == null) return;
 
-        if (!IsServer || inv == null) return;
-        if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv))
-            return;
+        Server_EnsureInventoryHook(inv);
+        Server_AddViewer(inv, toPeer);
 
-        var w = new NetDataWriter();
-        w.Put((byte)Op.LOOT_STATE);
-        LootManager.Instance.PutLootId(w, inv);
-
-        var capacity = inv.Capacity;
-        w.Put(capacity);
-
-        // 统计非空格子数量
-        var count = 0;
-        var content = inv.Content;
-        for (var i = 0; i < content.Count; ++i)
-            if (content[i] != null)
-                count++;
-        w.Put(count);
-
-        // 逐个写：位置 + 物品快照
-        for (var i = 0; i < content.Count; ++i)
+        var slots = new LootSlotSnapshot[inv.Capacity];
+        for (var i = 0; i < inv.Capacity; i++)
         {
-            var it = content[i];
-            if (it == null) continue;
-            w.Put(i);
-            ItemTool.WriteItemSnapshot(w, it);
+            var item = inv.GetItemAt(i);
+            slots[i] = item == null || IsQuestTagged(item)
+                ? new LootSlotSnapshot { HasItem = false }
+                : new LootSlotSnapshot
+                {
+                    HasItem = true,
+                    TypeId = item.TypeID,
+                    Stack = item.StackCount,
+                    Item = ItemTool.MakeSnapshot(item)
+                };
         }
 
-        if (toPeer != null) toPeer.Send(w, DeliveryMethod.ReliableOrdered);
-        else CoopTool.BroadcastReliable(w);
+        var rpc = new LootStateRpc
+        {
+            Id = lm.BuildLootIdentifier(inv),
+            IsSnapshot = true,
+            Version = NextVersion(inv),
+            Capacity = inv.Capacity,
+            Snapshot = slots
+        };
+
+        CoopTool.SendRpcTo(toPeer, in rpc);
     }
 
-
-    public void Client_ApplyLootboxState(NetPacketReader r)
+    private void Server_AddViewer(Inventory inv, NetPeer peer)
     {
-        var scene = r.GetInt();
-        var posKey = r.GetInt();
-        var iid = r.GetInt();
-        var lootUid = r.GetInt();
-
-        var capacity = r.GetInt();
-        var count = r.GetInt();
-
-        Inventory inv = null;
-
-        // ★ 1) 优先用稳定 ID 解析
-        if (lootUid >= 0 && LootManager.Instance._cliLootByUid.TryGetValue(lootUid, out var byUid) && byUid) inv = byUid;
-
-        // 2) 失败再走旧逻辑（posKey / 扫场景）
-        if (inv == null && (!LootManager.Instance.TryResolveLootById(scene, posKey, iid, out inv) || inv == null))
+        if (!IsServer || inv == null || peer == null) return;
+        if (!_srvViewers.TryGetValue(inv, out var viewers))
         {
-            if (LootboxDetectUtil.IsPrivateInventory(inv)) return;
-            // ★ 若带了稳定 ID，则缓存到 uid 下；否则就按 posKey 缓存（次要）
-            var list = new List<(int pos, ItemSnapshot snap)>(count);
-            for (var k = 0; k < count; ++k)
+            viewers = new HashSet<NetPeer>();
+            _srvViewers[inv] = viewers;
+        }
+
+        viewers.Add(peer);
+    }
+
+    private void Server_EnsureInventoryHook(Inventory inv)
+    {
+        if (!IsServer || inv == null) return;
+        if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
+        Server_HookInventory(inv);
+    }
+
+    private void Server_HookInventory(Inventory inv)
+    {
+        if (!IsServer || inv == null) return;
+        if (_srvHookedInventories.Contains(inv)) return;
+
+        inv.onContentChanged += Server_OnInventoryContentChanged;
+        _srvHookedInventories.Add(inv);
+
+        try
+        {
+            for (var i = 0; i < inv.Capacity; i++)
             {
-                var p = r.GetInt();
-                var snap = ItemTool.ReadItemSnapshot(r);
-                list.Add((p, snap));
+                var item = inv.GetItemAt(i);
+                Server_HookItemSlots(item);
+                Server_HookItemInventory(item);
             }
+        }
+        catch
+        {
+        }
+    }
 
-            if (lootUid >= 0) LootManager.Instance._pendingLootStatesByUid[lootUid] = (capacity, list);
+    private void Server_OnInventoryContentChanged(Inventory inv, int slot)
+    {
+        if (!IsServer || inv == null) return;
+        if (_serverApplyingLoot) return;
 
-            // 旧路径的兜底（可选）：如果你之前已经做了 posKey 缓存，这里也可以顺手放一份
+        if (!LootboxDetectUtil.TryResolveLootOwner(inv, out var lootInv, out var ownerSlot, out var master))
+            return;
+        if (LootboxDetectUtil.IsPrivateInventory(lootInv)) return;
+
+        var targetSlot = ownerSlot >= 0 ? ownerSlot : slot;
+        if (master == null && ownerSlot < 0)
+            master = lootInv.GetItemAt(targetSlot);
+
+        if (master)
+        {
+            var placed = _srvPlayerPlaced.Contains(master);
+            ResetInspectionFlags(lootInv, master, placed);
+            Server_HookItemSlots(master);
+            Server_HookItemInventory(master);
+        }
+
+        Server_BroadcastHostSlotChange(lootInv, targetSlot);
+    }
+
+    private void Server_HookItemSlots(Item item)
+    {
+        if (!IsServer || item == null) return;
+        if (_srvHookedItems.Contains(item)) return;
+
+        try
+        {
+            Server_HookItemInventory(item);
+
+            var slots = item.Slots;
+            if (slots == null || slots.Count == 0) return;
+            foreach (var slot in slots)
+            {
+                if (slot == null) continue;
+                slot.onSlotContentChanged += Server_OnItemSlotContentChanged;
+
+                var child = slot.Content;
+                if (child != null)
+                    Server_HookItemSlots(child);
+            }
+            _srvHookedItems.Add(item);
+        }
+        catch
+        {
+        }
+    }
+
+    private void Server_HookItemInventory(Item item)
+    {
+        if (!IsServer || item == null) return;
+
+        try
+        {
+            var inv = item.Inventory;
+            if (inv == null) return;
+            Server_HookInventory(inv);
+        }
+        catch
+        {
+        }
+    }
+
+    private void Server_OnItemSlotContentChanged(Slot slot)
+    {
+        if (!IsServer || slot == null) return;
+        if (_serverApplyingLoot) return;
+
+        var master = slot.Master;
+        var inv = master ? master.InInventory : null;
+        if (inv == null || LootboxDetectUtil.IsPrivateInventory(inv) || !LootboxDetectUtil.IsLootboxInventory(inv)) return;
+
+        var pos = inv.GetIndex(master);
+        if (pos < 0) return;
+
+        if (master != null && IsQuestTagged(master))
+            return;
+
+        ResetInspectionFlags(inv, master, _srvPlayerPlaced.Contains(master));
+        BroadcastLootDelta(inv, pos, master.TypeID, master.StackCount, false);
+    }
+
+    internal void Server_MarkPlayerPlaced(Item item)
+    {
+        if (!IsServer || item == null) return;
+        _srvPlayerPlaced.Add(item);
+    }
+
+    private void Server_MarkItemTreePlayerPlaced(Item root)
+    {
+        if (!IsServer || root == null) return;
+
+        var stack = new Stack<Item>();
+        stack.Push(root);
+
+        while (stack.Count > 0)
+        {
+            var item = stack.Pop();
+            if (item == null) continue;
+
+            _srvPlayerPlaced.Add(item);
+
+            try
+            {
+                var slots = item.Slots;
+                if (slots == null) continue;
+                foreach (var slot in slots)
+                {
+                    var child = slot == null ? null : slot.Content;
+                    if (child != null)
+                        stack.Push(child);
+                }
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    public void Server_RemoveViewer(NetPeer peer)
+    {
+        if (!IsServer || peer == null) return;
+
+        foreach (var kvp in _srvViewers)
+            kvp.Value.Remove(peer);
+    }
+
+    private static void Client_ForceSearchMode(Inventory inv)
+    {
+        if (!inv) return;
+
+        if (!LootSearchWorldGate.IsWorldLootByInventory(inv))
+            return;
+
+        var needInspection = LootSearchWorldGate.GetNeedInspection(inv);
+        var shouldSearch = needInspection;
+
+        try
+        {
+            if (CoopSyncDatabase.Loot.TryGetByInventory(inv, out var entry) && entry?.Lootbox)
+                shouldSearch |= entry.Lootbox.needInspect;
+        }
+        catch
+        {
+        }
+
+        if (!shouldSearch)
+            return;
+
+        var inspected = false;
+        try
+        {
+            inspected = inv.hasBeenInspectedInLootBox;
+        }
+        catch
+        {
+        }
+
+        // 已经搜索完成：保持已完成状态，避免再次加迷雾
+        if (inspected)
+        {
+            if (needInspection)
+                LootSearchWorldGate.TrySetNeedInspection(inv, false);
             return;
         }
 
-        if (LootboxDetectUtil.IsPrivateInventory(inv)) return;
+        LootSearchWorldGate.TrySetNeedInspection(inv, true);
+        LootSearchWorldGate.ForceTopLevelUninspected(inv);
 
-        // ★ 容量安全阈值：防止因为误匹配把 UI 撑爆（真正根因是冲突/错配）
-        capacity = Mathf.Clamp(capacity, 1, 128);
+        try
+        {
+            inv.hasBeenInspectedInLootBox = false;
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            if (CoopSyncDatabase.Loot.TryGetByInventory(inv, out var entry) && entry?.Lootbox)
+                entry.Lootbox.needInspect = true;
+        }
+        catch
+        {
+        }
+    }
+
+    public void Client_ApplyLootboxState(LootStateRpc rpc)
+    {
+        var lm = LootManagerInstance;
+        if (IsServer || lm == null) return;
+
+        var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
+        if (!inv) return;
+
+        Client_ForceSearchMode(inv);
+
+        var curVersion = GetCurrentVersion(inv);
+        if (!rpc.IsSnapshot && rpc.Version != curVersion + 1)
+        {
+            Client_RequestLootState(inv, true);
+            return;
+        }
+
+        _cliVersions[inv] = Mathf.Max(rpc.Version, curVersion);
 
         _applyingLootState = true;
         try
         {
-            inv.SetCapacity(capacity);
-            inv.Loading = false;
-
-            for (var i = inv.Content.Count - 1; i >= 0; --i)
+            if (rpc.IsSnapshot)
             {
-                Item removed;
-                inv.RemoveAt(i, out removed);
-                if (removed) Object.Destroy(removed.gameObject);
+                if (rpc.Capacity > 0 && inv.Capacity != rpc.Capacity)
+                    inv.SetCapacity(rpc.Capacity);
+
+                for (var i = 0; i < rpc.Capacity && i < rpc.Snapshot.Length; i++)
+                {
+                    var slot = rpc.Snapshot[i];
+                    if (!slot.HasItem)
+                    {
+                        var existing = inv.GetItemAt(i);
+                        if (existing != null && IsQuestTagged(existing))
+                            continue;
+
+                        inv.RemoveAt(i, out _);
+                        continue;
+                    }
+
+                    var targetSnap = slot.Item.TypeId == 0
+                        ? new ItemSnapshot { TypeId = slot.TypeId, Stack = slot.Stack }
+                        : slot.Item;
+                    if (targetSnap.Stack == 0)
+                        targetSnap.Stack = Mathf.Max(1, slot.Stack);
+
+                    var exist = inv.GetItemAt(i);
+                    if (exist != null && IsQuestTagged(exist))
+                        continue;
+
+                    if (exist != null && exist.TypeID == targetSnap.TypeId && ItemTool.ApplySnapshot(exist, targetSnap))
+                    {
+                        ResetInspectionFlags(inv, exist);
+                    }
+                    else
+                    {
+                        inv.RemoveAt(i, out _);
+                        try
+                        {
+                            var item = ItemTool.BuildItemFromSnapshot(targetSnap);
+                            if (item)
+                            {
+                                inv.AddAt(item, i);
+                                ResetInspectionFlags(inv, item);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning($"[LOOT] instantiate snapshot item failed: {ex.Message}");
+                        }
+                    }
+                }
             }
-
-            for (var k = 0; k < count; ++k)
+            else
             {
-                var pos = r.GetInt();
-                var snap = ItemTool.ReadItemSnapshot(r);
-                var item = ItemTool.BuildItemFromSnapshot(snap);
-                if (item == null) continue;
-                inv.AddAt(item, pos);
+                if (Client_LootDeltaAlreadyApplied(inv, rpc))
+                    return;
+
+                var delta = rpc.Delta;
+                if (!delta.HasItem)
+                {
+                    var existing = inv.GetItemAt(rpc.Slot);
+                    if (existing != null && IsQuestTagged(existing))
+                        return;
+
+                    inv.RemoveAt(rpc.Slot, out _);
+                }
+                else
+                {
+                    var targetSnap = delta.Item.TypeId == 0
+                        ? new ItemSnapshot { TypeId = delta.TypeId, Stack = delta.Stack }
+                        : delta.Item;
+                    if (targetSnap.Stack == 0)
+                        targetSnap.Stack = Mathf.Max(1, delta.Stack);
+
+                    var exist = inv.GetItemAt(rpc.Slot);
+                    if (exist != null && IsQuestTagged(exist))
+                        return;
+
+                    if (exist != null && exist.TypeID == targetSnap.TypeId && ItemTool.ApplySnapshot(exist, targetSnap))
+                    {
+                        ResetInspectionFlags(inv, exist);
+                    }
+                    else
+                    {
+                        inv.RemoveAt(rpc.Slot, out _);
+                        try
+                        {
+                            var item = ItemTool.BuildItemFromSnapshot(targetSnap);
+                            if (item)
+                            {
+                                inv.AddAt(item, rpc.Slot);
+                                ResetInspectionFlags(inv, item);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning($"[LOOT] instantiate delta item failed: {ex.Message}");
+                        }
+                    }
+                }
             }
         }
         finally
         {
             _applyingLootState = false;
         }
-
-
-        try
-        {
-            var lv = LootView.Instance;
-            if (lv && lv.open && ReferenceEquals(lv.TargetInventory, inv))
-            {
-                // 轻量刷新：不强制重开，只更新细节/按钮与容量文本
-                AccessTools.Method(typeof(LootView), "RefreshDetails")?.Invoke(lv, null);
-                AccessTools.Method(typeof(LootView), "RefreshPickAllButton")?.Invoke(lv, null);
-                AccessTools.Method(typeof(LootView), "RefreshCapacityText")?.Invoke(lv, null);
-            }
-        }
-        catch
-        {
-        }
     }
 
-
-    // Mod.cs
     public void Client_SendLootPutRequest(Inventory lootInv, Item item, int preferPos)
     {
-        if (!networkStarted || IsServer || connectedPeer == null || lootInv == null || item == null) return;
-
+        if (IsServer || lootInv == null || item == null || connectedPeer == null) return;
+        var lm = LootManagerInstance;
+        if (lm == null) return;
         if (LootboxDetectUtil.IsPrivateInventory(lootInv)) return;
-
-
-        // 同一物品的在途 PUT 防重
-        foreach (var kv in _cliPendingPut)
-        {
-            var pending = kv.Value;
-            if (pending && ReferenceEquals(pending, item))
-            {
-                // 已经有一个在途请求了，丢弃重复点击
-                Debug.Log($"[LOOT] Duplicate PUT suppressed for item: {item.DisplayName}");
-                return;
-            }
-        }
 
         var token = _nextLootToken++;
         _cliPendingPut[token] = item;
 
-        var w = writer;
-        if (w == null) return;
-        w.Reset();
-        w.Put((byte)Op.LOOT_REQ_PUT);
-        LootManager.Instance.PutLootId(w, lootInv);
-        w.Put(preferPos);
-        w.Put(token);
-        ItemTool.WriteItemSnapshot(w, item);
-        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+        var rpc = new LootPutRequestRpc
+        {
+            Id = lm.BuildLootIdentifier(lootInv),
+            Token = token,
+            PreferPos = preferPos,
+            TypeId = item.TypeID,
+            Count = item.StackCount,
+            Item = ItemTool.MakeSnapshot(item)
+        };
+
+        CoopTool.SendRpc(in rpc);
     }
 
-
-    // 作用：发送 TAKE 请求（携带目标信息）；客户端暂不落位，等回包
-    // 兼容旧调用：不带目的地
     public void Client_SendLootTakeRequest(Inventory lootInv, int position)
     {
         Client_SendLootTakeRequest(lootInv, position, null, -1, null);
     }
 
-    // 新：带目的地（背包+格 或 装备槽）
-    public uint Client_SendLootTakeRequest(
-        Inventory lootInv,
-        int position,
-        Inventory destInv,
-        int destPos,
-        Slot destSlot)
+    public uint Client_SendLootTakeRequest(Inventory lootInv, int position, Inventory destInv, int destPos, Slot destSlot)
     {
-        if (!networkStarted || IsServer || connectedPeer == null || lootInv == null) return 0;
+        var lm = LootManagerInstance;
+        if (IsServer || lootInv == null || connectedPeer == null || lm == null) return 0;
         if (LootboxDetectUtil.IsPrivateInventory(lootInv)) return 0;
-
-        // 目标如果还是“容器”，就当作没指定（容器内换位由主机权威刷新）
-        if (destInv != null && LootboxDetectUtil.IsLootboxInventory(destInv))
-            destInv = null;
 
         var token = _nextLootToken++;
 
-        if (destInv != null || destSlot != null)
-            LootManager.Instance._cliPendingTake[token] = new PendingTakeDest
-            {
-                inv = destInv,
-                pos = destPos,
-                slot = destSlot,
-                //记录来源容器与来源格子（用于交换时回填）
-                srcLoot = lootInv,
-                srcPos = position
-            };
+        var rpc = new LootTakeRequestRpc
+        {
+            Id = lm.BuildLootIdentifier(lootInv),
+            Token = token,
+            Position = position,
+            PreferDest = destPos
+        };
 
-        var w = writer;
-        //if (w == null) return;
-        w.Reset();
-        w.Put((byte)Op.LOOT_REQ_TAKE);
-        LootManager.Instance.PutLootId(w, lootInv); // 只写 inv 身份（scene/posKey/instance/uid）
-        w.Put(position);
-        w.Put(token); // 附带 token
-        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+        CoopTool.SendRpc(in rpc);
+
         return token;
     }
 
-
-    // 主机：处理 PUT（客户端 -> 主机）
-    public void Server_HandleLootPutRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootPutRequest(RpcContext context, LootPutRequestRpc rpc)
     {
-        var scene = r.GetInt();
-        var posKey = r.GetInt();
-        var iid = r.GetInt();
-        var lootUid = r.GetInt(); // 对齐 PutLootId 多写的稳定ID
-        var prefer = r.GetInt();
-        var token = r.GetUInt();
+        var lm = LootManagerInstance;
+        var peer = context.Sender;
+        if (!context.IsServer || peer == null || lm == null) return;
 
-        ItemSnapshot snap;
-        try
-        {
-            snap = ItemTool.ReadItemSnapshot(r);
-        }
-        catch (DecoderFallbackException ex)
-        {
-            Debug.LogError($"[LOOT][PUT] snapshot decode failed: {ex.Message}");
-            Server_SendLootDeny(peer, "bad_snapshot");
-            return;
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[LOOT][PUT] snapshot parse failed: {ex}");
-            Server_SendLootDeny(peer, "bad_snapshot");
-            return;
-        }
-
-        // ★ 可选：如果未来客户端也会带有效的 lootUid，可优先用它定位
-        Inventory inv = null;
-        if (lootUid >= 0) LootManager.Instance._srvLootByUid.TryGetValue(lootUid, out inv);
-        if (inv == null && !LootManager.Instance.TryResolveLootById(scene, posKey, iid, out inv))
+        var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
+        if (!LootboxDetectUtil.IsLootboxInventory(inv) || inv == null)
         {
             Server_SendLootDeny(peer, "no_inv");
             return;
         }
 
-        if (LootboxDetectUtil.IsPrivateInventory(inv))
-        {
-            Server_SendLootDeny(peer, "no_inv");
-            return;
-        }
-
-        //if (!TryResolveLootById(scene, posKey, iid, out var inv) || inv == null)
-        //{ Server_SendLootDeny(peer, "no_inv"); return; }
-
-        var item = ItemTool.BuildItemFromSnapshot(snap);
-        if (item == null)
-        {
-            Server_SendLootDeny(peer, "bad_item");
-            return;
-        }
-
-        _serverApplyingLoot = true;
-        var ok = false;
         try
         {
-            ok = inv.AddAndMerge(item, prefer);
-            if (!ok) Object.Destroy(item.gameObject);
+            _serverApplyingLoot = true;
+            var preferSlot = rpc.PreferPos;
+            var existing = preferSlot >= 0 ? inv.GetItemAt(preferSlot) : null;
+            if (existing != null && existing.TypeID != rpc.TypeId)
+            {
+                // The hinted slot is occupied by another item; ignore the hint to avoid AddAt errors.
+                preferSlot = -1;
+                existing = null;
+            }
+
+            if (existing != null && IsQuestTagged(existing))
+            {
+                Server_SendLootDeny(peer, "quest_item");
+                return;
+            }
+
+            if (existing != null && existing.TypeID == rpc.TypeId && existing.Stackable)
+            {
+                var space = Mathf.Max(0, existing.MaxStackCount - existing.StackCount);
+                var add = Mathf.Min(space, Mathf.Max(1, rpc.Count));
+                if (add > 0)
+                {
+                    existing.StackCount += add;
+                    Server_HookItemSlots(existing);
+                    _srvPlayerPlaced.Add(existing);
+                    ResetInspectionFlags(inv, existing, true);
+                    BroadcastLootDelta(inv, preferSlot, existing.TypeID, existing.StackCount, false);
+                    SendLootPutOk(peer, rpc.Token, inv, preferSlot, existing.StackCount);
+                    var remain = Mathf.Max(0, rpc.Count - add);
+                    if (remain <= 0)
+                        return;
+                    rpc.Count = remain;
+                }
+            }
+
+            var item = ItemTool.BuildItemFromSnapshot(rpc.Item.TypeId == 0
+                ? new ItemSnapshot { TypeId = rpc.TypeId, Stack = rpc.Count }
+                : rpc.Item);
+            if (item == null)
+            {
+                Server_SendLootDeny(peer, "bad_snapshot");
+                return;
+            }
+
+            if (IsQuestTagged(item))
+            {
+                UnityEngine.Object.Destroy(item.gameObject);
+                Server_SendLootDeny(peer, "quest_item");
+                return;
+            }
+
+            item.StackCount = Mathf.Max(1, rpc.Count);
+            _srvPlayerPlaced.Add(item);
+            Server_HookItemSlots(item);
+            ResetInspectionFlags(inv, item, true);
+
+            if (preferSlot < 0)
+            {
+                for (var i = 0; i < inv.Capacity; i++)
+                {
+                    var candidate = inv.GetItemAt(i);
+                    if (candidate == null || candidate == item) continue;
+                    if (candidate.TypeID != item.TypeID || !candidate.Stackable) continue;
+                    var space = Mathf.Max(0, candidate.MaxStackCount - candidate.StackCount);
+                    if (space <= 0) continue;
+                    var add = Mathf.Min(space, item.StackCount);
+                    candidate.StackCount += add;
+                    Server_HookItemSlots(candidate);
+                    BroadcastLootDelta(inv, i, candidate.TypeID, candidate.StackCount, false);
+                    SendLootPutOk(peer, rpc.Token, inv, i, candidate.StackCount);
+                    item.StackCount -= add;
+                    if (item.StackCount <= 0)
+                    {
+                        UnityEngine.Object.Destroy(item.gameObject);
+                        return;
+                    }
+                }
+            }
+
+            var ok = preferSlot >= 0 ? inv.AddAt(item, preferSlot) : inv.AddItem(item);
+            if (!ok)
+            {
+                UnityEngine.Object.Destroy(item.gameObject);
+                Server_SendLootDeny(peer, "full");
+                return;
+            }
+
+            var slot = preferSlot >= 0 ? preferSlot : inv.GetLastItemPosition();
+            BroadcastLootDelta(inv, slot, item.TypeID, item.StackCount, false);
+            SendLootPutOk(peer, rpc.Token, inv, slot, item.StackCount);
         }
         catch (Exception ex)
         {
-            Debug.LogError($"[LOOT][PUT] AddAndMerge exception: {ex}");
-            ok = false;
+            Debug.LogWarning($"[LOOT] put request failed: {ex.Message}");
+            Server_SendLootDeny(peer, "rm_fail");
         }
         finally
         {
             _serverApplyingLoot = false;
         }
-
-        if (!ok)
-        {
-            Server_SendLootDeny(peer, "add_fail");
-            return;
-        }
-
-        var ack = new NetDataWriter();
-        ack.Put((byte)Op.LOOT_PUT_OK);
-        ack.Put(token);
-        peer.Send(ack, DeliveryMethod.ReliableOrdered);
-
-        Server_SendLootboxState(null, inv);
     }
 
-
-    public void Server_HandleLootTakeRequest(NetPeer peer, NetPacketReader r)
+    public void Server_HandleLootTakeRequest(RpcContext context, LootTakeRequestRpc rpc)
     {
-        var scene = r.GetInt();
-        var posKey = r.GetInt();
-        var iid = r.GetInt();
-        var lootUid = r.GetInt(); // 对齐 PutLootId
-        var position = r.GetInt();
-        var token = r.GetUInt(); // 读取 token
+        var lm = LootManagerInstance;
+        var peer = context.Sender;
+        if (!context.IsServer || peer == null || lm == null) return;
 
-        Inventory inv = null;
-        if (lootUid >= 0) LootManager.Instance._srvLootByUid.TryGetValue(lootUid, out inv);
-        if (inv == null && !LootManager.Instance.TryResolveLootById(scene, posKey, iid, out inv))
+        var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
+        if (!LootboxDetectUtil.IsLootboxInventory(inv) || inv == null)
         {
             Server_SendLootDeny(peer, "no_inv");
             return;
         }
-
-        if (LootboxDetectUtil.IsPrivateInventory(inv))
-        {
-            Server_SendLootDeny(peer, "no_inv");
-            return;
-        }
-
 
         _serverApplyingLoot = true;
-        var ok = false;
-        Item removed = null;
         try
         {
-            if (position >= 0 && position < inv.Capacity)
-                try
-                {
-                    ok = inv.RemoveAt(position, out removed);
-                }
-                catch (ArgumentOutOfRangeException)
-                {
-                    ok = false;
-                    removed = null;
-                }
+            var item = inv.GetItemAt(rpc.Position);
+            if (item == null)
+            {
+                Server_SendLootDeny(peer, "no_item");
+                return;
+            }
+
+            if (IsQuestTagged(item))
+            {
+                Server_SendLootDeny(peer, "quest_item");
+                return;
+            }
+
+            var typeId = item.TypeID;
+            var stack = item.StackCount;
+
+            // Always treat client takes as full-slot transfers; stacking/splitting will be handled by explicit split RPCs later.
+            inv.RemoveAt(rpc.Position, out _);
+
+            BroadcastLootDelta(inv, rpc.Position, -1, 0, true);
+            SendLootTakeOk(peer, rpc.Token, inv, rpc.Position, typeId, stack);
         }
         finally
         {
             _serverApplyingLoot = false;
         }
+    }
 
-        if (!ok || removed == null)
-        {
-            Server_SendLootDeny(peer, "rm_fail");
-            Server_SendLootboxState(peer, inv); // ⬅️ 刷新请求方 UI 的索引认知
-            return;
-        }
+    private void BroadcastLootDelta(Inventory inv, int slot, int typeId, int count, bool cleared)
+    {
+        var lm = LootManagerInstance;
+        if (!IsServer || inv == null || lm == null) return;
 
-        var wCli = new NetDataWriter();
-        wCli.Put((byte)Op.LOOT_TAKE_OK);
-        wCli.Put(token); // ★ 回 token
-        ItemTool.WriteItemSnapshot(wCli, removed);
-        peer.Send(wCli, DeliveryMethod.ReliableOrdered);
-
+        Item item = null;
         try
         {
-            Object.Destroy(removed.gameObject);
+            item = !cleared ? inv.GetItemAt(slot) : null;
         }
         catch
         {
         }
 
-        Server_SendLootboxState(null, inv);
+        if (item != null && IsQuestTagged(item))
+            return;
+
+        var rpc = new LootStateRpc
+        {
+            Id = lm.BuildLootIdentifier(inv),
+            IsSnapshot = false,
+            Version = NextVersion(inv),
+            Slot = slot,
+            Delta = new LootSlotSnapshot
+            {
+                HasItem = !cleared,
+                TypeId = typeId,
+                Stack = count,
+                Item = item ? ItemTool.MakeSnapshot(item) : default
+            }
+        };
+
+        if (_srvViewers.TryGetValue(inv, out var viewers) && viewers.Count > 0)
+        {
+            foreach (var viewer in viewers)
+                CoopTool.SendRpcTo(viewer, in rpc);
+        }
+        else
+        {
+            CoopTool.SendRpc(in rpc);
+        }
     }
 
     public void Server_SendLootDeny(NetPeer peer, string reason)
     {
-        var w = new NetDataWriter();
-        w.Put((byte)Op.LOOT_DENY);
-        w.Put(reason ?? "");
-        peer?.Send(w, DeliveryMethod.ReliableOrdered);
+        if (!IsServer || peer == null) return;
+        var rpc = new LootDenyRpc { Reason = reason ?? string.Empty };
+        CoopTool.SendRpcTo(peer, in rpc);
     }
 
-    // 客户端：收到 PUT_OK -> 把“本地发起的那件物品”从自己背包删掉
-    public void Client_OnLootPutOk(NetPacketReader r)
+    private static ItemSnapshot NormalizeDeltaSnapshot(in LootSlotSnapshot slot)
     {
-        var token = r.GetUInt();
-
-        if (_cliPendingSlotPlug.TryGetValue(token, out var victim) && victim)
+        var snap = slot.Item;
+        if (snap.TypeId == 0)
+            snap.TypeId = slot.TypeId;
+        if (snap.Stack == 0)
+            snap.Stack = Mathf.Max(1, slot.Stack);
+        if (slot.Item.HasDurability && !snap.HasDurability)
         {
+            snap.HasDurability = true;
+            snap.Durability = slot.Item.Durability;
+        }
+        return snap;
+    }
+
+    private bool Client_LootDeltaAlreadyApplied(Inventory inv, LootStateRpc rpc)
+    {
+        if (inv == null || rpc.IsSnapshot) return false;
+
+        var delta = rpc.Delta;
+        if (!delta.HasItem)
+            return inv.GetItemAt(rpc.Slot) == null;
+
+        var existing = inv.GetItemAt(rpc.Slot);
+        if (existing == null) return false;
+
+        var snap = NormalizeDeltaSnapshot(in delta);
+        return ItemTool.SnapshotMatches(existing, snap);
+    }
+
+    private void SendLootPutOk(NetPeer peer, uint token, Inventory inv, int slot, int stack)
+    {
+        var lm = LootManagerInstance;
+        if (!IsServer || peer == null || lm == null) return;
+        var rpc = new LootPutOkRpc
+        {
+            Id = lm.BuildLootIdentifier(inv),
+            Token = token,
+            Slot = slot,
+            Stack = stack
+        };
+
+        CoopTool.SendRpcTo(peer, in rpc);
+    }
+
+    private void SendLootTakeOk(NetPeer peer, uint token, Inventory inv, int slot, int typeId, int stack)
+    {
+        var lm = LootManagerInstance;
+        if (!IsServer || peer == null || lm == null) return;
+        var rpc = new LootTakeOkRpc
+        {
+            Id = lm.BuildLootIdentifier(inv),
+            Token = token,
+            Slot = slot,
+            TypeId = typeId,
+            Stack = stack
+        };
+
+        CoopTool.SendRpcTo(peer, in rpc);
+    }
+
+    public void Client_OnLootPutOk(LootPutOkRpc rpc)
+    {
+        var lm = LootManagerInstance;
+        if (IsServer || lm == null) return;
+        var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
+        if (inv && _cliVersions.TryGetValue(inv, out var v)) _cliVersions[inv] = v; // keep version aligned
+        _cliPendingPut.Remove(rpc.Token);
+
+        if (!inv) return;
+        var item = inv.GetItemAt(rpc.Slot);
+        if (item) item.StackCount = Mathf.Max(1, rpc.Stack);
+    }
+
+    public void Client_OnLootTakeOk(LootTakeOkRpc rpc)
+    {
+        var lm = LootManagerInstance;
+        if (IsServer || lm == null) return;
+        var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
+        if (inv && _cliVersions.TryGetValue(inv, out var v)) _cliVersions[inv] = v;
+
+        if (inv)
+        {
+            var item = inv.GetItemAt(rpc.Slot);
+            if (rpc.TypeId < 0)
+                inv.RemoveAt(rpc.Slot, out _);
+            else if (item != null && item.TypeID == rpc.TypeId)
+                item.StackCount = Mathf.Max(1, rpc.Stack);
+        }
+
+        lm._cliPendingTake.Remove(rpc.Token);
+    }
+
+    private static void ApplyNestedSlots(Item target, ItemSnapshot snapshot)
+    {
+        if (target == null || snapshot.TypeId == 0) return;
+
+        try
+        {
+            var slots = target.Slots;
+            if (slots == null || slots.Count == 0) return;
+
+            foreach (var slot in slots)
+            {
+                if (slot == null) continue;
+
+                ItemSlotSnapshot snap = default;
+                var hasSnap = snapshot.Slots != null;
+                if (hasSnap)
+                {
+                    snap = snapshot.Slots.FirstOrDefault(s => s.Key == slot.Key);
+                    hasSnap = !string.IsNullOrEmpty(snap.Key) || snap.HasItem || snap.Item.TypeId != 0;
+                }
+
+                if (hasSnap && snap.HasItem)
+                {
+                    var child = slot.Content;
+                    if (child != null && child.TypeID == snap.Item.TypeId)
+                    {
+                        ItemTool.ApplySnapshot(child, snap.Item);
+                    }
+                    else
+                    {
+                        if (child != null) slot.Unplug();
+                        var newChild = ItemTool.BuildItemFromSnapshot(snap.Item);
+                        if (newChild != null)
+                            slot.Plug(newChild, out _);
+                    }
+                }
+                else if (slot.Content != null)
+                {
+                    slot.Unplug();
+                }
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    public static void Client_ApplyLootVisibility(Dictionary<int, bool> vis) { }
+    public static void Client_ApplyLootVisibilityChunk(int[] keys, bool[] states, bool reset)
+    {
+        var lootNet = COOPManager.LootNet;
+        if (lootNet == null || lootNet.IsServer) return;
+        lootNet.Client_ApplyLootVisibilityInternal(keys, states, reset);
+    }
+
+    private void Client_ApplyLootVisibilityInternal(int[] keys, bool[] states, bool reset)
+    {
+        if (IsServer) return;
+
+        if (reset)
+            _cliLootVisibility.Clear();
+
+        var count = Math.Min(keys?.Length ?? 0, states?.Length ?? 0);
+        if (count <= 0) return;
+
+        var core = Duckov.Scenes.MultiSceneCore.Instance;
+
+        for (var i = 0; i < count; i++)
+        {
+            var key = keys[i];
+            var active = states[i];
+            if (key == 0) continue;
+
+            _cliLootVisibility[key] = active;
+
             try
             {
-                var srcInv = victim.InInventory;
-                if (srcInv)
+                if (core?.inLevelData != null)
+                    core.inLevelData[key] = active;
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (CoopSyncDatabase.Loot.TryGetByPositionKey(key, out var entry) && entry != null)
+                {
+                    if (ItemTool.InventoryHasQuestItem(entry.Inventory))
+                        continue;
+
+                    var go = entry.Loader ? entry.Loader.gameObject : entry.Lootbox ? entry.Lootbox.gameObject : null;
+                    if (go && go.activeSelf != active)
+                        go.SetActive(active);
+                }
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    internal bool Client_TryGetCachedVisibility(int key, out bool active)
+    {
+        active = false;
+        if (IsServer || key == 0) return false;
+        return _cliLootVisibility.TryGetValue(key, out active);
+    }
+
+    public void Client_SendLootSplitRequest(Inventory lootInv, int srcPos, int newStack)
+    {
+        var service = Service;
+        if (service == null || service.IsServer || !service.networkStarted) return;
+        if (lootInv == null || !LootboxDetectUtil.IsLootboxInventory(lootInv) || LootboxDetectUtil.IsPrivateInventory(lootInv))
+            return;
+
+        var item = lootInv.GetItemAt(srcPos);
+        var lm = LootManagerInstance;
+        if (lm == null || item == null) return;
+
+        var rpc = new LootStackRequestRpc
+        {
+            Id = lm.BuildLootIdentifier(lootInv),
+            Slot = srcPos,
+            Stack = Mathf.Max(1, newStack),
+            TypeId = item.TypeID
+        };
+
+        CoopTool.SendRpc(in rpc);
+    }
+
+    public void Server_HandleLootSplitRequest(RpcContext context, LootStackRequestRpc rpc)
+    {
+        var lm = LootManagerInstance;
+        if (!context.IsServer || lm == null) return;
+
+        var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
+        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv)) return;
+
+        _serverApplyingLoot = true;
+        try
+        {
+            var item = inv.GetItemAt(rpc.Slot);
+            if (item == null || item.TypeID != rpc.TypeId) return;
+
+            if (IsQuestTagged(item))
+                return;
+
+            item.StackCount = Mathf.Max(1, rpc.Stack);
+            BroadcastLootDelta(inv, rpc.Slot, item.TypeID, item.StackCount, false);
+        }
+        finally
+        {
+            _serverApplyingLoot = false;
+        }
+    }
+
+    public void Client_RequestLootSlotPlug(Inventory inv, Item master, string slotKey, Item child)
+    {
+        if (IsServer || inv == null || master == null || child == null || string.IsNullOrEmpty(slotKey)) return;
+        if (!networkStarted || connectedPeer == null) return;
+        if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
+        if (!Client_ShouldSendLootChange(inv)) return;
+
+        var lm = LootManagerInstance;
+        if (lm == null) return;
+
+        var pos = inv.GetIndex(master);
+        if (pos < 0) return;
+
+        var sourceSlotKey = child.PluggedIntoSlot != null ? child.PluggedIntoSlot.Key : string.Empty;
+        if (string.IsNullOrEmpty(sourceSlotKey))
+            sourceSlotKey = Client_ConsumeSlotOrigin(child);
+
+        var rpc = new LootSlotPlugRequestRpc
+        {
+            Id = lm.BuildLootIdentifier(inv),
+            ParentSlot = pos,
+            SlotKey = slotKey,
+            SourceSlotKey = sourceSlotKey,
+            Child = ItemTool.MakeSnapshot(child)
+        };
+
+        CoopTool.SendRpc(in rpc);
+    }
+
+    public void Client_RequestLootSlotUnplug(Inventory inv, Item master, string slotKey)
+    {
+        if (IsServer || inv == null || master == null || string.IsNullOrEmpty(slotKey)) return;
+        if (!networkStarted || connectedPeer == null) return;
+        if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
+        if (!Client_ShouldSendLootChange(inv)) return;
+
+        var lm = LootManagerInstance;
+        if (lm == null) return;
+
+        var pos = inv.GetIndex(master);
+        if (pos < 0) return;
+
+        var rpc = new LootSlotUnplugRequestRpc
+        {
+            Id = lm.BuildLootIdentifier(inv),
+            ParentSlot = pos,
+            SlotKey = slotKey
+        };
+
+        CoopTool.SendRpc(in rpc);
+    }
+
+    public void Client_RequestLootSlotSnapshot(Inventory inv, Item master)
+    {
+        if (IsServer || inv == null || master == null) return;
+        if (!networkStarted || connectedPeer == null) return;
+        if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
+        if (!Client_ShouldSendLootChange(inv)) return;
+
+        var lm = LootManagerInstance;
+        if (lm == null) return;
+
+        var pos = inv.GetIndex(master);
+        if (pos < 0) return;
+
+        var rpc = new LootSlotSnapshotRpc
+        {
+            Id = lm.BuildLootIdentifier(inv),
+            ParentSlot = pos,
+            Snapshot = ItemTool.MakeSnapshot(master)
+        };
+
+        CoopTool.SendRpc(in rpc);
+    }
+
+    public void Server_HandleLootSlotPlugRequest(RpcContext context, LootSlotPlugRequestRpc rpc)
+    {
+        var lm = LootManagerInstance;
+        if (!context.IsServer || lm == null) return;
+
+        var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
+        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
+
+        _serverApplyingLoot = true;
+        try
+        {
+            var master = inv.GetItemAt(rpc.ParentSlot);
+            if (master == null) return;
+
+            if (IsQuestTagged(master))
+                return;
+
+            Server_HookItemSlots(master);
+
+            var slot = master.Slots?.GetSlot(rpc.SlotKey);
+            if (slot == null) return;
+
+            Slot srcSlot = null;
+            Item moving = null;
+            Item originalSrcContent = null;
+            Item originalTargetContent = slot.Content;
+
+            if (!string.IsNullOrEmpty(rpc.SourceSlotKey) && master.Slots != null)
+            {
+                srcSlot = master.Slots.GetSlot(rpc.SourceSlotKey);
+                if (srcSlot != null && srcSlot != slot)
+                {
+                    originalSrcContent = srcSlot.Content;
+                    moving = originalSrcContent;
+                    if (moving)
+                        srcSlot.Unplug();
+                }
+            }
+
+            moving = moving ?? ItemTool.BuildItemFromSnapshot(rpc.Child);
+            if (moving == null) return;
+
+            if (IsQuestTagged(moving))
+                return;
+
+            _srvPlayerPlaced.Add(moving);
+            Server_HookItemSlots(moving);
+
+            var plugged = slot.Plug(moving, out var unplugged);
+
+            if (!plugged)
+            {
+                if (srcSlot != null && srcSlot != slot && srcSlot.Content == null && originalSrcContent != null)
+                    srcSlot.Plug(originalSrcContent, out _);
+
+                return;
+            }
+
+            if (unplugged != null && unplugged != moving)
+            {
+                var placed = false;
+
+                if (srcSlot != null && srcSlot != slot)
+                {
+                    if (srcSlot.Plug(unplugged, out var swappedBack))
+                    {
+                        placed = swappedBack == null;
+                        if (swappedBack != null && swappedBack != unplugged && swappedBack != moving)
+                        {
+                            try { UnityEngine.Object.Destroy(swappedBack.gameObject); } catch { }
+                        }
+                    }
+                }
+
+                if (!placed)
+                {
+                    Slot fallback = null;
                     try
                     {
-                        srcInv.RemoveItem(victim);
+                        var slots = master.Slots;
+                        if (slots != null)
+                        {
+                            foreach (var candidate in slots)
+                            {
+                                if (candidate == null || candidate == slot || candidate == srcSlot) continue;
+                                if (candidate.Content == null)
+                                {
+                                    fallback = candidate;
+                                    break;
+                                }
+                            }
+                        }
                     }
                     catch
                     {
                     }
 
-                Object.Destroy(victim.gameObject);
-            }
-            catch
-            {
-            }
-            finally
-            {
-                _cliPendingSlotPlug.Remove(token);
-            }
-
-            return; // 不再继续走“普通 PUT”流程
-        }
-
-        if (_cliPendingPut.TryGetValue(token, out var localItem) && localItem)
-        {
-            _cliPendingPut.Remove(token);
-
-            // —— 交换路径：这次 PUT 的 localItem 是否正是我们等待交换的 victim？——
-            if (_cliSwapByVictim.TryGetValue(localItem, out var ctx))
-            {
-                _cliSwapByVictim.Remove(localItem);
-
-                // 1) victim 已经成功 PUT 到容器：本地把它清理掉
-                try
-                {
-                    localItem.Detach();
-                }
-                catch
-                {
-                }
-
-                try
-                {
-                    Object.Destroy(localItem.gameObject);
-                }
-                catch
-                {
-                }
-
-                // 2) 把“新物”真正落位（槽或背包格）
-                try
-                {
-                    if (ctx.destSlot != null)
+                    if (fallback != null && fallback.Plug(unplugged, out var swapped))
                     {
-                        if (ctx.destSlot.CanPlug(ctx.newItem))
-                            ctx.destSlot.Plug(ctx.newItem, out _);
-                    }
-                    else if (ctx.destInv != null && ctx.destPos >= 0)
-                    {
-                        // 目标格此时应为空（victim 已被 PUT 走）
-                        ctx.destInv.AddAt(ctx.newItem, ctx.destPos);
+                        placed = swapped == null;
+                        if (swapped != null && swapped != unplugged && swapped != moving)
+                        {
+                            try { UnityEngine.Object.Destroy(swapped.gameObject); } catch { }
+                        }
                     }
                 }
-                catch
+
+                if (!placed)
                 {
-                }
+                    // Revert to the pre-plug state to avoid swallowing the displaced item.
+                    slot.Unplug();
 
-                // 3) 清理可能遗留的同物品 pending
-                var toRemove = new List<uint>();
-                foreach (var kv in _cliPendingPut)
-                    if (!kv.Value || ReferenceEquals(kv.Value, localItem))
-                        toRemove.Add(kv.Key);
-                foreach (var k in toRemove) _cliPendingPut.Remove(k);
+                    if (originalTargetContent != null && slot.Content == null)
+                        slot.Plug(originalTargetContent, out _);
 
-                return; // 交换流程结束
-            }
+                    if (srcSlot != null && srcSlot != slot && srcSlot.Content == null && originalSrcContent != null)
+                        srcSlot.Plug(originalSrcContent, out _);
 
-            // —— 普通 PUT 成功：维持你原有的清理逻辑 —— 
-            try
-            {
-                localItem.Detach();
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                Object.Destroy(localItem.gameObject);
-            }
-            catch
-            {
-            }
-
-            var stale = new List<uint>();
-            foreach (var kv in _cliPendingPut)
-                if (!kv.Value || ReferenceEquals(kv.Value, localItem))
-                    stale.Add(kv.Key);
-            foreach (var k in stale) _cliPendingPut.Remove(k);
-        }
-    }
-
-
-    public void Client_OnLootTakeOk(NetPacketReader r)
-    {
-        var token = r.GetUInt();
-
-        // 1) 还原物品
-        var snap = ItemTool.ReadItemSnapshot(r);
-        var newItem = ItemTool.BuildItemFromSnapshot(snap);
-        if (newItem == null) return;
-
-        // —— 取出期望目的地（可能为空）——
-        PendingTakeDest dest;
-        if (LootManager.Instance._cliPendingTake.TryGetValue(token, out dest))
-            LootManager.Instance._cliPendingTake.Remove(token);
-        else
-            dest = default;
-
-        // —— 小工具A：不入队、不打 token 的“放回来源容器”——
-        // 注意参数名用 srcInfo，避免与上面的 dest 冲突（修复 CS0136）
-        void PutBackToSource_NoTrack(Item item, PendingTakeDest srcInfo)
-        {
-            var loot = srcInfo.srcLoot != null ? srcInfo.srcLoot
-                : LootView.Instance ? LootView.Instance.TargetInventory : null;
-            var preferPos = srcInfo.srcPos >= 0 ? srcInfo.srcPos : -1;
-
-            try
-            {
-                if (networkStarted && !IsServer && connectedPeer != null && loot != null && item != null)
-                {
-                    var w = writer;
-                    if (w == null) return;
-                    w.Reset();
-                    w.Put((byte)Op.LOOT_REQ_PUT);
-                    LootManager.Instance.PutLootId(w, loot);
-                    w.Put(preferPos);
-                    w.Put((uint)0); // 不占用 _cliPendingPut，避免 Duplicate PUT
-                    ItemTool.WriteItemSnapshot(w, item);
-                    connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
-                }
-            }
-            catch
-            {
-            }
-
-            // 本地立刻清掉临时实例，防止“幽灵物品”
-            try
-            {
-                item.Detach();
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                Object.Destroy(item.gameObject);
-            }
-            catch
-            {
-            }
-
-            // 请求刷新容器状态
-            try
-            {
-                var lv = LootView.Instance;
-                var inv = lv ? lv.TargetInventory : null;
-                if (inv) Client_RequestLootState(inv);
-            }
-            catch
-            {
-            }
-        }
-
-        // 2) 容器内“重排/换位”：有标记则直接 PUT 回目标格
-        if (LootManager.Instance._cliPendingReorder.TryGetValue(token, out var reo))
-        {
-            LootManager.Instance._cliPendingReorder.Remove(token);
-            Client_SendLootPutRequest(reo.inv, newItem, reo.pos);
-            return;
-        }
-
-        // 3) 目标是装备槽：尝试直插或交换；失败则拒绝（放回来源容器）
-        if (dest.slot != null)
-        {
-            Item victim = null;
-            try
-            {
-                victim = dest.slot.Content;
-            }
-            catch
-            {
-            }
-
-            if (victim != null)
-            {
-                _cliSwapByVictim[victim] = (newItem, null, -1, dest.slot);
-                var srcLoot = dest.srcLoot ?? (LootView.Instance ? LootView.Instance.TargetInventory : null);
-                Client_SendLootPutRequest(srcLoot, victim, dest.srcPos);
-                return;
-            }
-
-            try
-            {
-                if (dest.slot.CanPlug(newItem) && dest.slot.Plug(newItem, out _))
-                    return; // 穿戴成功
-            }
-            catch
-            {
-            }
-
-            // 插槽不兼容/失败：拒绝并放回
-            PutBackToSource_NoTrack(newItem, dest);
-            return;
-        }
-
-        // 4) 目标是具体背包：AddAt/合并/普通加入；失败则拒绝并放回
-        if (dest.inv != null)
-        {
-            Item victim = null;
-            try
-            {
-                if (dest.pos >= 0) victim = dest.inv.GetItemAt(dest.pos);
-            }
-            catch
-            {
-            }
-
-            if (dest.pos >= 0 && victim != null)
-            {
-                _cliSwapByVictim[victim] = (newItem, dest.inv, dest.pos, null);
-                var srcLoot = dest.srcLoot ?? (LootView.Instance ? LootView.Instance.TargetInventory : null);
-                Client_SendLootPutRequest(srcLoot, victim, dest.srcPos);
-                return;
-            }
-
-            try
-            {
-                if (dest.pos >= 0 && dest.inv.AddAt(newItem, dest.pos)) return;
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                if (dest.inv.AddAndMerge(newItem, Mathf.Max(0, dest.pos))) return;
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                if (dest.inv.AddItem(newItem)) return;
-            }
-            catch
-            {
-            }
-
-            // 背包放不下：拒绝并放回来源容器（绝不落地）
-            PutBackToSource_NoTrack(newItem, dest);
-            return;
-        }
-
-        // 5) 未指定目的地：尝试主背包；失败则拒绝并放回
-        var mc = LevelManager.Instance ? LevelManager.Instance.MainCharacter : null;
-        var backpack = mc ? mc.CharacterItem != null ? mc.CharacterItem.Inventory : null : null;
-
-        if (backpack != null)
-        {
-            try
-            {
-                if (backpack.AddAndMerge(newItem)) return;
-            }
-            catch
-            {
-            }
-
-            try
-            {
-                if (backpack.AddItem(newItem)) return;
-            }
-            catch
-            {
-            }
-        }
-
-        // 主背包也塞不进：拒绝并放回
-        PutBackToSource_NoTrack(newItem, dest);
-    }
-
-    public static void Client_ApplyLootVisibility(Dictionary<int, bool> vis)
-    {
-        if (vis == null || vis.Count == 0)
-        {
-            Client_ApplyLootVisibilityChunk(Array.Empty<int>(), Array.Empty<bool>(), false);
-            return;
-        }
-
-        var keys = new int[vis.Count];
-        var states = new bool[vis.Count];
-        var idx = 0;
-
-        foreach (var kv in vis)
-        {
-            keys[idx] = kv.Key;
-            states[idx] = kv.Value;
-            idx++;
-        }
-
-        Client_ApplyLootVisibilityChunk(keys, states, false);
-    }
-
-    public static void Client_ApplyLootVisibilityChunk(int[] keys, bool[] states, bool reset)
-    {
-        try
-        {
-            var core = MultiSceneCore.Instance;
-            if (core == null) return;
-
-            if (reset)
-            {
-                try
-                {
-                    core.inLevelData?.Clear();
-                }
-                catch
-                {
-                }
-            }
-
-            var count = Math.Min(keys?.Length ?? 0, states?.Length ?? 0);
-            for (var i = 0; i < count; i++)
-            {
-                var key = keys[i];
-                var state = states[i];
-
-                try
-                {
-                    core.inLevelData[key] = state;
-                }
-                catch
-                {
-                }
-
-                try
-                {
-                    if (!CoopSyncDatabase.Loot.TryGetByPositionKey(key, out var entry) || entry == null)
-                        continue;
-
-                    var loader = entry.Loader;
-                    if (!loader && entry.Lootbox)
-                    {
-                        loader = entry.Lootbox.GetComponent<LootBoxLoader>();
-                        if (loader)
-                            entry.Loader = loader;
-                    }
-
-                    var target = loader ? loader.gameObject : entry.Lootbox ? entry.Lootbox.gameObject : null;
-                    if (target)
-                        target.SetActive(state);
-                }
-                catch
-                {
-                }
-            }
-        }
-        catch
-        {
-        }
-    }
-
-    public void Server_HandleLootSlotPlugRequest(NetPeer peer, NetPacketReader r)
-    {
-        // 1) 容器定位
-        var scene = r.GetInt();
-        var posKey = r.GetInt();
-        var iid = r.GetInt();
-        var lootUid = r.GetInt();
-        var inv = LootManager.Instance.ResolveLootInv(scene, posKey, iid, lootUid);
-        if (inv == null || LootboxDetectUtil.IsPrivateInventory(inv))
-        {
-            Server_SendLootDeny(peer, "no_inv");
-            return;
-        }
-
-        // 2) 目标主件 + 槽位
-        var master = LootManager.Instance.ReadItemRef(r, inv);
-        var slotKey = r.GetString();
-        if (!master)
-        {
-            Server_SendLootDeny(peer, "bad_weapon");
-            Server_SendLootboxState(peer, inv);
-            return;
-        }
-
-        var dstSlot = master?.Slots?.GetSlot(slotKey);
-        if (dstSlot == null)
-        {
-            Server_SendLootDeny(peer, "bad_slot");
-            Server_SendLootboxState(peer, inv);
-            return;
-        }
-
-        // 3) 源
-        var srcInLoot = r.GetBool();
-        Item srcItem = null;
-        uint token = 0;
-        ItemSnapshot snap = default;
-
-        if (srcInLoot)
-        {
-            srcItem = LootManager.Instance.ReadItemRef(r, inv);
-            if (!srcItem)
-            {
-                Server_SendLootDeny(peer, "bad_src");
-                Server_SendLootboxState(peer, inv); // 便于客户端立刻对齐
-                return;
-            }
-        }
-        else
-        {
-            token = r.GetUInt();
-            snap = ItemTool.ReadItemSnapshot(r);
-        }
-
-        // 4) 执行
-        _serverApplyingLoot = true;
-        var ok = false;
-        Item unplugged = null;
-        try
-        {
-            var child = srcItem;
-            if (!srcInLoot)
-            {
-                // 从 snapshot 重建对象
-                child = ItemTool.BuildItemFromSnapshot(snap);
-                if (!child)
-                {
-                    Server_SendLootDeny(peer, "build_fail");
-                    Server_SendLootboxState(peer, inv);
                     return;
                 }
             }
-            else
-            {
-                // 从容器树/格子中摘出来
-                try
-                {
-                    child.Detach();
-                }
-                catch
-                {
-                }
-            }
 
-            ok = dstSlot.Plug(child, out unplugged);
-
-            if (ok)
-            {
-                // 背包来源：给发起者一个回执，让对方删除本地背包配件
-                if (!srcInLoot)
-                {
-                    var ack = new NetDataWriter();
-                    ack.Put((byte)Op.LOOT_PUT_OK); // 复用 PUT 的 OK 回执
-                    ack.Put(token);
-                    peer.Send(ack, DeliveryMethod.ReliableOrdered);
-                }
-
-                // 一如既往广播最新容器快照
-                Server_SendLootboxState(null, inv);
-            }
-            else
-            {
-                Server_SendLootDeny(peer, "slot_plug_fail");
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[LOOT][PLUG] {ex}");
-            ok = false;
+            ResetInspectionFlags(inv, master, true);
+            BroadcastLootDelta(inv, rpc.ParentSlot, master.TypeID, master.StackCount, false);
         }
         finally
         {
             _serverApplyingLoot = false;
         }
-
-        if (!ok)
-        {
-            // 回滚：如果是 snapshot 创建的 child，需要销毁以免泄露
-            if (!srcInLoot)
-                try
-                {
-                    /* child 在 Plug 失败时仍在内存里 */
-                }
-                catch
-                {
-                }
-
-            Server_SendLootDeny(peer, "plug_fail");
-            Server_SendLootboxState(peer, inv);
-            return;
-        }
-
-        // 若顶掉了原先的一个附件，把它放回容器格子
-        if (unplugged)
-            if (!inv.AddAndMerge(unplugged))
-                try
-                {
-                    if (unplugged) Object.Destroy(unplugged.gameObject);
-                }
-                catch
-                {
-                }
-
-        // (B) 源自玩家背包的情况：下发 LOOT_PUT_OK 让发起者删除本地那件
-        if (!srcInLoot && token != 0)
-        {
-            var w2 = new NetDataWriter();
-            w2.Put((byte)Op.LOOT_PUT_OK);
-            w2.Put(token);
-            peer.Send(w2, DeliveryMethod.ReliableOrdered);
-        }
-
-        // 5) 广播容器新状态
-        Server_SendLootboxState(null, inv);
     }
 
-    public void Client_RequestLootSlotPlug(Inventory inv, Item master, string slotKey, Item child)
+    public void Server_HandleLootSlotSnapshot(RpcContext context, LootSlotSnapshotRpc rpc)
     {
-        if (!networkStarted || IsServer || connectedPeer == null) return;
+        var lm = LootManagerInstance;
+        if (!context.IsServer || lm == null) return;
 
-        var w = new NetDataWriter();
-        w.Put((byte)Op.LOOT_REQ_SLOT_PLUG);
+        var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
+        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
 
-        // 容器定位
-        LootManager.Instance.PutLootId(w, inv);
-        LootManager.Instance.WriteItemRef(w, inv, master);
-        w.Put(slotKey);
-
-        var srcInLoot = LootboxDetectUtil.IsLootboxInventory(child ? child.InInventory : null);
-        w.Put(srcInLoot);
-
-        if (srcInLoot)
-        {
-            // 源自容器：发容器内 Item 引用
-            LootManager.Instance.WriteItemRef(w, child.InInventory, child);
-        }
-        else
-        {
-            // 源自背包：发 token + 快照，并在本地登记“待删”
-            var token = ++_cliLocalToken; // 你项目里已有递增 token 的字段/方法就用现成的
-            _cliPendingSlotPlug[token] = child;
-            w.Put(token);
-            ItemTool.WriteItemSnapshot(w, child);
-        }
-
-        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
-    }
-
-    internal uint Client_RequestSlotUnplugToBackpack(Inventory lootInv, Item master, string slotKey, Inventory destInv, int destPos)
-    {
-        if (!networkStarted || IsServer || connectedPeer == null) return 0;
-        if (!lootInv || !master || string.IsNullOrEmpty(slotKey)) return 0;
-        if (!LootboxDetectUtil.IsLootboxInventory(lootInv) || LootboxDetectUtil.IsPrivateInventory(lootInv)) return 0;
-        if (destInv && LootboxDetectUtil.IsLootboxInventory(destInv)) destInv = null; // 兜底用的😮sans
-
-        // 1) 分配 token 并登记“TAKE_OK 的落位目的地”
-        var token = _nextLootToken++;
-        if (destInv)
-            LootManager.Instance._cliPendingTake[token] = new PendingTakeDest
-            {
-                inv = destInv,
-                pos = destPos,
-                slot = null,
-                srcLoot = lootInv,
-                srcPos = -1
-            };
-
-        // 2) 发送“卸下 + 直落背包”的请求（在旧负载末尾追加 takeToBackpack + token）
-        Client_RequestLootSlotUnplug(lootInv, master, slotKey, true, token);
-        return token;
-    }
-
-    internal void Client_RequestLootSlotUnplug(Inventory inv, Item master, string slotKey)
-    {
-        if (!networkStarted || IsServer || connectedPeer == null) return;
-        if (!inv || !master || string.IsNullOrEmpty(slotKey)) return;
-
-        var w = writer;
-        if (w == null) return;
-        w.Reset();
-        w.Put((byte)Op.LOOT_REQ_SLOT_UNPLUG);
-        LootManager.Instance.PutLootId(w, inv); // 容器标识（scene/posKey/iid 或 uid）
-        LootManager.Instance.WriteItemRef(w, inv, master); // 在该容器里“主件”的路径
-        w.Put(slotKey ?? string.Empty); // 要拔的 slot key
-        // —— 旧负载到此为止（不带 takeToBackpack / token）——
-        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
-    }
-
-    internal void Client_RequestLootSlotUnplug(Inventory inv, Item master, string slotKey, bool takeToBackpack, uint token)
-    {
-        if (!networkStarted || IsServer || connectedPeer == null) return;
-        if (!inv || !master || string.IsNullOrEmpty(slotKey)) return;
-
-        var w = writer;
-        if (w == null) return;
-        w.Reset();
-        w.Put((byte)Op.LOOT_REQ_SLOT_UNPLUG);
-        LootManager.Instance.PutLootId(w, inv); // 容器标识
-        LootManager.Instance.WriteItemRef(w, inv, master); // 主件路径
-        w.Put(slotKey ?? string.Empty); // slot key
-
-        w.Put(takeToBackpack);
-        w.Put(token);
-        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
-    }
-
-    public void Server_HandleLootSlotUnplugRequest(NetPeer peer, NetPacketReader r)
-    {
-        // 1) 容器定位
-        var scene = r.GetInt();
-        var posKey = r.GetInt();
-        var iid = r.GetInt();
-        var lootUid = r.GetInt();
-
-        var inv = LootManager.Instance.ResolveLootInv(scene, posKey, iid, lootUid);
-        if (inv == null || LootboxDetectUtil.IsPrivateInventory(inv))
-        {
-            Server_SendLootDeny(peer, "no_inv");
-            return;
-        }
-
-        // 2) 主件与槽位（新格式）
-        var master = LootManager.Instance.ReadItemRef(r, inv);
-        var slotKey = r.GetString();
-        if (!master)
-        {
-            Server_SendLootDeny(peer, "bad_weapon");
-            return;
-        }
-
-        var slot = master?.Slots?.GetSlot(slotKey);
-        if (slot == null)
-        {
-            Server_SendLootDeny(peer, "bad_slot");
-            Server_SendLootboxState(peer, inv); // 只回请求方刷新
-            return;
-        }
-
-        // 3) 追加字段（向后兼容：旧包没有这俩字段）
-        var takeToBackpack = false;
-        uint token = 0;
-        if (r.AvailableBytes >= 5) // 1(bool) + 4(uint) 
-            try
-            {
-                takeToBackpack = r.GetBool();
-                token = r.GetUInt();
-            }
-            catch
-            {
-            }
-
-        // 4) 执行卸下
-        Item removed = null;
-        var ok = false;
-        _serverApplyingLoot = true; // 抑制服务端自己触发的后续广播/后处理
+        _serverApplyingLoot = true;
         try
         {
-            removed = slot.Unplug();
-            ok = removed != null;
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[LOOT][UNPLUG] {ex}");
-            ok = false;
-        }
-        finally
-        {
-            _serverApplyingLoot = false;
-        }
-
-        if (!ok || !removed)
-        {
-            Server_SendLootDeny(peer, "slot_unplug_fail");
-            Server_SendLootboxState(peer, inv); // 只回请求方刷新
-            return;
-        }
-
-        // 5) 分支：回容器 或 直落背包
-        if (!takeToBackpack)
-        {
-            if (!inv.AddAndMerge(removed))
-            {
-                try
-                {
-                    if (removed) Object.Destroy(removed.gameObject);
-                }
-                catch
-                {
-                }
-
-                Server_SendLootDeny(peer, "add_fail");
-                Server_SendLootboxState(peer, inv);
+            var master = inv.GetItemAt(rpc.ParentSlot);
+            if (master == null)
                 return;
+
+            if (IsQuestTagged(master))
+                return;
+
+            Server_HookItemSlots(master);
+
+            if (master.TypeID != rpc.Snapshot.TypeId)
+            {
+                inv.RemoveAt(rpc.ParentSlot, out _);
+                var rebuilt = ItemTool.BuildItemFromSnapshot(rpc.Snapshot);
+                if (rebuilt == null) return;
+
+                if (IsQuestTagged(rebuilt))
+                    return;
+
+                Server_MarkItemTreePlayerPlaced(rebuilt);
+                Server_HookItemSlots(rebuilt);
+                if (!inv.AddAt(rebuilt, rpc.ParentSlot))
+                {
+                    try { UnityEngine.Object.Destroy(rebuilt.gameObject); } catch { }
+                    return;
+                }
+
+                master = rebuilt;
+            }
+            else
+            {
+                if (!ItemTool.ApplySnapshot(master, rpc.Snapshot))
+                    return;
+
+                Server_MarkItemTreePlayerPlaced(master);
             }
 
-            Server_SendLootboxState(null, inv); // 广播：武器该槽已空，容器新添一件
-            return;
+            ResetInspectionFlags(inv, master, true);
+            BroadcastLootDelta(inv, rpc.ParentSlot, master.TypeID, master.StackCount, false);
         }
+        finally
+        {
+            _serverApplyingLoot = false;
+        }
+    }
 
-        // 让客户端在 Client_OnLootTakeOk 中落袋
-        var wCli = new NetDataWriter();
-        wCli.Put((byte)Op.LOOT_TAKE_OK);
-        wCli.Put(token);
-        ItemTool.WriteItemSnapshot(wCli, removed);
-        peer.Send(wCli, DeliveryMethod.ReliableOrdered);
+    public void Server_HandleLootSlotUnplugRequest(RpcContext context, LootSlotUnplugRequestRpc rpc)
+    {
+        var lm = LootManagerInstance;
+        if (!context.IsServer || lm == null) return;
 
+        var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
+        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
+
+        _serverApplyingLoot = true;
         try
         {
-            if (removed) Object.Destroy(removed.gameObject);
+            var master = inv.GetItemAt(rpc.ParentSlot);
+            if (master == null) return;
+
+            var slot = master.Slots?.GetSlot(rpc.SlotKey);
+            if (slot == null) return;
+
+            var unplugged = slot.Unplug();
+            if (unplugged == null) return;
+
+            ResetInspectionFlags(inv, master, true);
+            BroadcastLootDelta(inv, rpc.ParentSlot, master.TypeID, master.StackCount, false);
         }
-        catch
+        finally
         {
+            _serverApplyingLoot = false;
         }
-
-        Server_SendLootboxState(null, inv);
-    }
-
-    public void Client_SendLootSplitRequest(Inventory lootInv, int srcPos, int count, int preferPos)
-    {
-        if (!networkStarted || IsServer || connectedPeer == null || lootInv == null) return;
-        if (LootboxDetectUtil.IsPrivateInventory(lootInv)) return;
-        if (count <= 0) return;
-
-        var w = writer;
-        if (w == null) return;
-        w.Reset();
-        w.Put((byte)Op.LOOT_REQ_SPLIT);
-        LootManager.Instance.PutLootId(w, lootInv); // scene/posKey/iid/lootUid
-        w.Put(srcPos);
-        w.Put(count);
-        w.Put(preferPos); // -1 可让主机自行找空格
-        connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
-    }
-
-    public void Server_HandleLootSplitRequest(NetPeer peer, NetPacketReader r)
-    {
-        var scene = r.GetInt();
-        var posKey = r.GetInt();
-        var iid = r.GetInt();
-        var lootUid = r.GetInt();
-        var srcPos = r.GetInt();
-        var count = r.GetInt();
-        var prefer = r.GetInt();
-
-        // 定位容器（优先用 lootUid）
-        Inventory inv = null;
-        if (lootUid >= 0) LootManager.Instance._srvLootByUid.TryGetValue(lootUid, out inv);
-        if (inv == null && !LootManager.Instance.TryResolveLootById(scene, posKey, iid, out inv))
-        {
-            Server_SendLootDeny(peer, "no_inv");
-            return;
-        }
-
-        if (LootboxDetectUtil.IsPrivateInventory(inv))
-        {
-            Server_SendLootDeny(peer, "no_inv");
-            return;
-        }
-
-        var srcItem = inv.GetItemAt(srcPos);
-        if (!srcItem || count <= 0 || !srcItem.Stackable || count >= srcItem.StackCount)
-        {
-            Server_SendLootDeny(peer, "split_bad");
-            return;
-        }
-
-        ItemTool.Server_DoSplitAsync(inv, srcPos, count, prefer).Forget();
-    }
-
-
-    public struct ItemSnapshot
-    {
-        public int typeId;
-        public int stack;
-        public float durability;
-        public float durabilityLoss;
-        public bool inspected;
-        public List<(string key, ItemSnapshot child)> slots; // 附件树
-        public List<ItemSnapshot> inventory; // 容器内容
     }
 
     public struct PendingTakeDest
     {
-        // 目的地（背包格或装备槽）
         public Inventory inv;
         public int pos;
         public Slot slot;
-
-        // 源信息（从哪个容器的哪个格子拿出来）
         public Inventory srcLoot;
         public int srcPos;
     }

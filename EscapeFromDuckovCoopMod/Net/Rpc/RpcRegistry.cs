@@ -19,6 +19,8 @@ public static class RpcRegistry
         Register<PlayerAnimationSyncRpc>(RPCPlayer.HandlePlayerAnimationSync);
         Register<ClientStatusUpdateRpc>(RPCPlayer.HandleClientStatusUpdate);
         Register<PlayerStatusUpdateRpc>(RPCPlayer.HandlePlayerStatusUpdate);
+        Register<PlayerFriendlyFireStateRpc>(RPCPlayer.HandleFriendlyFireState);
+        Register<VehicleTransformSyncRpc>(RPCVehicle.HandleVehicleTransformSync);
         Register<EquipmentUpdateRpc>(RPCPlayer.HandleEquipmentUpdate);
         Register<WeaponUpdateRpc>(RPCPlayer.HandleWeaponUpdate);
         Register<WeaponFireRequestRpc>(RPCWeapon.HandleFireRequest);
@@ -28,8 +30,11 @@ public static class RpcRegistry
         Register<PlayerHealthReportRpc>(RPCHealth.HandlePlayerHealthReport);
         Register<PlayerHealthBroadcastRpc>(RPCHealth.HandlePlayerHealthBroadcast);
         Register<PlayerDamageForwardRpc>(RPCHealth.HandlePlayerDamageForward);
+        Register<PlayerDamageRequestRpc>(RPCHealth.HandlePlayerDamageRequest);
         Register<PlayerBuffReportRpc>(RPCHealth.HandlePlayerBuffReport);
         Register<PlayerBuffBroadcastRpc>(RPCHealth.HandlePlayerBuffBroadcast);
+        Register<ChatSendRequestRpc>(RPCChat.HandleChatSend);
+        Register<ChatMessageRpc>(RPCChat.HandleChatMessage);
         Register<AudioEventRpc>(RPCAudio.HandleAudioEvent);
         Register<SceneVoteStartRpc>(RPCScene.HandleSceneVoteStart);
         Register<SceneVoteRequestRpc>(RPCScene.HandleSceneVoteRequest);
@@ -43,7 +48,22 @@ public static class RpcRegistry
         Register<EnvDoorChunkRpc>(RPCEnvironment.HandleDoorChunk);
         Register<EnvDestructibleStateRpc>(RPCEnvironment.HandleDestructibleState);
         Register<EnvExplosiveOilBarrelStateRpc>(RPCEnvironment.HandleExplosiveOilBarrelState);
+        Register<EnvLevelDataBoolRpc>(RPCEnvironment.HandleLevelDataBool);
+        Register<EnvExitSnapshotRequestRpc>(RPCEnvironment.HandleExitSnapshotRequest);
+        Register<EnvExitSnapshotRpc>(RPCEnvironment.HandleExitSnapshot);
+        Register<EnvDestructibleHealthReportRpc>(RPCEnvironment.HandleDestructibleHealthReport);
         Register<DeadLootSpawnRpc>(RPCLoot.HandleDeadLootSpawn);
+        Register<LootOpenRequestRpc>(RPCLoot.HandleLootOpenRequest);
+        Register<LootStateRpc>(RPCLoot.HandleLootState);
+        Register<LootPutRequestRpc>(RPCLoot.HandleLootPutRequest);
+        Register<LootTakeRequestRpc>(RPCLoot.HandleLootTakeRequest);
+        Register<LootStackRequestRpc>(RPCLoot.HandleLootSplitRequest);
+        Register<LootSlotPlugRequestRpc>(RPCLoot.HandleLootSlotPlugRequest);
+        Register<LootSlotUnplugRequestRpc>(RPCLoot.HandleLootSlotUnplugRequest);
+        Register<LootSlotSnapshotRpc>(RPCLoot.HandleLootSlotSnapshot);
+        Register<LootPutOkRpc>(RPCLoot.HandleLootPutOk);
+        Register<LootTakeOkRpc>(RPCLoot.HandleLootTakeOk);
+        Register<LootDenyRpc>(RPCLoot.HandleLootDeny);
         Register<ItemDropRequestRpc>(RPCItem.HandleDropRequest);
         Register<ItemSpawnRpc>(RPCItem.HandleSpawn);
         Register<ItemPickupRequestRpc>(RPCItem.HandlePickupRequest);
@@ -61,6 +81,13 @@ public static class RpcRegistry
         Register<AIHealthBroadcastRpc>(RPCAI.HandleHealthBroadcast);
         Register<AIBuffReportRpc>(RPCAI.HandleBuffReport);
         Register<AIBuffBroadcastRpc>(RPCAI.HandleBuffBroadcast);
+        Register<AIPopTextRpc>(RPCAI.HandlePopText);
+        Register<AISoundEventRpc>(RPCAI.HandleSoundEvent);
+        Register<AIPostSoundRpc>(RPCAI.HandleVoiceSound);
+        Register<ModApiMessageRpc>(RPCModApi.HandleModApiMessage);
+        Register<ModApiReplayRequestRpc>(RPCModApi.HandleModApiReplayRequest);
+        Register<DamageStatsSyncRpc>(RPCDiagnostics.HandleDamageStats);
+        Register<DamageStatsReportRpc>(RPCDiagnostics.HandleDamageReport);
     }
 
     public static void Register<T>(Action<RpcContext, T> handler)

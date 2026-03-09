@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,7 +14,9 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using Duckov.Scenes;
 using Duckov.UI;
+using System;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -30,6 +32,12 @@ public sealed class HostForceHealthBar : MonoBehaviour
         if (!_h || Time.time > _deadline)
         {
             enabled = false;
+            return;
+        }
+        if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
+        var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
+        if (serverLoading)
+        {
             return;
         }
 

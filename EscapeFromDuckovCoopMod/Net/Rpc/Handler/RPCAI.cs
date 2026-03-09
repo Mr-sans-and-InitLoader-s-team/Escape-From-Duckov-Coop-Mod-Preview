@@ -67,4 +67,22 @@ public static class RPCAI
         if (context.IsServer) return;
         COOPManager.AI?.Client_HandleBuffBroadcast(message);
     }
+
+    public static void HandlePopText(RpcContext context, AIPopTextRpc message)
+    {
+        if (context.IsServer) return;
+        AIAwarenessSync.Client_HandlePopText(message);
+    }
+
+    public static void HandleSoundEvent(RpcContext context, AISoundEventRpc message)
+    {
+        if (context.IsServer) return;
+        AIAwarenessSync.Client_HandleSound(message);
+    }
+
+    public static void HandleVoiceSound(RpcContext context, AIPostSoundRpc message)
+    {
+        if (context.IsServer) return;
+        AIAwarenessSync.Client_HandleVoice(message);
+    }
 }

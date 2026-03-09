@@ -14,10 +14,11 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using System;
-using System.Reflection;
+using Duckov.Scenes;
 using Duckov.Utilities;
 using Duckov.Weathers;
+using System;
+using System.Reflection;
 using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
@@ -44,22 +45,69 @@ internal static class Patch_ServerForwardRemotePlayerDamage
     private static bool Prefix(DamageReceiver __instance, ref DamageInfo __0)
     {
         var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted || !mod.IsServer) return true;
+        if (mod == null || !mod.networkStarted) return true;
 
         var health = __instance ? __instance.health : null;
         var cmc = health ? health.TryGetCharacter() : null;
         if (!cmc) return true;
+
+        var service = NetService.Instance;
+
+        var predictedDead = false;
+        try
+        {
+            if (health != null)
+                predictedDead = health.CurrentHealth > 0f && __0.damageValue >= health.CurrentHealth - 0.001f;
+        }
+        catch
+        {
+        }
+
+        if (!mod.IsServer)
+        {
+            if (!cmc.GetComponentInChildren<RemoteReplicaTag>()) return true;
+            if (service == null || !service.TryGetPlayerId(cmc, out var targetId) || string.IsNullOrEmpty(targetId))
+                return true;
+
+            if(__0.fromCharacter != null)
+            {
+                if (__0.fromCharacter.GetComponentsInChildren<AutoRequestHealthBar>() != null)
+                {
+                    LocalHitKillFx.ClientPlayForPlayer(cmc, __0, predictedDead);
+                    LocalHitKillFx.RememberLastBaseDamage(__0.damageValue);
+                }
+            }
+           
+
+            var request = new PlayerDamageRequestRpc
+            {
+                TargetPlayerId = targetId,
+                Damage = DamageForwardPayload.FromDamageInfo(__0)
+            };
+
+            CoopTool.SendRpc(in request);
+            return false;
+        }
 
         if (!cmc.GetComponentInChildren<RemoteReplicaTag>()) return true;
 
         var peer = CoopTool.TryGetPeerForCharacter(cmc);
         if (peer == null) return true;
 
-        var service = NetService.Instance;
         var playerId = service != null ? service.GetPlayerId(peer) : string.Empty;
 
         if (service != null && !string.IsNullOrEmpty(playerId) && service.IsPlayerInvincible(playerId))
             return false;
+
+
+        if (__0.fromCharacter != null)
+        {
+            if (__0.fromCharacter.GetComponentsInChildren<AutoRequestHealthBar>() != null)
+            {
+                LocalHitKillFx.ClientPlayForPlayer(cmc, __0, predictedDead);
+                LocalHitKillFx.RememberLastBaseDamage(__0.damageValue);
+            }
+        }
 
         var rpc = new PlayerDamageForwardRpc
         {
@@ -82,7 +130,7 @@ internal static class Patch_SABPD_FixedUpdate_AllPlayersUnion
     {
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true; // 单机：走原版
-
+        if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var tr = Traverse.Create(__instance);
 
         // 被管理对象列表
@@ -201,6 +249,39 @@ internal static class Patch_ClosureView_ShowAndReturnTask_SpectatorGate
         return true;
     }
 }
+
+//[HarmonyPatch]
+//internal static class Patch_ClosureView_ShowAndReturnTask_SpectatorGate1
+//{
+//    private static MethodBase TargetMethod()
+//    {
+//        var t = AccessTools.TypeByName("Duckov.UI.ClosureView");
+//        if (t == null) return null;
+//        return AccessTools.Method(t, "ShowAndReturnTask", new[] {typeof(float) });
+//    }
+
+//    private static bool Prefix(ref UniTask __result, float duration)
+//    {
+//        var mod = ModBehaviourF.Instance;
+//        if (mod == null || !mod.networkStarted) return true;
+
+//        if (Spectator.Instance._skipSpectatorForNextClosure)
+//        {
+//            Spectator.Instance._skipSpectatorForNextClosure = false;
+//            __result = UniTask.CompletedTask;
+//            return true;
+//        }
+
+//        // 如果还有队友活着，走观战并阻止结算 UI
+//        DamageInfo op = new DamageInfo();
+//        if (Spectator.Instance.TryEnterSpectatorOnDeath(op))
+//            //  __result = UniTask.CompletedTask;
+//            // ClosureView.Instance.gameObject.SetActive(false);
+//            return true; // 拦截原方法
+
+//        return true;
+//    }
+//}
 
 //[HarmonyPatch(typeof(TimeOfDayDisplay), "RefreshStormText")]
 //internal static class Patch_TimeOfDayDisplay_UseSyncedStorm

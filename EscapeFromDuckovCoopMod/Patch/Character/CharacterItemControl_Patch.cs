@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -51,6 +51,26 @@ internal static class Patch_CharacterAnimationControl_Update_ForRemote
         // 远端实体：禁用本地“写Animator参数”的逻辑，避免覆盖网络同步
         if (__instance && __instance.GetComponentInParent<RemoteReplicaTag>() != null)
             return false;
+        return true;
+    }
+}
+
+[HarmonyPatch(typeof(CharacterMainControl), "OnDead")]
+internal static class Patch_OnDead
+{
+    private static bool Prefix(CharacterMainControl __instance)
+    {
+        var mod = ModBehaviourF.Instance;
+        if (mod == null || !mod.networkStarted) return true;
+
+
+        if (mod.IsServer)
+        {
+            if (__instance.GetComponentInChildren<AICharacterController>() != null)
+            {
+                DeadLootSpawnContext.InOnDead = __instance;
+            }
+        }
         return true;
     }
 }

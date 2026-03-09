@@ -20,6 +20,7 @@ public class Weather
 
     private readonly List<(int key, bool state)> _lootSnapshotBuffer = new();
     private readonly List<(int key, bool closed)> _doorSnapshotBuffer = new();
+    private readonly List<(int key, bool closed)> _pendingDoorStates = new();
 
     private float _clockTimer;
     private float _weatherTimer;
@@ -28,6 +29,8 @@ public class Weather
     private float _clientResyncTimer;
     private bool _clientClockSynced;
     private bool _clientWeatherSynced;
+    private bool _hasPendingWeather;
+    private EnvWeatherStateRpc _pendingWeather;
 
     internal static StormSnapshot LastStormSnapshot { get; private set; } = StormSnapshot.Empty;
 
@@ -48,6 +51,7 @@ public class Weather
     public void Server_Update(float deltaTime)
     {
         if (!IsServer || !networkStarted) return;
+        if (!LevelManager.LevelInited || LevelManager.Instance == null) return;
 
         _clockTimer += deltaTime;
         if (_clockTimer >= ClockBroadcastInterval)
@@ -93,6 +97,8 @@ public class Weather
     public void Client_Update(float deltaTime)
     {
         if (IsServer || !networkStarted) return;
+
+        ApplyPendingDoorStatesIfReady();
 
         if (_clientClockSynced && _clientWeatherSynced) return;
 
@@ -141,6 +147,12 @@ public class Weather
 
             _clientClockSynced = true;
             _clientResyncTimer = 0f;
+
+            if (_hasPendingWeather)
+            {
+                _hasPendingWeather = false;
+                ApplyWeatherState(_pendingWeather);
+            }
         }
         catch
         {
@@ -148,6 +160,20 @@ public class Weather
     }
 
     public void Client_HandleWeatherState(EnvWeatherStateRpc message)
+    {
+        if (IsServer) return;
+
+        if (!_clientClockSynced)
+        {
+            _pendingWeather = message;
+            _hasPendingWeather = true;
+            return;
+        }
+
+        ApplyWeatherState(message);
+    }
+
+    private void ApplyWeatherState(EnvWeatherStateRpc message)
     {
         if (IsServer) return;
 
@@ -206,6 +232,8 @@ public class Weather
         var count = Math.Min(keys.Length, states.Length);
         if (count <= 0) return;
 
+        var levelReady = LevelManager.LevelInited && LevelManager.Instance != null;
+
         try
         {
             var core = MultiSceneCore.Instance;
@@ -217,11 +245,50 @@ public class Weather
                 if (core?.inLevelData != null)
                     core.inLevelData[key] = closed;
 
-                COOPManager.Door.Client_ApplyDoorState(key, closed);
+                if (levelReady)
+                {
+                    COOPManager.Door.Client_ApplyDoorState(key, closed);
+                }
+                else
+                {
+                    QueuePendingDoorState(key, closed);
+                }
             }
         }
         catch
         {
+        }
+    }
+
+    private void QueuePendingDoorState(int key, bool closed)
+    {
+        for (var i = 0; i < _pendingDoorStates.Count; i++)
+        {
+            if (_pendingDoorStates[i].key != key) continue;
+
+            _pendingDoorStates[i] = (key, closed);
+            return;
+        }
+
+        _pendingDoorStates.Add((key, closed));
+    }
+
+    private void ApplyPendingDoorStatesIfReady()
+    {
+        if (!LevelManager.LevelInited || LevelManager.Instance == null) return;
+        if (_pendingDoorStates.Count == 0) return;
+
+        try
+        {
+            foreach (var entry in _pendingDoorStates)
+                COOPManager.Door.Client_ApplyDoorState(entry.key, entry.closed);
+        }
+        catch
+        {
+        }
+        finally
+        {
+            _pendingDoorStates.Clear();
         }
     }
 
@@ -280,38 +347,13 @@ public class Weather
         {
         }
 
-        try
-        {
-            forceWeather = (bool)AccessTools.Field(wm.GetType(), "forceWeather").GetValue(wm);
-        }
-        catch
-        {
-        }
+        forceWeather = (bool)WeatherManager.Instance.ForceWeather;
 
-        try
-        {
-            forceWeatherValue = (int)AccessTools.Field(wm.GetType(), "forceWeatherValue").GetValue(wm);
-        }
-        catch
-        {
-        }
+        forceWeatherValue = (int)WeatherManager.Instance.ForceWeatherValue;
 
-        try
-        {
-            currentWeather = (int)WeatherManager.GetWeather();
-        }
-        catch
-        {
-        }
+        currentWeather = (int)WeatherManager.GetWeather();
 
-        try
-        {
-            stormLevel = (byte)wm.Storm.GetStormLevel(GameClock.Now);
-        }
-        catch
-        {
-        }
-
+        stormLevel = (byte)wm.Storm.GetStormLevel(GameClock.Now);
         return true;
     }
 

@@ -18,6 +18,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -47,12 +48,24 @@ public class MModUI : MonoBehaviour
     public KeyCode togglePlayerStatusKey = KeyCode.P;
     public readonly KeyCode readyKey = KeyCode.J;
 
+    private readonly List<(string sender, string content)> _chatHistory = new();
+    private const int ChatHistoryLimit = 50;
+    private const float ChatAutoHideDelay = 3f;
+    private bool _chatVisible;
+    private bool _chatAutoHideArmed;
+    private float _chatAutoHideDeadline;
+    private Coroutine _chatAutoHideRoutine;
+    public KeyCode chatToggleKey = KeyCode.Return;
+
+    private AISyncSettingsUI _aiSettingsUI;
+
     private readonly List<string> _hostList = new();
     private readonly HashSet<string> _hostSet = new();
     private string _manualIP = "127.0.0.1";
     private string _manualPort = "9050";
     private int _port = 9050;
     private string _status = "未连接";
+    public bool _streamerMode;
 
     private readonly Dictionary<string, GameObject> _hostEntries = new();
     private readonly Dictionary<string, GameObject> _playerEntries = new();
@@ -61,20 +74,13 @@ public class MModUI : MonoBehaviour
     // Steam相关字段
     private readonly List<SteamLobbyManager.LobbyInfo> _steamLobbyInfos = new();
     private readonly HashSet<ulong> _displayedSteamLobbies = new();  // 缓存已显示的房间ID
+    private string _steamLobbySearchTerm = string.Empty;
+    private string _lastAppliedSteamSearchTerm = string.Empty;
     private string _steamLobbyName = string.Empty;
     private string _steamLobbyPassword = string.Empty;
     private bool _steamLobbyFriendsOnly;
     private int _steamLobbyMaxPlayers = 2;
     private string _steamJoinPassword = string.Empty;
-
-    private readonly DifficultyLevel[] _difficultyOrder =
-    {
-        DifficultyLevel.Easy,
-        DifficultyLevel.Normal,
-        DifficultyLevel.Hard,
-        DifficultyLevel.VeryHard,
-        DifficultyLevel.Impossible
-    };
 
 
     // 投票面板状态缓存
@@ -83,15 +89,14 @@ public class MModUI : MonoBehaviour
     private bool _lastLocalReady = false;
     private readonly HashSet<string> _lastVoteParticipants = new();
     private float _lastVoteUpdateTime = 0f;
-    private float _lastPlayerListUpdateTime = 0f;  // 玩家列表最后更新时间（用于 Steam 模式定期刷新）
 
     // 现代化UI颜色方案 - 深色模式
     public static class ModernColors
     {
-        // 🌈 主题主色（浅绿色主调）
-        public static readonly Color Primary = new Color(0.30f, 0.69f, 0.31f, 1f);      // #4CAF50 (浅绿色)
-        public static readonly Color PrimaryHover = new Color(0.26f, 0.60f, 0.27f, 1f); // #439946
-        public static readonly Color PrimaryActive = new Color(0.22f, 0.52f, 0.23f, 1f); // #38853B
+        // 🌈 主题主色（中国红主调）
+        public static readonly Color Primary = new Color(0.80f, 0.13f, 0.18f, 1f);      // #CC2230 中国红
+        public static readonly Color PrimaryHover = new Color(0.88f, 0.18f, 0.24f, 1f); // #E02E3D
+        public static readonly Color PrimaryActive = new Color(0.68f, 0.09f, 0.14f, 1f); // #AD1624
 
         // ✨ 按钮文字色
         public static readonly Color PrimaryText = new Color(1f, 1f, 1f, 0.95f);        // 亮白文字 #FFFFFF
@@ -101,10 +106,10 @@ public class MModUI : MonoBehaviour
         public static readonly Color BgMedium = new Color(0.27f, 0.27f, 0.27f, 1f);     // #454545
         public static readonly Color BgLight = new Color(0.32f, 0.32f, 0.32f, 1f);      // #525252
 
-        // ✍️ 文字色（白色层次）
-        public static readonly Color TextPrimary = new Color(1f, 1f, 1f, 0.95f);        // 主文字
-        public static readonly Color TextSecondary = new Color(1f, 1f, 1f, 0.75f);      // 次文字
-        public static readonly Color TextTertiary = new Color(1f, 1f, 1f, 0.55f);       // 辅助文字
+        // ✍️ 文字色（白底下改为深色）
+        public static readonly Color TextPrimary = new Color(1f, 1f, 1f, 0.96f);   // 主文字
+        public static readonly Color TextSecondary = new Color(1f, 1f, 1f, 0.86f); // 次文字
+        public static readonly Color TextTertiary = new Color(1f, 1f, 1f, 0.72f);  // 辅助文字
 
         // ⚡ 状态色（保留灰调）
         public static readonly Color Success = new Color(0.45f, 0.75f, 0.50f, 1f);      // #73BF80
@@ -118,10 +123,10 @@ public class MModUI : MonoBehaviour
         public static readonly Color InputFocus = PrimaryHover;
 
         // ─ 分隔线
-        public static readonly Color Divider = new Color(0.40f, 0.40f, 0.40f, 1f);      // #666666
+        public static readonly Color Divider = new Color(1f, 1f, 1f, 0.24f);      // 半透明白色分隔线
 
         // 🌫️ 玻璃拟态
-        public static readonly Color GlassBg = new Color(0.30f, 0.30f, 0.30f, 0.55f);   // 半透明炭灰
+        public static readonly Color GlassBg = new Color(0.80f, 0.13f, 0.18f, 0.75f);            // 半透明中国红
 
         // 🕳️ 阴影（柔和不死黑）
         public static readonly Color Shadow = new Color(0f, 0f, 0f, 0.25f);             // 轻暗阴影
@@ -135,16 +140,16 @@ public class MModUI : MonoBehaviour
 
     public static class GlassTheme
     {
-        public static readonly Color PanelBg = new Color(0.25f, 0.25f, 0.25f, 0.92f);
-        public static readonly Color CardBg = new Color(0.28f, 0.28f, 0.28f, 0.9f);
-        public static readonly Color ButtonBg = new Color(0.30f, 0.30f, 0.30f, 0.95f);
-        public static readonly Color ButtonHover = new Color(0.35f, 0.35f, 0.35f, 0.97f);
-        public static readonly Color ButtonActive = new Color(0.20f, 0.20f, 0.20f, 1f);
-        public static readonly Color InputBg = new Color(0.33f, 0.33f, 0.33f, 0.9f);
-        public static readonly Color Accent = new Color(0.6f, 0.8f, 0.9f, 1f);
-        public static readonly Color Text = new Color(1f, 1f, 1f, 0.95f);
-        public static readonly Color TextSecondary = new Color(1f, 1f, 1f, 0.8f);
-        public static readonly Color Divider = new Color(1f, 1f, 1f, 0.08f);
+        public static readonly Color PanelBg = new Color(0.80f, 0.13f, 0.18f, 0.96f);
+        public static readonly Color CardBg = new Color(0.73f, 0.10f, 0.15f, 0.95f);
+        public static readonly Color ButtonBg = new Color(0.96f, 0.82f, 0.18f, 0.98f);
+        public static readonly Color ButtonHover = new Color(1f, 0.88f, 0.30f, 1f);
+        public static readonly Color ButtonActive = new Color(0.88f, 0.72f, 0.10f, 1f);
+        public static readonly Color InputBg = new Color(0.66f, 0.08f, 0.13f, 0.96f);
+        public static readonly Color Accent = new Color(0.80f, 0.13f, 0.18f, 1f);
+        public static readonly Color Text = new Color(1f, 1f, 1f, 0.96f);
+        public static readonly Color TextSecondary = new Color(1f, 1f, 1f, 0.86f);
+        public static readonly Color Divider = new Color(1f, 1f, 1f, 0.14f);
     }
 
 
@@ -194,8 +199,24 @@ public class MModUI : MonoBehaviour
         }
     }
 
+    internal bool StreamerMode => _streamerMode;
+
+    internal void SetStreamerMode(bool enabled)
+    {
+        if (_streamerMode == enabled)
+            return;
+
+        _streamerMode = enabled;
+        UpdateStreamerModeVisuals();
+    }
+
     private void Update()
     {
+        //var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
+        //if (serverLoading)
+        //{
+        //    return;
+        //}
         // 语言变更检测及自动重载
         CoopLocalization.CheckLanguageChange();
 
@@ -217,6 +238,16 @@ public class MModUI : MonoBehaviour
             {
                 StartCoroutine(AnimatePanel(_components.PlayerStatusPanel, showPlayerStatusWindow));
             }
+        }
+
+        // 切换聊天窗口（Enter）
+        var enterPressed = Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter);
+        if (enterPressed)
+        {
+            if (IsChatTyping())
+                SubmitChatMessage();
+            else
+                ToggleChatPanel();
         }
 
         // 更新模式显示（服务器/客户端状态）
@@ -275,6 +306,7 @@ public class MModUI : MonoBehaviour
     public void Init()
     {
         Instance = this;
+        _aiSettingsUI = FindObjectOfType<AISyncSettingsUI>();
 
         // 初始化组件容器和布局构建器
         _components = new MModUIComponents();
@@ -335,6 +367,40 @@ public class MModUI : MonoBehaviour
         _displayedPlayerIds.Clear();
     }
 
+    internal void ToggleAISyncSettings()
+    {
+        if (_aiSettingsUI == null)
+        {
+            _aiSettingsUI = FindObjectOfType<AISyncSettingsUI>();
+        }
+
+        if (_aiSettingsUI != null)
+        {
+            _aiSettingsUI.Toggle();
+        }
+        else
+        {
+            Debug.LogWarning("[MModUI] AISyncSettingsUI 未找到，无法切换");
+        }
+    }
+
+    internal void OpenCoopSettingsPage(string pageKey)
+    {
+        if (_aiSettingsUI == null)
+        {
+            _aiSettingsUI = FindObjectOfType<AISyncSettingsUI>();
+        }
+
+        if (_aiSettingsUI != null)
+        {
+            _aiSettingsUI.ShowPageExternal(pageKey ?? "network");
+        }
+        else
+        {
+            Debug.LogWarning("[MModUI] AISyncSettingsUI 未找到，无法打开页面");
+        }
+    }
+
     private void CreateUI()
     {
         // 确保有EventSystem（按钮交互必需）
@@ -374,6 +440,9 @@ public class MModUI : MonoBehaviour
 
         // 创建观战面板
         CreateSpectatorPanel();
+
+        // 创建聊天面板
+        CreateChatPanel();
     }
 
     private static string _tipText;
@@ -407,28 +476,7 @@ public class MModUI : MonoBehaviour
             int fontSize = Mathf.Max(10, Mathf.RoundToInt(baseFontSize * scale));
             float padding = basePadding * scale;
 
-            // 文本内容（如果只想显示 v1.6.9 就改成 $"v{BuildInfo.ModVersion}"）
-            string versionText = $"{BuildInfo.Name} v{BuildInfo.ModVersion}";
-
-            GUIStyle verStyle = new GUIStyle(GUI.skin.label)
-            {
-                alignment = TextAnchor.UpperRight,
-                fontSize = fontSize
-            };
-            verStyle.normal.textColor = Color.white;
-
-            // 计算文字实际尺寸
-            Vector2 size = verStyle.CalcSize(new GUIContent(versionText));
-
-            // 右上角，留出 padding 像素的边距（也跟分辨率成比例）
-            var rect = new Rect(
-                sw - size.x - padding,
-                padding,
-                size.x,
-                size.y
-            );
-
-            GUI.Label(rect, versionText, verStyle);
+          
 
             // ========= 顶部红色提示文字（自适应缩放） =========
             if (!string.IsNullOrEmpty(_tipText) && Time.time < _tipExpireTime)
@@ -467,6 +515,145 @@ public class MModUI : MonoBehaviour
 
     #region UI 创建方法
 
+    private void CreateSideDecorations()
+    {
+        if (_components?.MainPanel == null)
+        {
+            return;
+        }
+
+        if (_components.LeftDecorationImage != null)
+        {
+            Destroy(_components.LeftDecorationImage.gameObject);
+            _components.LeftDecorationImage = null;
+        }
+
+        if (_components.RightDecorationImage != null)
+        {
+            Destroy(_components.RightDecorationImage.gameObject);
+            _components.RightDecorationImage = null;
+        }
+
+        if (_components.TopDecorationImage != null)
+        {
+            Destroy(_components.TopDecorationImage.gameObject);
+            _components.TopDecorationImage = null;
+        }
+
+        var leftSprite = LoadDecorationSprite("Assets/NewYear1");
+        var rightSprite = LoadDecorationSprite("Assets/NewYear2");
+        var topSprite = LoadDecorationSprite("Assets/NewYear3");
+
+        var panelRect = _components.MainPanel.transform as RectTransform;
+        var panelHeight = panelRect != null && panelRect.rect.height > 1f ? panelRect.rect.height : 784f;
+        const float sideEdgePadding = 3f;
+        const float topBannerLift = 3f; // 向上抬升 3 像素（等效于底端与 UI 顶边距离 -3）
+        var sideTopOffset = -panelHeight * 0.1f; // 侧边对联顶部下移十分之一
+
+        if (leftSprite != null)
+        {
+            _components.LeftDecorationImage = CreateSideDecorationImage("LeftDecoration", _components.MainPanel.transform, leftSprite, new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(-sideEdgePadding, sideTopOffset));
+        }
+
+        if (rightSprite != null)
+        {
+            _components.RightDecorationImage = CreateSideDecorationImage("RightDecoration", _components.MainPanel.transform, rightSprite, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(0f, 1f), new Vector2(sideEdgePadding, sideTopOffset));
+        }
+
+        if (topSprite != null)
+        {
+            _components.TopDecorationImage = CreateSideDecorationImage("TopDecoration", _components.MainPanel.transform, topSprite, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 0f), new Vector2(0f, topBannerLift), true);
+        }
+    }
+
+    private Image CreateSideDecorationImage(string name, Transform parent, Sprite sprite, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 anchoredPosition, bool fitByWidth = false)
+    {
+        var decoration = new GameObject(name);
+        decoration.transform.SetParent(parent, false);
+
+        var rect = decoration.AddComponent<RectTransform>();
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.pivot = pivot;
+        rect.anchoredPosition = anchoredPosition;
+
+        var aspect = sprite.rect.width / Mathf.Max(sprite.rect.height, 1f);
+        var parentRect = parent as RectTransform;
+        var parentHeight = parentRect != null && parentRect.rect.height > 1f ? parentRect.rect.height : 640f;
+        var parentWidth = parentRect != null && parentRect.rect.width > 1f ? parentRect.rect.width : 960f;
+
+        if (fitByWidth)
+        {
+            var targetWidth = parentWidth * 0.22f; // 横批目标宽度系数调整为 0.22
+            rect.sizeDelta = new Vector2(targetWidth, targetWidth / Mathf.Max(aspect, 0.01f));
+        }
+        else
+        {
+            var targetHeight = parentHeight * 0.65f; // 在上一版基础上放大1.3倍，保留上下留白
+            rect.sizeDelta = new Vector2(targetHeight * aspect, targetHeight);
+        }
+
+        var image = decoration.AddComponent<Image>();
+        image.sprite = sprite;
+        image.preserveAspect = true;
+        image.raycastTarget = false;
+
+        var layoutElement = decoration.AddComponent<LayoutElement>();
+        layoutElement.ignoreLayout = true;
+
+        return image;
+    }
+
+    private static Sprite LoadDecorationSprite(string relativePathWithoutExtension)
+    {
+        var candidates = new[] { ".png", ".jpg", ".jpeg", ".webp" };
+
+        // 以当前 DLL 所在目录为根目录（不是游戏根目录）
+        var assemblyPath = typeof(MModUI).Assembly.Location;
+        var dllDirectory = System.IO.Path.GetDirectoryName(assemblyPath) ?? string.Empty;
+
+        // 保留工作目录作为兜底，便于开发调试
+        var basePaths = new[] { dllDirectory, System.IO.Directory.GetCurrentDirectory() };
+
+        foreach (var basePath in basePaths)
+        {
+            if (string.IsNullOrWhiteSpace(basePath))
+            {
+                continue;
+            }
+
+            foreach (var ext in candidates)
+            {
+                var fullPath = System.IO.Path.Combine(basePath, relativePathWithoutExtension + ext);
+                if (!System.IO.File.Exists(fullPath))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var bytes = System.IO.File.ReadAllBytes(fullPath);
+                    var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                    if (!ImageConversion.LoadImage(texture, bytes))
+                    {
+                        continue;
+                    }
+
+                    texture.wrapMode = TextureWrapMode.Clamp;
+                    texture.filterMode = FilterMode.Bilinear;
+                    return Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[MModUI] 加载装饰图失败 {fullPath}: {ex.Message}");
+                }
+            }
+        }
+
+        Debug.LogWarning($"[MModUI] 未找到装饰图(以DLL目录为根): {relativePathWithoutExtension}(.png/.jpg/.jpeg/.webp)");
+        return null;
+    }
+
     private void InitializeBlurSource()
     {
         // 在主相机上添加模糊源组件
@@ -497,6 +684,9 @@ public class MModUI : MonoBehaviour
     {
         // 使用布局构建器创建主面板
         _layoutBuilder.BuildMainPanel(_canvas.transform);
+
+        // 左右新年装饰图
+        CreateSideDecorations();
 
         // 根据当前传输模式显示对应面板
         UpdateTransportModePanels();
@@ -561,6 +751,113 @@ public class MModUI : MonoBehaviour
 
         _components.SpectatorHintText = CreateText("SpectatorHint", _components.SpectatorPanel.transform,
             CoopLocalization.Get("ui.spectator.mode"), 18, ModernColors.TextPrimary, TextAlignmentOptions.Center, FontStyles.Bold);
+    }
+
+    private void CreateChatPanel()
+    {
+        _components.ChatPanel = CreateModernPanel("ChatPanel", _canvas.transform, new Vector2(550, 360), new Vector2(-40, 20), TextAnchor.LowerRight);
+        _components.ChatPanel.SetActive(false);
+
+        if (_components.ChatPanel.TryGetComponent<RectTransform>(out var chatRect))
+        {
+            chatRect.anchorMin = new Vector2(1f, 0f);
+            chatRect.anchorMax = new Vector2(1f, 0f);
+            chatRect.pivot = new Vector2(1f, 0f);
+            chatRect.anchoredPosition = new Vector2(-40f, 20f);
+        }
+
+        var layout = _components.ChatPanel.AddComponent<VerticalLayoutGroup>();
+        layout.padding = new RectOffset(10, 10, 10, 10);
+        layout.spacing = 6;
+        layout.childAlignment = TextAnchor.UpperLeft;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+
+        // Header removed per request (no title/close button)
+
+        var messageArea = new GameObject("MessageArea");
+        messageArea.transform.SetParent(_components.ChatPanel.transform, false);
+        var messageLayout = messageArea.AddComponent<LayoutElement>();
+        messageLayout.preferredHeight = 260f;
+        messageLayout.flexibleHeight = 1f;
+
+        var scrollRect = messageArea.AddComponent<ScrollRect>();
+        scrollRect.vertical = true;
+        scrollRect.horizontal = false;
+        scrollRect.movementType = ScrollRect.MovementType.Clamped;
+        scrollRect.scrollSensitivity = 40f;
+
+        var viewport = new GameObject("Viewport");
+        viewport.transform.SetParent(messageArea.transform, false);
+        var viewportRect = viewport.AddComponent<RectTransform>();
+        viewportRect.anchorMin = new Vector2(0, 0);
+        viewportRect.anchorMax = new Vector2(1, 1);
+        viewportRect.offsetMin = Vector2.zero;
+        viewportRect.offsetMax = Vector2.zero;
+        var mask = viewport.AddComponent<RectMask2D>();
+        mask.padding = Vector4.zero;
+
+        var content = new GameObject("Content");
+        content.transform.SetParent(viewport.transform, false);
+        var contentRect = content.AddComponent<RectTransform>();
+        contentRect.anchorMin = new Vector2(0f, 1f);
+        contentRect.anchorMax = new Vector2(1f, 1f);
+        contentRect.pivot = new Vector2(0f, 1f);
+        contentRect.offsetMin = Vector2.zero;
+        contentRect.offsetMax = Vector2.zero;
+        var contentLayout = content.AddComponent<VerticalLayoutGroup>();
+        contentLayout.padding = new RectOffset(14, 10, 10, 12);
+        contentLayout.spacing = 10;
+        contentLayout.childAlignment = TextAnchor.UpperLeft;
+        contentLayout.childControlWidth = true;
+        contentLayout.childControlHeight = true;
+        contentLayout.childForceExpandWidth = true;
+        contentLayout.childForceExpandHeight = false;
+        var contentFitter = content.AddComponent<ContentSizeFitter>();
+        contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        scrollRect.viewport = viewportRect;
+        scrollRect.content = content.GetComponent<RectTransform>();
+        _components.ChatContent = content.transform;
+        _components.ChatScroll = scrollRect;
+
+        var inputRow = new GameObject("InputRow");
+        inputRow.transform.SetParent(_components.ChatPanel.transform, false);
+        var inputLayout = inputRow.AddComponent<HorizontalLayoutGroup>();
+        inputLayout.spacing = 0f;
+        inputLayout.childControlHeight = true;
+        inputLayout.childControlWidth = true;
+        inputLayout.childForceExpandHeight = false;
+        inputLayout.childForceExpandWidth = true;
+        inputLayout.padding = new RectOffset(0, 0, 0, 0);
+
+        var inputRowLayout = inputRow.AddComponent<LayoutElement>();
+        inputRowLayout.preferredHeight = 38f;
+        inputRowLayout.minHeight = 38f;
+
+        var inputField = CreateModernInputField("ChatInput", inputRow.transform, CoopLocalization.Get("ui.chat.inputPlaceholder"), string.Empty);
+        var inputLayoutElement = inputField.GetComponent<LayoutElement>();
+        if (inputLayoutElement == null) inputLayoutElement = inputField.gameObject.AddComponent<LayoutElement>();
+        inputLayoutElement.flexibleWidth = 1f;
+        inputLayoutElement.preferredHeight = 24f;
+        inputField.lineType = TMP_InputField.LineType.SingleLine;
+        inputField.pointSize = 13;
+        inputField.onSubmit.AddListener(_ => SubmitChatMessage());
+        if (inputField.TryGetComponent<Image>(out var chatInputBg))
+            chatInputBg.color = new Color(chatInputBg.color.r, chatInputBg.color.g, chatInputBg.color.b, 1f);
+        _components.ChatInput = inputField;
+
+        // 微调聊天面板背景，让内容层看起来更自然
+        if (_components.ChatPanel.TryGetComponent<TranslucentImage>(out var translucent))
+        {
+            translucent.color = new Color(0f, 0f, 0f, 0f);
+        }
+        else if (_components.ChatPanel.TryGetComponent<Image>(out var image))
+        {
+            image.color = new Color(image.color.r, image.color.g, image.color.b, 0f);
+        }
     }
 
     #endregion
@@ -663,10 +960,10 @@ public class MModUI : MonoBehaviour
                 if (image != null)
                 {
                     var colors = _components.ModeToggleButton.colors;
-                    var baseColor = isActiveServer ? new Color(0.85f, 0.45f, 0.40f, 0.95f) : new Color(0.45f, 0.75f, 0.50f, 0.95f);
+                    var baseColor = GlassTheme.ButtonBg;
                     colors.normalColor = baseColor;
-                    colors.highlightedColor = new Color(baseColor.r + 0.05f, baseColor.g + 0.05f, baseColor.b + 0.05f, baseColor.a);
-                    colors.pressedColor = new Color(baseColor.r - 0.1f, baseColor.g - 0.1f, baseColor.b - 0.1f, baseColor.a);
+                    colors.highlightedColor = GlassTheme.ButtonHover;
+                    colors.pressedColor = GlassTheme.ButtonActive;
                     _components.ModeToggleButton.colors = colors;
                 }
             }
@@ -730,10 +1027,9 @@ public class MModUI : MonoBehaviour
             if (buttonImage != null)
             {
                 var colors = _components.SteamCreateLeaveButton.colors;
-                var baseColor = lobbyActive ? ModernColors.Error : ModernColors.Success;
-                colors.normalColor = new Color(baseColor.r, baseColor.g, baseColor.b, 0.95f);
-                colors.highlightedColor = new Color(baseColor.r + 0.05f, baseColor.g + 0.05f, baseColor.b + 0.05f, 0.97f);
-                colors.pressedColor = new Color(baseColor.r - 0.1f, baseColor.g - 0.1f, baseColor.b - 0.1f, 1f);
+                colors.normalColor = GlassTheme.ButtonBg;
+                colors.highlightedColor = GlassTheme.ButtonHover;
+                colors.pressedColor = GlassTheme.ButtonActive;
                 _components.SteamCreateLeaveButton.colors = colors;
             }
         }
@@ -762,11 +1058,12 @@ public class MModUI : MonoBehaviour
         if (_components?.StatusText == null && _components?.SteamStatusText == null) return;
 
         var currentStatus = Service.status;
+        var displayStatus = MaskStatusText(currentStatus);
 
         // 检查状态是否改变
-        if (currentStatus != _status)
+        if (displayStatus != _status)
         {
-            _status = currentStatus;
+            _status = displayStatus;
 
             // 根据状态内容设置颜色
             Color statusColor = ModernColors.TextSecondary;
@@ -793,7 +1090,7 @@ public class MModUI : MonoBehaviour
                 statusIcon = "[OK]";
             }
 
-            string statusText = $"{statusIcon} {currentStatus}";
+            string statusText = $"{statusIcon} {displayStatus}";
             SetStatusText(statusText, statusColor);
         }
 
@@ -888,8 +1185,6 @@ public class MModUI : MonoBehaviour
 
         var bg = entry.AddComponent<Image>();
         bg.color = GlassTheme.CardBg;
-        bg.sprite = CreateEmbeddedNoiseSprite();
-        bg.type = Image.Type.Tiled;
 
         var entryLayoutElement = entry.AddComponent<LayoutElement>();
         entryLayoutElement.preferredHeight = 75;  // 增加高度：60 -> 75
@@ -909,6 +1204,7 @@ public class MModUI : MonoBehaviour
         var parts = host.Split(':');
         var ip = parts.Length > 0 ? parts[0] : host;
         var portStr = parts.Length > 1 ? parts[1] : "9050";
+        var displayIp = GetMaskedHostIp(ip);
 
         // 服务器图标
         var iconObj = new GameObject("Icon");
@@ -930,7 +1226,7 @@ public class MModUI : MonoBehaviour
         var infoLayoutElement = infoArea.AddComponent<LayoutElement>();
         infoLayoutElement.preferredWidth = 500;
 
-        CreateText("ServerName", infoArea.transform, CoopLocalization.Get("ui.hostList.lanServer", ip), 16, ModernColors.TextPrimary, TextAlignmentOptions.Left, FontStyles.Bold);
+        CreateText("ServerName", infoArea.transform, CoopLocalization.Get("ui.hostList.lanServer", displayIp), 16, ModernColors.TextPrimary, TextAlignmentOptions.Left, FontStyles.Bold);
         CreateText("ServerDetails", infoArea.transform, CoopLocalization.Get("ui.hostList.serverDetails", portStr), 13, ModernColors.TextSecondary, TextAlignmentOptions.Left);
 
         // 中间空白
@@ -961,169 +1257,122 @@ public class MModUI : MonoBehaviour
         return entry;
     }
 
+    private void UpdateStreamerModeVisuals()
+    {
+        ApplyIpInputMask();
+        RefreshHostListForStreamerMode();
+        RefreshPlayerListForStreamerMode();
+
+        // 强制刷新状态文本以应用遮罩
+        _status = null;
+
+        if (_components?.StreamerModeToggle != null && _components.StreamerModeToggle.isOn != _streamerMode)
+        {
+            _components.StreamerModeToggle.SetIsOnWithoutNotify(_streamerMode);
+        }
+    }
+
+    private void ApplyIpInputMask()
+    {
+        if (_components?.IpInputField == null)
+            return;
+
+        var targetType = _streamerMode ? TMP_InputField.ContentType.Password : TMP_InputField.ContentType.Standard;
+        if (_components.IpInputField.contentType != targetType)
+        {
+            _components.IpInputField.contentType = targetType;
+            _components.IpInputField.SetTextWithoutNotify(manualIP);
+            _components.IpInputField.ForceLabelUpdate();
+        }
+    }
+
+    private void RefreshHostListForStreamerMode()
+    {
+        if (_components?.HostListContent == null)
+            return;
+
+        foreach (Transform child in _components.HostListContent)
+        {
+            Destroy(child.gameObject);
+        }
+
+        _hostEntries.Clear();
+        UpdateHostList();
+    }
+
+    private void RefreshPlayerListForStreamerMode()
+    {
+        if (_components?.PlayerListContent == null)
+            return;
+
+        foreach (Transform child in _components.PlayerListContent)
+            Destroy(child.gameObject);
+
+        _playerEntries.Clear();
+        _displayedPlayerIds.Clear();
+        UpdatePlayerList();
+    }
+
+    private string GetMaskedHostIp(string ip)
+    {
+        return _streamerMode ? "*****" : ip;
+    }
+
+    private string GetMaskedEndpoint(string endpoint)
+    {
+        if (!_streamerMode || string.IsNullOrEmpty(endpoint))
+            return endpoint;
+
+        if (endpoint.Contains("Host", StringComparison.OrdinalIgnoreCase))
+            return "*****";
+
+        // 简单判断是否为IP地址或端口组合
+        if (endpoint.Any(char.IsDigit) && (endpoint.Contains('.') || endpoint.Contains(':')))
+            return "*****";
+
+        return endpoint;
+    }
+
+    private string MaskStatusText(string text)
+    {
+        if (!_streamerMode || string.IsNullOrEmpty(text))
+            return text;
+
+        // 避免在主播模式下泄露IP或端点信息
+        string masked = Regex.Replace(text, @"(?:(?:\d{1,3}\.){3}\d{1,3})(?::\d+)?", "*****");
+        masked = Regex.Replace(masked, @"\b(?:[\da-fA-F]{0,4}:){2,7}[\da-fA-F]{0,4}(?::\d+)?\b", "*****");
+
+        return masked;
+    }
+
     private void UpdatePlayerList()
     {
         if (_components?.PlayerListContent == null) return;
 
-        bool isSteamMode = TransportMode == NetworkTransportMode.SteamP2P;
-
-        // 收集当前所有玩家（Steam模式下按SteamID去重）
         var currentPlayerIds = new HashSet<string>();
         var playerStatusesToDisplay = new List<PlayerStatus>();
 
-        if (isSteamMode)
+        if (localPlayerStatus != null)
         {
-            // Steam模式：使用SteamID作为唯一标识，避免重复显示
-            var displayedSteamIds = new HashSet<ulong>();
-            var displayedEndPoints = new HashSet<string>();  // 用于无法获取SteamID的玩家
-
-            // 添加本地玩家
-            if (localPlayerStatus != null)
-            {
-                var localSteamId = SteamUser.GetSteamID().m_SteamID;
-                displayedSteamIds.Add(localSteamId);
-                displayedEndPoints.Add(localPlayerStatus.EndPoint);
-                currentPlayerIds.Add(localSteamId.ToString());
-                playerStatusesToDisplay.Add(localPlayerStatus);
-            }
-
-            // 添加远程玩家（从网络状态）
-            IEnumerable<PlayerStatus> remoteStatuses = IsServer
-                ? playerStatuses?.Values
-                : clientPlayerStatuses?.Values;
-
-            if (remoteStatuses != null)
-            {
-                // 第一遍：收集所有能获取SteamID的玩家
-                var statusesWithoutSteamId = new List<PlayerStatus>();
-
-                foreach (var status in remoteStatuses)
-                {
-                    // 尝试获取这个状态对应的SteamID
-                    ulong steamId = GetSteamIdFromStatus(status);
-
-                    if (steamId > 0)
-                    {
-                        // 有SteamID，按SteamID去重
-                        if (!displayedSteamIds.Contains(steamId))
-                        {
-                            displayedSteamIds.Add(steamId);
-                            displayedEndPoints.Add(status.EndPoint);
-                            currentPlayerIds.Add(steamId.ToString());
-                            playerStatusesToDisplay.Add(status);
-                        }
-                        else
-                        {
-                            // 即使跳过了，也要记录这个 EndPoint，避免后续被当作无 SteamID 的玩家处理
-                            displayedEndPoints.Add(status.EndPoint);
-                        }
-                    }
-                    else
-                    {
-                        // 无法获取SteamID，先暂存
-                        statusesWithoutSteamId.Add(status);
-                    }
-                }
-
-                // 第二遍：处理无法获取SteamID的玩家（可能是网络延迟导致的）
-                // 只有在确实是新玩家时才添加
-                foreach (var status in statusesWithoutSteamId)
-                {
-                    if (!displayedEndPoints.Contains(status.EndPoint))
-                    {
-                        displayedEndPoints.Add(status.EndPoint);
-                        currentPlayerIds.Add(status.EndPoint);
-                        playerStatusesToDisplay.Add(status);
-                        Debug.LogWarning($"[MModUI] 添加无SteamID的玩家: {status.EndPoint}");
-                    }
-                }
-            }
-
-            // Steam模式额外逻辑：从 Steam Lobby 成员列表补充玩家信息
-            // 这对客户端特别重要，因为客户端可能看不到其他客户端的 PlayerStatus
-            if (LobbyManager != null && LobbyManager.IsInLobby && SteamManager.Initialized)
-            {
-                int memberCount = SteamMatchmaking.GetNumLobbyMembers(LobbyManager.CurrentLobbyId);
-
-                // 先建立一个 SteamID -> PlayerStatus 的映射（从已有的网络状态）
-                var steamIdToStatus = new Dictionary<ulong, PlayerStatus>();
-                if (remoteStatuses != null)
-                {
-                    foreach (var status in remoteStatuses)
-                    {
-                        ulong sid = GetSteamIdFromStatus(status);
-                        if (sid > 0 && !steamIdToStatus.ContainsKey(sid))
-                        {
-                            steamIdToStatus[sid] = status;
-                        }
-                    }
-                }
-
-                for (int i = 0; i < memberCount; i++)
-                {
-                    CSteamID memberId = SteamMatchmaking.GetLobbyMemberByIndex(LobbyManager.CurrentLobbyId, i);
-
-                    // 如果这个成员还没有被添加到显示列表
-                    if (!displayedSteamIds.Contains(memberId.m_SteamID))
-                    {
-                        // 从缓存获取用户名
-                        string memberName = LobbyManager.GetCachedMemberName(memberId);
-                        if (string.IsNullOrEmpty(memberName))
-                        {
-                            memberName = SteamFriends.GetFriendPersonaName(memberId);
-                        }
-
-                        // 尝试从已有的网络状态中找到这个玩家的实际状态
-                        PlayerStatus actualStatus = null;
-                        if (steamIdToStatus.TryGetValue(memberId.m_SteamID, out actualStatus))
-                        {
-                            // 有实际网络状态，使用它
-                            displayedSteamIds.Add(memberId.m_SteamID);
-                            displayedEndPoints.Add(actualStatus.EndPoint);
-                            currentPlayerIds.Add(memberId.m_SteamID.ToString());
-                            playerStatusesToDisplay.Add(actualStatus);
-                        }
-                        else
-                        {
-                            // 没有实际网络状态，创建虚拟状态
-                            var virtualStatus = new PlayerStatus
-                            {
-                                PlayerName = memberName,
-                                EndPoint = $"Steam:{memberId.m_SteamID}",
-                                IsInGame = false,  // 未知状态
-                                Latency = 0  // 未知延迟
-                            };
-
-                            displayedSteamIds.Add(memberId.m_SteamID);
-                            currentPlayerIds.Add(memberId.m_SteamID.ToString());
-                            playerStatusesToDisplay.Add(virtualStatus);
-                        }
-                    }
-                }
-            }
+            currentPlayerIds.Add(localPlayerStatus.EndPoint);
+            playerStatusesToDisplay.Add(localPlayerStatus);
         }
-        else
+
+        IEnumerable<PlayerStatus> remoteStatuses = IsServer
+            ? playerStatuses?.Values
+            : clientPlayerStatuses?.Values;
+
+        if (remoteStatuses != null)
         {
-            // 直连模式：使用EndPoint作为唯一标识
-            if (localPlayerStatus != null)
+            foreach (var status in remoteStatuses)
             {
-                currentPlayerIds.Add(localPlayerStatus.EndPoint);
-                playerStatusesToDisplay.Add(localPlayerStatus);
-            }
+                if (status == null)
+                    continue;
 
-            IEnumerable<PlayerStatus> remoteStatuses = IsServer
-                ? playerStatuses?.Values
-                : clientPlayerStatuses?.Values;
-
-            if (remoteStatuses != null)
-            {
-                foreach (var status in remoteStatuses)
+                if (!currentPlayerIds.Contains(status.EndPoint))
                 {
-                    if (!currentPlayerIds.Contains(status.EndPoint))
-                    {
-                        currentPlayerIds.Add(status.EndPoint);
-                        playerStatusesToDisplay.Add(status);
-                    }
+                    currentPlayerIds.Add(status.EndPoint);
+                    playerStatusesToDisplay.Add(status);
                 }
             }
         }
@@ -1133,19 +1382,8 @@ public class MModUI : MonoBehaviour
 
         if (!_displayedPlayerIds.SetEquals(currentPlayerIds))
         {
-            // 玩家列表变化了
             needsRebuild = true;
             Debug.Log($"[MModUI] 玩家列表已更新，重建UI (当前: {currentPlayerIds.Count}, 之前: {_displayedPlayerIds.Count})");
-        }
-        else if (isSteamMode)
-        {
-            // Steam模式下，即使玩家列表没变，也需要定期更新（因为状态可能从虚拟变为实际）
-            // 使用时间限制，避免过于频繁的更新
-            if (Time.time - _lastPlayerListUpdateTime > 2.0f)  // 每2秒最多更新一次
-            {
-                needsRebuild = true;
-                _lastPlayerListUpdateTime = Time.time;
-            }
         }
 
         if (!needsRebuild)
@@ -1169,47 +1407,6 @@ public class MModUI : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// 从PlayerStatus获取对应的SteamID（用于去重）
-    /// </summary>
-    private ulong GetSteamIdFromStatus(PlayerStatus status)
-    {
-        if (!SteamManager.Initialized || LobbyManager == null || !LobbyManager.IsInLobby)
-        {
-            return 0;
-        }
-
-        // 如果是 "Steam:xxx" 格式（从Lobby直接获取的），直接解析SteamID
-        if (status.EndPoint.StartsWith("Steam:"))
-        {
-            var steamIdStr = status.EndPoint.Substring(6);  // 去掉 "Steam:" 前缀
-            if (ulong.TryParse(steamIdStr, out ulong steamId))
-            {
-                return steamId;
-            }
-        }
-
-        // 如果是 "Host:xxx" 格式，返回房间所有者的SteamID
-        if (status.EndPoint.StartsWith("Host:"))
-        {
-            var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
-            return lobbyOwner.m_SteamID;
-        }
-
-        // 尝试从虚拟IP EndPoint获取
-        var parts = status.EndPoint.Split(':');
-        if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out var ipAddr) && int.TryParse(parts[1], out var port))
-        {
-            var ipEndPoint = new System.Net.IPEndPoint(ipAddr, port);
-            if (SteamEndPointMapper.Instance != null &&
-                SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out CSteamID cSteamId))
-            {
-                return cSteamId.m_SteamID;
-            }
-        }
-
-        return 0;
-    }
 
     private void CreatePlayerEntry(PlayerStatus status, bool isLocal)
     {
@@ -1239,81 +1436,8 @@ public class MModUI : MonoBehaviour
         var dotImage = statusDot.AddComponent<Image>();
         dotImage.color = status.IsInGame ? ModernColors.Success : ModernColors.Warning;
 
-        // Steam模式下的特殊显示逻辑
-        bool isSteamMode = TransportMode == NetworkTransportMode.SteamP2P;
-        string displayName = status.PlayerName;
-        string displayId = status.EndPoint;
-
-        if (isSteamMode)
-        {
-            // Steam模式：使用缓存获取Steam用户名和SteamID
-            string steamUsername = "Unknown";
-            ulong steamId = 0;
-            bool isHost = false;
-
-            try
-            {
-                if (SteamManager.Initialized)
-                {
-                    if (isLocal)
-                    {
-                        // 本地玩家：直接获取当前Steam用户名和ID（不需要IsInLobby检查）
-                        steamUsername = SteamFriends.GetPersonaName();
-                        steamId = SteamUser.GetSteamID().m_SteamID;
-
-                        // 判断是否是主机（需要IsInLobby）
-                        if (LobbyManager != null && LobbyManager.IsInLobby)
-                        {
-                            var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
-                            isHost = (steamId == lobbyOwner.m_SteamID);
-                        }
-                        else
-                        {
-                            // 如果还没加入Lobby，根据IsServer判断
-                            isHost = NetService.Instance?.IsServer ?? false;
-                        }
-                    }
-                    else if (LobbyManager != null && LobbyManager.IsInLobby)
-                    {
-                        // 远程玩家：从 EndPoint 获取 SteamID
-                        steamId = GetSteamIdFromStatus(status);
-
-                        // 判断是否是主机
-                        var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
-                        isHost = (steamId > 0 && steamId == lobbyOwner.m_SteamID);
-
-                        // 从缓存获取用户名
-                        if (steamId > 0)
-                        {
-                            var cSteamId = new CSteamID(steamId);
-                            steamUsername = LobbyManager.GetCachedMemberName(cSteamId);
-
-                            if (string.IsNullOrEmpty(steamUsername))
-                            {
-                                // 缓存未命中，回退到Steam API
-                                steamUsername = SteamFriends.GetFriendPersonaName(cSteamId);
-                                if (string.IsNullOrEmpty(steamUsername) || steamUsername == "[unknown]")
-                                {
-                                    steamUsername = $"Player_{steamId.ToString().Substring(Math.Max(0, steamId.ToString().Length - 4))}";
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"[MModUI] 获取Steam用户名失败: {e.Message}\n{e.StackTrace}");
-                steamUsername = $"Player_{(steamId > 0 ? steamId.ToString().Substring(Math.Max(0, steamId.ToString().Length - 4)) : "????")}";
-            }
-
-            // 添加前缀（基于房间所有者判断，而不是本地IsServer状态）
-            string prefix = isHost ? "HOST" : "CLIENT";
-            displayName = $"{prefix}_{steamUsername}";
-
-            // Steam模式：显示完整SteamID
-            displayId = steamId > 0 ? steamId.ToString() : status.EndPoint;
-        }
+        string displayId = GetMaskedEndpoint(status.EndPoint);
+        string displayName = !string.IsNullOrEmpty(status.PlayerName) ? status.PlayerName : displayId;
 
         var nameText = CreateText("Name", headerRow.transform, displayName, 16, ModernColors.TextPrimary, TextAlignmentOptions.Left, FontStyles.Bold);
         if (isLocal)
@@ -1343,7 +1467,7 @@ public class MModUI : MonoBehaviour
                 layout.childForceExpandWidth = false;
             }
 
-            CreateModernButton("KickBtn", actionRow.transform, CoopLocalization.Get("ui.playerList.kick"), () =>
+            CreateModernButton("KickBtn", actionRow.transform, CoopLocalization.Get("ui.playerlist.kick"), () =>
             {
                 Service?.KickPlayer(status.EndPoint);
             }, 90, ModernColors.Error, 36, 14);
@@ -1493,110 +1617,38 @@ public class MModUI : MonoBehaviour
             statusLayout.preferredWidth = 60;
 
             // 获取玩家显示名称和ID
-            string displayName = pid;
-            string displayId = pid;
-
-            if (TransportMode == NetworkTransportMode.SteamP2P && SteamManager.Initialized && LobbyManager != null && LobbyManager.IsInLobby)
+            string displayName = GetMaskedEndpoint(pid);
+            string displayId = "*****"; // Always mask the endpoint display in the vote UI
+            if (StreamerMode)
             {
-                // Steam模式：pid 可能是 EndPoint 格式（Host:9050, Client:xxx）或 SteamID
-                ulong steamIdValue = 0;
-
-                // 先尝试直接解析为 SteamID
-                if (ulong.TryParse(pid, out steamIdValue) && steamIdValue > 0)
+                displayId = "*****";
+            }
+            else
+            {
+                displayId = pid;
+            }
+            var service = NetService.Instance;
+            if (service != null)
+            {
+                if (service.localPlayerStatus != null && service.localPlayerStatus.EndPoint == pid)
                 {
-                    // pid 是 SteamID
+                    displayName = service.localPlayerStatus.PlayerName ?? pid;
                 }
-                else
+                else if (service.clientPlayerStatuses != null && service.clientPlayerStatuses.TryGetValue(pid, out var clientStatus))
                 {
-                    // pid 是 EndPoint 格式，需要转换为 SteamID
-                    if (pid.StartsWith("Host:"))
-                    {
-                        // 主机的 EndPoint
-                        // 先检查是否是本地玩家
-                        if (localPlayerStatus != null && localPlayerStatus.EndPoint == pid)
-                        {
-                            steamIdValue = SteamUser.GetSteamID().m_SteamID;
-                        }
-                        else
-                        {
-                            // 远程主机，获取 Lobby 所有者的 SteamID
-                            var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
-                            steamIdValue = lobbyOwner.m_SteamID;
-                        }
-                    }
-                    else if (pid.StartsWith("Client:"))
-                    {
-                        // 客户端的 EndPoint，尝试从 PlayerStatus 查找
-                        // 先检查本地玩家
-                        if (localPlayerStatus != null && localPlayerStatus.EndPoint == pid)
-                        {
-                            steamIdValue = SteamUser.GetSteamID().m_SteamID;
-                        }
-                        else
-                        {
-                            // 遍历所有玩家状态，找到匹配的 EndPoint
-                            IEnumerable<PlayerStatus> allStatuses = IsServer
-                                ? playerStatuses?.Values
-                                : clientPlayerStatuses?.Values;
-                            if (allStatuses != null)
-                            {
-                                foreach (var status in allStatuses)
-                                {
-                                    if (status.EndPoint == pid)
-                                    {
-                                        steamIdValue = GetSteamIdFromStatus(status);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else
-                    {
-                        // 尝试解析虚拟 IP 格式（10.255.0.x:port）
-                        var parts = pid.Split(':');
-                        if (parts.Length == 2 && System.Net.IPAddress.TryParse(parts[0], out var ipAddr) && int.TryParse(parts[1], out var port))
-                        {
-                            var ipEndPoint = new System.Net.IPEndPoint(ipAddr, port);
-                            if (SteamEndPointMapper.Instance != null &&
-                                SteamEndPointMapper.Instance.TryGetSteamID(ipEndPoint, out CSteamID cSteamId))
-                            {
-                                steamIdValue = cSteamId.m_SteamID;
-                            }
-                        }
-                    }
+                    displayName = clientStatus.PlayerName ?? pid;
                 }
-
-                // 如果成功获取到 SteamID，显示用户名
-                if (steamIdValue > 0)
+                else if (service.playerStatuses != null)
                 {
-                    var cSteamId = new CSteamID(steamIdValue);
-                    string cachedName = LobbyManager.GetCachedMemberName(cSteamId);
-
-                    if (!string.IsNullOrEmpty(cachedName))
+                    foreach (var kv in service.playerStatuses)
                     {
-                        // 判断是否是主机
-                        var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
-                        string prefix = (steamIdValue == lobbyOwner.m_SteamID) ? "HOST" : "CLIENT";
-                        displayName = $"{prefix}_{cachedName}";
-                    }
-                    else
-                    {
-                        // 缓存未命中，回退到Steam API
-                        string steamUsername = SteamFriends.GetFriendPersonaName(cSteamId);
-                        if (!string.IsNullOrEmpty(steamUsername) && steamUsername != "[unknown]")
+                        var st = kv.Value;
+                        if (st != null && st.EndPoint == pid)
                         {
-                            var lobbyOwner = SteamMatchmaking.GetLobbyOwner(LobbyManager.CurrentLobbyId);
-                            string prefix = (steamIdValue == lobbyOwner.m_SteamID) ? "HOST" : "CLIENT";
-                            displayName = $"{prefix}_{steamUsername}";
-                        }
-                        else
-                        {
-                            displayName = $"Player_{steamIdValue.ToString().Substring(Math.Max(0, steamIdValue.ToString().Length - 4))}";
+                            displayName = st.PlayerName ?? pid;
+                            break;
                         }
                     }
-
-                    displayId = steamIdValue.ToString();
                 }
             }
 
@@ -1653,6 +1705,187 @@ public class MModUI : MonoBehaviour
 
     #endregion
 
+    #region Chat
+
+    private void ToggleChatPanel()
+    {
+        _chatVisible = !_chatVisible;
+        _chatAutoHideArmed = false;
+        if (_components?.ChatPanel == null)
+            return;
+
+        StartCoroutine(AnimatePanel(_components.ChatPanel, _chatVisible));
+
+        if (_chatVisible && _components.ChatInput != null)
+        {
+            EventSystem.current?.SetSelectedGameObject(_components.ChatInput.gameObject);
+            _components.ChatInput.ActivateInputField();
+        }
+    }
+
+    internal void OnChatMessageReceived(string senderName, string content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return;
+
+        ShowChatTemporarily();
+
+        _chatHistory.Add((senderName ?? string.Empty, content));
+        while (_chatHistory.Count > ChatHistoryLimit)
+            _chatHistory.RemoveAt(0);
+
+        AppendChatEntry(senderName, content);
+    }
+
+    private void AppendChatEntry(string senderName, string content)
+    {
+        if (_components?.ChatContent == null)
+            return;
+
+        var line = new GameObject("ChatLine");
+        line.transform.SetParent(_components.ChatContent, false);
+        var layout = line.AddComponent<HorizontalLayoutGroup>();
+        layout.spacing = 8f;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandHeight = false;
+        layout.childForceExpandWidth = true;
+        layout.childAlignment = TextAnchor.UpperLeft;
+
+        var nameText = CreateText("Sender", line.transform, string.IsNullOrEmpty(senderName) ? CoopLocalization.Get("ui.chat.unknown") : senderName, 16, ModernColors.Primary, TextAlignmentOptions.Left, FontStyles.Bold);
+        var nameLayout = nameText.gameObject.AddComponent<LayoutElement>();
+        nameLayout.preferredWidth = 132f;
+        nameLayout.flexibleWidth = 0;
+
+        var contentText = CreateText("Content", line.transform, content, 16, ModernColors.TextPrimary, TextAlignmentOptions.TopLeft);
+        contentText.enableWordWrapping = true;
+        contentText.richText = true;
+        contentText.margin = new Vector4(0, 1, 0, 1);
+        contentText.overflowMode = TextOverflowModes.Overflow;
+        var contentLayout = contentText.gameObject.AddComponent<LayoutElement>();
+        contentLayout.flexibleWidth = 1f;
+
+        if (_components.ChatContent.childCount > ChatHistoryLimit)
+        {
+            var oldest = _components.ChatContent.GetChild(0);
+            Destroy(oldest.gameObject);
+        }
+
+        StartCoroutine(LateScrollToBottom());
+    }
+
+    private IEnumerator LateScrollToBottom()
+    {
+        yield return null;
+        if (_components?.ChatScroll != null)
+            _components.ChatScroll.verticalNormalizedPosition = 0f;
+    }
+
+    internal bool IsChatTyping()
+    {
+        var input = _components?.ChatInput;
+        if (input == null) return false;
+        if (!input.isActiveAndEnabled) return false;
+        if (!input.gameObject.activeInHierarchy) return false;
+
+        try
+        {
+            return input.isFocused;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void ShowChatTemporarily()
+    {
+        if (_components?.ChatPanel == null)
+            return;
+
+        if (!_chatVisible)
+        {
+            _chatVisible = true;
+            StartCoroutine(AnimatePanel(_components.ChatPanel, true));
+        }
+
+        _chatAutoHideArmed = true;
+        _chatAutoHideDeadline = Time.time + ChatAutoHideDelay;
+        if (_chatAutoHideRoutine == null)
+            _chatAutoHideRoutine = StartCoroutine(ChatAutoHideRoutine());
+    }
+
+    private IEnumerator ChatAutoHideRoutine()
+    {
+        while (true)
+        {
+            yield return null;
+
+            if (!_chatAutoHideArmed || !_chatVisible)
+            {
+                _chatAutoHideRoutine = null;
+                yield break;
+            }
+
+            var input = _components?.ChatInput;
+            var isTyping = input != null && (input.isFocused || !string.IsNullOrEmpty(input.text));
+
+            if (Time.time < _chatAutoHideDeadline)
+                continue;
+
+            if (isTyping)
+            {
+                _chatAutoHideDeadline = Time.time + ChatAutoHideDelay;
+                continue;
+            }
+
+            _chatAutoHideArmed = false;
+            _chatVisible = false;
+            StartCoroutine(AnimatePanel(_components.ChatPanel, false));
+            _chatAutoHideRoutine = null;
+            yield break;
+        }
+    }
+
+    private void SubmitChatMessage()
+    {
+        var service = Service;
+        if (service == null || _components?.ChatInput == null)
+            return;
+
+        var content = _components.ChatInput.text?.Trim();
+        if (string.IsNullOrEmpty(content))
+            return;
+
+        var senderName = service.ResolveLocalPlayerName();
+
+        if (service.IsServer)
+        {
+            OnChatMessageReceived(senderName, content);
+            CoopTool.SendRpc(new ChatMessageRpc
+            {
+                SenderId = service.GetSelfNetworkId(),
+                SenderName = senderName,
+                Content = content
+            });
+        }
+        else
+        {
+            CoopTool.SendRpc(new ChatSendRequestRpc
+            {
+                SenderName = senderName,
+                Content = content
+            });
+        }
+
+        _components.ChatInput.text = string.Empty;
+        _components.ChatInput.ActivateInputField();
+
+        ShowChatTemporarily();
+    }
+
+    #endregion
+
     #region 现代化UI Helper方法
 
     internal GameObject CreateModernPanel(string name, Transform parent, Vector2 size, Vector2 anchorPos, TextAnchor pivot = TextAnchor.UpperLeft)
@@ -1664,47 +1897,9 @@ public class MModUI : MonoBehaviour
         rect.sizeDelta = size;
         SetAnchor(rect, anchorPos, pivot);
 
-        // --- 🎨 尝试使用真实高斯模糊玻璃效果 ---
-        bool useTranslucentImage = false;
-        TranslucentImage translucentImage = null;
-
-        try
-        {
-            var mainCamera = Camera.main;
-            if (mainCamera != null)
-            {
-                var source = mainCamera.GetComponent<TranslucentImageSource>();
-                if (source != null)
-                {
-                    translucentImage = panel.AddComponent<TranslucentImage>();
-                    translucentImage.source = source;
-                    translucentImage.color = new Color(0.15f, 0.15f, 0.15f, 0.85f);
-                    useTranslucentImage = true;
-
-                    // 延迟设置属性
-                    StartCoroutine(InitializeTranslucentImageProperties(translucentImage));
-                }
-            }
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning($"TranslucentImage 初始化失败，使用普通背景: {e.Message}");
-            if (translucentImage != null)
-            {
-                Destroy(translucentImage);
-                translucentImage = null;
-            }
-            useTranslucentImage = false;
-        }
-
-        // 回退方案：使用普通 Image + 噪声纹理
-        if (!useTranslucentImage)
-        {
-            var image = panel.AddComponent<Image>();
-            image.color = new Color(0.25f, 0.25f, 0.25f, 0.93f);
-            image.sprite = CreateEmbeddedNoiseSprite();
-            image.type = Image.Type.Tiled;
-        }
+        // 白底主题下禁用全局毛玻璃，避免灰蒙蒙遮罩感
+        var image = panel.AddComponent<Image>();
+        image.color = GlassTheme.PanelBg;
 
         // 添加柔和阴影
         var shadow = panel.AddComponent<Shadow>();
@@ -1774,9 +1969,7 @@ public class MModUI : MonoBehaviour
 
         // --- 背景改成毛玻璃风格 ---
         var bg = titleBar.AddComponent<Image>();
-        bg.color = GlassTheme.CardBg;                // 半透明灰
-        bg.sprite = CreateEmbeddedNoiseSprite();     // 噪声纹理
-        bg.type = Image.Type.Tiled;
+        bg.color = GlassTheme.CardBg;
 
         // 轻描边 + 柔光阴影
         var outline = titleBar.AddComponent<Outline>();
@@ -1811,9 +2004,7 @@ public class MModUI : MonoBehaviour
         layout.childControlHeight = true;
 
         var image = content.AddComponent<Image>();
-        image.color = new Color(0.28f, 0.28f, 0.28f, 0.87f); // 比主面板略浅
-        image.sprite = CreateEmbeddedNoiseSprite();
-        image.type = Image.Type.Tiled;
+        image.color = GlassTheme.CardBg;
 
         // 内部柔和描边
         var outline = content.AddComponent<Outline>();
@@ -1841,8 +2032,6 @@ public class MModUI : MonoBehaviour
 
         var image = card.AddComponent<Image>();
         image.color = GlassTheme.CardBg;
-        image.sprite = CreateEmbeddedNoiseSprite();
-        image.type = Image.Type.Tiled;
 
         var outline = card.AddComponent<Outline>();
         outline.effectColor = GlassTheme.Divider;
@@ -1871,8 +2060,6 @@ public class MModUI : MonoBehaviour
 
         var image = item.AddComponent<Image>();
         image.color = GlassTheme.CardBg;
-        image.sprite = CreateEmbeddedNoiseSprite();
-        image.type = Image.Type.Tiled;
 
         var layoutElem = item.AddComponent<LayoutElement>();
         layoutElem.preferredHeight = 44;
@@ -1932,8 +2119,6 @@ public class MModUI : MonoBehaviour
 
         var bg = bar.AddComponent<Image>();
         bg.color = GlassTheme.CardBg;
-        bg.sprite = CreateEmbeddedNoiseSprite();
-        bg.type = Image.Type.Tiled;
 
         var outline = bar.AddComponent<Outline>();
         outline.effectColor = GlassTheme.Divider;
@@ -1963,9 +2148,7 @@ public class MModUI : MonoBehaviour
         layout.childForceExpandHeight = false;
 
         var bg = bar.AddComponent<Image>();
-        bg.color = new Color(0.22f, 0.22f, 0.22f, 0.95f); // 比主面板略深
-        bg.sprite = CreateEmbeddedNoiseSprite();
-        bg.type = Image.Type.Tiled;
+        bg.color = GlassTheme.CardBg;
 
         var outline = bar.AddComponent<Outline>();
         outline.effectColor = GlassTheme.Divider;
@@ -1993,9 +2176,7 @@ public class MModUI : MonoBehaviour
         layout.childAlignment = TextAnchor.MiddleCenter;
 
         var bg = bar.AddComponent<Image>();
-        bg.color = new Color(0.32f, 0.32f, 0.32f, 0.94f); // 浅灰半透
-        bg.sprite = CreateEmbeddedNoiseSprite();
-        bg.type = Image.Type.Tiled;
+        bg.color = GlassTheme.CardBg;
 
         var outline = bar.AddComponent<Outline>();
         outline.effectColor = GlassTheme.Divider;
@@ -2121,8 +2302,6 @@ public class MModUI : MonoBehaviour
         var baseColor = GlassTheme.ButtonBg;
         var image = btnObj.AddComponent<Image>();
         image.color = baseColor;
-        image.sprite = CreateEmbeddedNoiseSprite();
-        image.type = Image.Type.Tiled;
 
         var button = btnObj.AddComponent<Button>();
         button.onClick.AddListener(onClick);
@@ -2142,7 +2321,7 @@ public class MModUI : MonoBehaviour
         tmp.text = text;
         tmp.fontSize = fontSize;
         tmp.alignment = TextAlignmentOptions.Center;
-        tmp.color = GlassTheme.Text;
+        tmp.color = new Color(0.28f, 0.16f, 0.02f, 0.98f);
         tmp.fontStyle = FontStyles.Bold;
 
         var rect = tmp.GetComponent<RectTransform>();
@@ -2163,7 +2342,7 @@ public class MModUI : MonoBehaviour
         layoutElement.preferredWidth = size;
         layoutElement.preferredHeight = size;
 
-        var btnColor = color ?? ModernColors.TextSecondary;
+        var btnColor = GlassTheme.ButtonBg;
         var image = btnObj.AddComponent<Image>();
         image.color = new Color(0, 0, 0, 0); // 透明背景
 
@@ -2196,6 +2375,51 @@ public class MModUI : MonoBehaviour
         return button;
     }
 
+    internal Toggle CreateModernToggle(string name, Transform parent, bool defaultValue)
+    {
+        var toggleObj = new GameObject(name);
+        toggleObj.transform.SetParent(parent, false);
+
+        var layout = toggleObj.AddComponent<LayoutElement>();
+        layout.preferredWidth = 28;
+        layout.preferredHeight = 24;
+
+        var backgroundObj = new GameObject("Background");
+        backgroundObj.transform.SetParent(toggleObj.transform, false);
+        var bgImage = backgroundObj.AddComponent<Image>();
+        bgImage.color = GlassTheme.ButtonBg;
+        bgImage.sprite = CreateEmbeddedNoiseSprite();
+
+        var checkmarkObj = new GameObject("Checkmark");
+        checkmarkObj.transform.SetParent(backgroundObj.transform, false);
+        var checkImage = checkmarkObj.AddComponent<Image>();
+        checkImage.color = ModernColors.Primary;
+
+        var toggle = toggleObj.AddComponent<Toggle>();
+        toggle.targetGraphic = bgImage;
+        toggle.graphic = checkImage;
+        toggle.isOn = defaultValue;
+
+        var bgRect = backgroundObj.GetComponent<RectTransform>();
+        bgRect.anchorMin = Vector2.zero;
+        bgRect.anchorMax = Vector2.one;
+        bgRect.sizeDelta = Vector2.zero;
+
+        var checkRect = checkmarkObj.GetComponent<RectTransform>();
+        checkRect.anchorMin = new Vector2(0.2f, 0.2f);
+        checkRect.anchorMax = new Vector2(0.8f, 0.8f);
+        checkRect.sizeDelta = Vector2.zero;
+
+        var colors = toggle.colors;
+        colors.normalColor = GlassTheme.ButtonBg;
+        colors.highlightedColor = GlassTheme.ButtonHover;
+        colors.pressedColor = GlassTheme.ButtonActive;
+        colors.selectedColor = GlassTheme.ButtonBg;
+        toggle.colors = colors;
+
+        return toggle;
+    }
+
     internal TMP_InputField CreateModernInputField(string name, Transform parent, string placeholder, string defaultValue)
     {
         var inputObj = new GameObject(name);
@@ -2208,8 +2432,6 @@ public class MModUI : MonoBehaviour
 
         var image = inputObj.AddComponent<Image>();
         image.color = GlassTheme.InputBg;
-        image.sprite = CreateEmbeddedNoiseSprite();
-        image.type = Image.Type.Tiled;
 
         var input = inputObj.AddComponent<TMP_InputField>();
 
@@ -2258,9 +2480,7 @@ public class MModUI : MonoBehaviour
 
         // === 背景：伪毛玻璃 ===
         var scrollImage = scrollObj.AddComponent<Image>();
-        scrollImage.color = GlassTheme.CardBg;              // 半透明深灰
-        scrollImage.sprite = CreateEmbeddedNoiseSprite();   // 噪声散射
-        scrollImage.type = Image.Type.Tiled;
+        scrollImage.color = GlassTheme.CardBg;
 
         // 柔光边缘
         var outline = scrollObj.AddComponent<Outline>();
@@ -2285,9 +2505,7 @@ public class MModUI : MonoBehaviour
         viewportRect.offsetMax = new Vector2(-5, -5);
 
         var viewportImage = viewportObj.AddComponent<Image>();
-        viewportImage.color = new Color(0.27f, 0.27f, 0.27f, 0.95f); // 略深一点，聚焦内容
-        viewportImage.sprite = CreateEmbeddedNoiseSprite();
-        viewportImage.type = Image.Type.Tiled;
+        viewportImage.color = new Color(0.70f, 0.09f, 0.14f, 0.98f);
 
         var viewportMask = viewportObj.AddComponent<Mask>();
         viewportMask.showMaskGraphic = false;
@@ -2362,6 +2580,19 @@ public class MModUI : MonoBehaviour
         headerSpacer.transform.SetParent(steamHeaderGroup.transform, false);
         var headerSpacerLayout = headerSpacer.AddComponent<LayoutElement>();
         headerSpacerLayout.flexibleWidth = 1;
+
+        var searchInput = CreateModernInputField("SteamLobbySearch", steamHeaderGroup.transform, CoopLocalization.Get("ui.steam.searchPlaceholder"), _steamLobbySearchTerm);
+        var searchLayout = searchInput.GetComponent<LayoutElement>();
+        if (searchLayout != null)
+        {
+            searchLayout.preferredWidth = 220;
+            searchLayout.minWidth = 200;
+        }
+        searchInput.onValueChanged.AddListener(value =>
+        {
+            _steamLobbySearchTerm = value;
+            UpdateSteamLobbyList();
+        });
 
         // 刷新按钮
         CreateModernButton("RefreshBtn", steamHeaderGroup.transform, CoopLocalization.Get("ui.steam.refresh"), () =>
@@ -2484,71 +2715,6 @@ public class MModUI : MonoBehaviour
         _components.SteamCreateLeaveButtonText = _components.SteamCreateLeaveButton.GetComponentInChildren<TextMeshProUGUI>();
     }
 
-    internal void CreateDifficultyCard(Transform parent)
-    {
-        var card = CreateModernCard(parent, "DifficultyCard");
-        var layout = card.GetComponent<LayoutElement>();
-        layout.preferredHeight = 240;
-        layout.minHeight = 200;
-
-        CreateSectionHeader(card.transform, CoopLocalization.Get("ui.difficulty.title"));
-        CreateText("DifficultyHint", card.transform, CoopLocalization.Get("ui.difficulty.hint"), 12, ModernColors.TextTertiary);
-
-        var row = CreateHorizontalGroup(card.transform, "DifficultyRow");
-        var rowLayout = row.GetComponent<HorizontalLayoutGroup>();
-        rowLayout.childForceExpandWidth = true;
-        rowLayout.childControlWidth = true;
-
-        foreach (var level in _difficultyOrder)
-        {
-            CreateDifficultyButton(row.transform, level);
-        }
-
-        _components.DifficultyValueText = CreateText("DifficultyValue", card.transform,
-            CoopLocalization.Get("ui.difficulty.current", DifficultyManager.GetLocalizedName(DifficultyManager.Selected)),
-            14, ModernColors.TextSecondary, TextAlignmentOptions.Center, FontStyles.Bold);
-
-        RefreshDifficultyUI();
-    }
-
-    private void CreateDifficultyButton(Transform parent, DifficultyLevel level)
-    {
-        var name = DifficultyManager.GetLocalizedName(level);
-        var btn = CreateModernButton($"Difficulty_{level}", parent, name, () => OnDifficultySelected(level), 0, GlassTheme.ButtonBg, 90, 13);
-        var buttonImage = btn.GetComponent<Image>();
-        if (buttonImage != null)
-        {
-            buttonImage.type = Image.Type.Sliced;
-        }
-
-        var iconObj = new GameObject("Icon");
-        iconObj.transform.SetParent(btn.transform, false);
-        var iconImage = iconObj.AddComponent<Image>();
-        iconImage.sprite = DifficultyManager.GetDifficultySprite(level);
-        iconImage.preserveAspect = true;
-        iconImage.color = Color.white;
-        var iconRect = iconImage.rectTransform;
-        iconRect.anchorMin = new Vector2(0.08f, 0.2f);
-        iconRect.anchorMax = new Vector2(0.92f, 0.9f);
-        iconRect.offsetMin = Vector2.zero;
-        iconRect.offsetMax = Vector2.zero;
-        iconObj.transform.SetSiblingIndex(0);
-
-        var text = btn.GetComponentInChildren<TextMeshProUGUI>();
-        if (text != null)
-        {
-            text.alignment = TextAlignmentOptions.Bottom;
-            text.fontSize = 13;
-            var tRect = text.rectTransform;
-            tRect.offsetMin = new Vector2(6, 6);
-            tRect.offsetMax = new Vector2(-6, -6);
-        }
-
-        _components.DifficultyButtons[level] = btn;
-        _components.DifficultyIcons[level] = iconImage;
-    }
-
-
     private void UpdateTransportModePanels()
     {
         // 更新右侧面板
@@ -2563,51 +2729,6 @@ public class MModUI : MonoBehaviour
         {
             _components.DirectServerListArea.SetActive(TransportMode == NetworkTransportMode.Direct);
             _components.SteamServerListArea.SetActive(TransportMode == NetworkTransportMode.SteamP2P);
-        }
-    }
-
-    internal void OnDifficultySelected(DifficultyLevel level)
-    {
-        DifficultyManager.SetDifficulty(level);
-        RefreshDifficultyUI();
-    }
-
-    private void RefreshDifficultyUI()
-    {
-        var selected = DifficultyManager.Selected;
-        foreach (var level in _difficultyOrder)
-        {
-            if (!_components.DifficultyButtons.TryGetValue(level, out var btn) || btn == null)
-                continue;
-
-            var baseColor = selected == level ? ModernColors.Primary : GlassTheme.ButtonBg;
-            var image = btn.GetComponent<Image>();
-            if (image != null)
-            {
-                image.color = baseColor;
-            }
-
-            var colors = btn.colors;
-            colors.normalColor = baseColor;
-            colors.highlightedColor = selected == level ? ModernColors.PrimaryHover : GlassTheme.ButtonHover;
-            colors.pressedColor = selected == level ? ModernColors.PrimaryActive : GlassTheme.ButtonActive;
-            btn.colors = colors;
-
-            var label = btn.GetComponentInChildren<TextMeshProUGUI>();
-            if (label != null)
-            {
-                label.text = DifficultyManager.GetLocalizedName(level);
-            }
-
-            if (_components.DifficultyIcons.TryGetValue(level, out var icon) && icon != null && icon.sprite == null)
-            {
-                icon.sprite = DifficultyManager.GetDifficultySprite(level);
-            }
-        }
-
-        if (_components.DifficultyValueText != null)
-        {
-            _components.DifficultyValueText.text = CoopLocalization.Get("ui.difficulty.current", DifficultyManager.GetLocalizedName(selected));
         }
     }
 
@@ -2798,12 +2919,24 @@ public class MModUI : MonoBehaviour
         if (_components?.SteamLobbyListContent == null || TransportMode != NetworkTransportMode.SteamP2P)
             return;
 
-        // 检查列表是否改变
-        var currentLobbies = new HashSet<ulong>(_steamLobbyInfos.Select(l => l.LobbyId.m_SteamID));
+        var searchTerm = (_steamLobbySearchTerm ?? string.Empty).Trim();
+        bool searchChanged = !string.Equals(searchTerm, _lastAppliedSteamSearchTerm, StringComparison.Ordinal);
+
+        IEnumerable<SteamLobbyManager.LobbyInfo> filteredLobbies = _steamLobbyInfos;
+        if (!string.IsNullOrEmpty(searchTerm))
+        {
+            filteredLobbies = _steamLobbyInfos.Where(lobby =>
+                (!string.IsNullOrEmpty(lobby.LobbyName) && lobby.LobbyName.IndexOf(searchTerm, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                (!string.IsNullOrEmpty(lobby.HostName) && lobby.HostName.IndexOf(searchTerm, StringComparison.OrdinalIgnoreCase) >= 0));
+        }
+
+        var currentLobbies = new HashSet<ulong>(filteredLobbies.Select(l => l.LobbyId.m_SteamID));
 
         // 如果列表没有变化，直接返回（避免重复创建UI）
-        if (_displayedSteamLobbies.SetEquals(currentLobbies))
+        if (!searchChanged && _displayedSteamLobbies.SetEquals(currentLobbies))
             return;
+
+        _lastAppliedSteamSearchTerm = searchTerm;
 
         // 列表改变了，需要重建UI
         Debug.Log($"[MModUI] Steam房间列表已更新，重建UI (当前: {currentLobbies.Count}, 之前: {_displayedSteamLobbies.Count})");
@@ -2817,14 +2950,15 @@ public class MModUI : MonoBehaviour
         foreach (var id in currentLobbies)
             _displayedSteamLobbies.Add(id);
 
-        if (_steamLobbyInfos.Count == 0)
+        if (!filteredLobbies.Any())
         {
-            CreateText("EmptyHint", _components.SteamLobbyListContent, CoopLocalization.Get("ui.steam.lobbiesEmpty"), 14, ModernColors.TextTertiary, TextAlignmentOptions.Center);
+            var emptyKey = string.IsNullOrEmpty(searchTerm) ? "ui.steam.lobbiesEmpty" : "ui.steam.lobbiesEmptyFiltered";
+            CreateText("EmptyHint", _components.SteamLobbyListContent, CoopLocalization.Get(emptyKey), 14, ModernColors.TextTertiary, TextAlignmentOptions.Center);
             return;
         }
 
         // 创建房间条目
-        foreach (var lobby in _steamLobbyInfos)
+        foreach (var lobby in filteredLobbies)
         {
             CreateSteamLobbyEntry(lobby);
         }

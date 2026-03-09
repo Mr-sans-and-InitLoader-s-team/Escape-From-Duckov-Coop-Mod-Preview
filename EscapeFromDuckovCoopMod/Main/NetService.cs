@@ -14,12 +14,12 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using Steamworks;
 using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using LiteNetLib;
+using Steamworks;
 using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
@@ -30,7 +30,7 @@ public enum NetworkTransportMode
     SteamP2P
 }
 
-public class NetService : MonoBehaviour, INetEventListener
+public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
 {
     public static NetService Instance;
     public int port = 9050;
@@ -64,14 +64,15 @@ public class NetService : MonoBehaviour, INetEventListener
     public NetManager netManager;
     public NetDataWriter writer;
     public bool IsServer { get; private set; }
+    public bool NetworkStarted => networkStarted;
     public NetworkTransportMode TransportMode { get; private set; } = NetworkTransportMode.Direct;
     public SteamLobbyOptions LobbyOptions { get; private set; } = SteamLobbyOptions.CreateDefault();
     private readonly Dictionary<string, float> _playerInvincibleUntil = new(StringComparer.OrdinalIgnoreCase);
 
-
     public void OnEnable()
     {
         Instance = this;
+        ModNetworkApi.SetBackend(new NetServiceModNetworkBackend(this));
         if (SteamP2PLoader.Instance != null)
         {
             SteamP2PLoader.Instance.UseSteamP2P = TransportMode == NetworkTransportMode.SteamP2P;
@@ -111,6 +112,51 @@ public class NetService : MonoBehaviour, INetEventListener
         }
     }
 
+    public string ResolveLocalPlayerName()
+    {
+        if (SteamManager.Initialized)
+        {
+            try
+            {
+                var persona = SteamFriends.GetPersonaName();
+                if (!string.IsNullOrEmpty(persona))
+                {
+                    return persona;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[NetService] Failed to query Steam persona name: {ex}");
+            }
+        }
+
+        return IsServer ? "Host" : "Client";
+    }
+
+    public string ResolvePeerDisplayName(NetPeer peer, string fallback)
+    {
+        if (peer != null && SteamManager.Initialized && SteamEndPointMapper.Instance != null)
+        {
+            if (SteamEndPointMapper.Instance.TryGetSteamID(peer.EndPoint, out CSteamID steamId))
+            {
+                try
+                {
+                    var persona = SteamFriends.GetFriendPersonaName(steamId);
+                    if (!string.IsNullOrEmpty(persona))
+                    {
+                        return persona;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[NetService] Failed to resolve peer Steam persona: {ex}");
+                }
+            }
+        }
+
+        return fallback;
+    }
+
     public void OnPeerConnected(NetPeer peer)
     {
         Debug.Log(CoopLocalization.Get("net.connectionSuccess", peer.EndPoint.ToString()));
@@ -124,10 +170,11 @@ public class NetService : MonoBehaviour, INetEventListener
         }
 
         if (!playerStatuses.ContainsKey(peer))
+        {
             playerStatuses[peer] = new PlayerStatus
             {
                 EndPoint = peer.EndPoint.ToString(),
-                PlayerName = IsServer ? $"Player_{peer.Id}" : "Host",
+                PlayerName = ResolvePeerDisplayName(peer, IsServer ? $"Player_{peer.Id}" : "Host"),
                 Latency = peer.Ping,
                 IsInGame = false,
                 LastIsInGame = false,
@@ -135,13 +182,17 @@ public class NetService : MonoBehaviour, INetEventListener
                 Rotation = Quaternion.identity,
                 CustomFaceJson = null
             };
+        }
 
         if (IsServer) SendLocalPlayerStatus.Instance.SendPlayerStatusUpdate();
 
         if (IsServer)
         {
             HealthM.Instance?.Server_SendAllSnapshotsTo(peer);
+            COOPManager.FriendlyFire?.OnPeerConnected(peer);
         }
+
+        ModNetworkApi.NotifyPeerConnected(peer);
     }
 
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
@@ -151,6 +202,17 @@ public class NetService : MonoBehaviour, INetEventListener
         {
             status = CoopLocalization.Get("net.connectionLost");
             isConnecting = false;
+
+            foreach (var kvp in clientRemoteCharacters)
+            {
+                if (kvp.Value != null)
+                    Destroy(kvp.Value);
+            }
+            clientRemoteCharacters.Clear();
+            clientPlayerStatuses.Clear();
+            CoopTool._cliPendingRemoteHp.Clear();
+            CustomFace._cliPendingFace.Clear();
+            SceneNet.Instance?._cliLastSceneIdByPlayer.Clear();
         }
 
         if (connectedPeer == peer) connectedPeer = null;
@@ -162,6 +224,7 @@ public class NetService : MonoBehaviour, INetEventListener
             {
                 _playerInvincibleUntil.Remove(_st.EndPoint);
                 SceneNet.Instance._cliLastSceneIdByPlayer.Remove(_st.EndPoint);
+          
             }
             playerStatuses.Remove(peer);
         }
@@ -171,6 +234,8 @@ public class NetService : MonoBehaviour, INetEventListener
             Destroy(remoteCharacters[peer]);
             remoteCharacters.Remove(peer);
         }
+
+        COOPManager.LootNet?.Server_RemoveViewer(peer);
 
         if (!SteamP2PLoader.Instance.UseSteamP2P || SteamP2PManager.Instance == null)
             return;
@@ -199,6 +264,8 @@ public class NetService : MonoBehaviour, INetEventListener
         }
 
         COOPManager.AI?.Server_OnPeerDisconnected(peer);
+
+        ModNetworkApi.NotifyPeerDisconnected(peer);
 
 
 
@@ -246,8 +313,52 @@ public class NetService : MonoBehaviour, INetEventListener
     {
         if (IsServer)
         {
-            if (request.Data != null && request.Data.GetString() == "gameKey") request.Accept();
-            else request.Reject();
+            string clientVersion = null;
+            bool hasValidKey = false;
+
+            if (request.Data != null)
+            {
+                try
+                {
+                    var key = request.Data.GetString();
+                    hasValidKey = key == "gameKey";
+
+                    if (request.Data.AvailableBytes > 0)
+                    {
+                        clientVersion = request.Data.GetString();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[NetService] 解析连接请求数据时出错: {ex}");
+                }
+            }
+
+            if (!hasValidKey)
+            {
+                request.Reject();
+                return;
+            }
+
+            if (string.IsNullOrEmpty(clientVersion))
+            {
+                status = CoopLocalization.Get("net.clientVersionUnknown");
+                Debug.LogWarning(status);
+                MModUI.ShowTip(status);
+                request.Reject();
+                return;
+            }
+
+            if (!string.Equals(clientVersion, BuildInfo.ModVersion, StringComparison.Ordinal))
+            {
+                status = CoopLocalization.Get("net.clientVersionMismatch", clientVersion, BuildInfo.ModVersion);
+                Debug.LogWarning(status);
+                MModUI.ShowTip(status);
+                request.Reject();
+                return;
+            }
+
+            request.Accept();
         }
         else
         {
@@ -313,8 +424,11 @@ public class NetService : MonoBehaviour, INetEventListener
         _playerInvincibleUntil.Clear();
         CoopSyncDatabase.AI.Clear();
         COOPManager.AI?.Reset();
+        COOPManager.FriendlyFire?.OnNetworkStarted(IsServer);
 
         LocalPlayerManager.Instance.InitializeLocalPlayer();
+        var main = CharacterMainControl.Main;
+        if (main) ModApiEvents.RaisePlayerSpawned(main, GetSelfNetworkId(), true);
         if (IsServer)
         {
             ItemAgent_Gun.OnMainCharacterShootEvent -= COOPManager.WeaponHandle.Host_OnMainCharacterShoot;
@@ -488,6 +602,7 @@ public class NetService : MonoBehaviour, INetEventListener
 
             writer.Reset();
             writer.Put("gameKey");
+            writer.Put(BuildInfo.ModVersion);
             netManager.Connect(ip, port, writer);
         }
         catch (Exception ex)
@@ -571,6 +686,39 @@ public class NetService : MonoBehaviour, INetEventListener
             {
                 peer = kvp.Key;
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    public bool TryGetPlayerId(CharacterMainControl cmc, out string playerId)
+    {
+        playerId = null;
+        if (cmc == null) return false;
+
+        if (IsServer)
+        {
+            foreach (var kvp in remoteCharacters)
+            {
+                var go = kvp.Value;
+                if (go != null && cmc.transform.IsChildOf(go.transform))
+                {
+                    playerId = GetPlayerId(kvp.Key);
+                    return !string.IsNullOrEmpty(playerId);
+                }
+            }
+        }
+        else
+        {
+            foreach (var kvp in clientRemoteCharacters)
+            {
+                var go = kvp.Value;
+                if (go != null && cmc.transform.IsChildOf(go.transform))
+                {
+                    playerId = kvp.Key;
+                    return true;
+                }
             }
         }
 

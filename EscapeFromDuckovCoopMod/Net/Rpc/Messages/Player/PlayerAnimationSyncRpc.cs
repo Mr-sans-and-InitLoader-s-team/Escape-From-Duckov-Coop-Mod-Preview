@@ -14,6 +14,7 @@ public struct PlayerAnimationSyncRpc : IRpcMessage
     public bool IsAttacking;
     public int HandState;
     public bool GunReady;
+    public int VehicleType;
     public int StateHash;
     public float NormTime;
 
@@ -27,6 +28,7 @@ public struct PlayerAnimationSyncRpc : IRpcMessage
         writer.Put(IsAttacking);
         writer.Put(HandState);
         writer.Put(GunReady);
+        writer.Put(VehicleType);
         writer.Put(StateHash);
         writer.Put(NormTime);
     }
@@ -41,6 +43,7 @@ public struct PlayerAnimationSyncRpc : IRpcMessage
         IsAttacking = reader.GetBool();
         HandState = reader.GetInt();
         GunReady = reader.GetBool();
+        VehicleType = reader.GetInt();
         StateHash = reader.GetInt();
         NormTime = reader.GetFloat();
     }

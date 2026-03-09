@@ -41,11 +41,13 @@ public class WeaponSyncData
 {
     public string ItemId;
     public int SlotHash;
+    public ItemSnapshot Snapshot;
 
     public void Serialize(NetDataWriter writer)
     {
         writer.Put(SlotHash);
         writer.Put(ItemId ?? "");
+        ItemTool.WriteItemSnapshot(writer, Snapshot);
     }
 
     public static WeaponSyncData Deserialize(NetPacketReader reader)
@@ -53,7 +55,8 @@ public class WeaponSyncData
         return new WeaponSyncData
         {
             SlotHash = reader.GetInt(),
-            ItemId = reader.GetString()
+            ItemId = reader.GetString(),
+            Snapshot = ItemTool.ReadItemSnapshot(reader)
         };
     }
 }

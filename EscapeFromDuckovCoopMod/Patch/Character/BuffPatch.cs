@@ -16,6 +16,8 @@
 
 using System.Reflection;
 using Duckov.Buffs;
+using HarmonyLib;
+using UnityEngine;
 using UnityEngine.Events;
 using Object = UnityEngine.Object;
 
@@ -93,37 +95,64 @@ internal static class Patch_Buff_Setup_Safe
             var target = __instance.Master;
             if (target == null) return;
 
-            if (target.IsMainCharacter)
-            {
-                // 主机：直接广播；客户端：上报给主机
-                if (mod.IsServer)
-                {
-                    COOPManager.Buff.Server_BroadcastHostBuff(overrideWeaponID, buffPrefab.ID);
-                }
-                else
-                {
-                    var rpc = new PlayerBuffReportRpc
-                    {
-                        WeaponTypeId = overrideWeaponID,
-                        BuffId = buffPrefab.ID
-                    };
-                    CoopTool.SendRpc(in rpc);
-                }
-                return;
-            }
+            // Buff 应用完全改由 CharacterMainControl.AddBuff 的 patch 分发，移除单独转发逻辑
+        }
+    }
+}
 
+[HarmonyPatch(typeof(CharacterMainControl), nameof(CharacterMainControl.AddBuff))]
+internal static class Patch_Character_AddBuff_Broadcast
+{
+    private static void Postfix(CharacterMainControl __instance, Buff buffPrefab, CharacterMainControl fromWho, int overrideWeaponID)
+    {
+        var mod = ModBehaviourF.Instance;
+        var service = NetService.Instance;
+        if (mod == null || service == null || !service.networkStarted) return;
+        if (buffPrefab == null || __instance == null) return;
+
+        var buffId = buffPrefab.ID;
+        if (buffId == 0) return;
+
+        // 玩家自身 Buff
+        if (__instance.IsMainCharacter)
+        {
             if (mod.IsServer)
             {
-                COOPManager.AI?.Server_HandleBuffApplied(target, overrideWeaponID, buffPrefab.ID);
-                return;
+                COOPManager.Buff?.Server_BroadcastHostBuff(overrideWeaponID, buffId);
+            }
+            else
+            {
+                var rpc = new PlayerBuffReportRpc
+                {
+                    WeaponTypeId = overrideWeaponID,
+                    BuffId = buffId
+                };
+                CoopTool.SendRpc(in rpc);
             }
 
-            var aiTag = target.GetComponent<RemoteAIReplicaTag>();
-            if (aiTag != null)
+            return;
+        }
+
+        // AI Buff
+        if (mod.IsServer)
+        {
+            COOPManager.AI?.Server_HandleBuffApplied(__instance, overrideWeaponID, buffId);
+            return;
+        }
+
+        var aiTag = __instance.GetComponent<RemoteAIReplicaTag>();
+        if (aiTag != null)
+        {
+            if (aiTag.SuppressBuffForward) return;
+            if (aiTag.Id == 0) return;
+
+            var rpc = new AIBuffReportRpc
             {
-                if (aiTag.SuppressBuffForward) return;
-                COOPManager.AI?.Client_ReportAiBuff(aiTag.Id, overrideWeaponID, buffPrefab.ID);
-            }
+                Id = aiTag.Id,
+                WeaponTypeId = overrideWeaponID,
+                BuffId = buffId
+            };
+            CoopTool.SendRpc(in rpc);
         }
     }
 }

@@ -14,6 +14,8 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using Duckov.MiniMaps;
+using Duckov.Scenes;
 using Duckov.Utilities;
 using ItemStatsSystem;
 using Saves;
@@ -33,6 +35,7 @@ public static class CreateRemoteCharacter
     private static Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
     private static Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
     private static Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
+    private static readonly HashSet<string> ClientSpawnPending = new(StringComparer.Ordinal);
 
     public static async UniTask<GameObject> CreateRemoteCharacterAsync(NetPeer peer, Vector3 position, Quaternion rotation, string customFaceJson)
     {
@@ -56,6 +59,10 @@ public static class CreateRemoteCharacter
         var cmc = instance.GetComponent<CharacterMainControl>();
         COOPManager.StripAllHandItems(cmc);
 
+        var w = new SimplePointOfInterest();
+
+        //cmc.SetTeam(Teams.middle);
+
         // Debug.Log(peer.EndPoint.ToString() + " CreateRemoteCharacterForClient");
         // 统一设置初始位姿
         instance.transform.SetPositionAndRotation(position, rotation);
@@ -68,6 +75,21 @@ public static class CreateRemoteCharacter
         {
             var customFaceData = JsonUtility.FromJson<CustomFaceSettingData>(customFaceJson);
             characterModel.characterModel.CustomFace.LoadFromData(customFaceData);
+        }
+
+        if (playerStatuses.TryGetValue(peer, out var st1) && !string.IsNullOrEmpty(st1.PlayerName))
+        {
+            var playerIcon = Traverse.Create(levelManager).Field<Sprite>("characterMapIcon").Value;
+            Color cA = new Color(0f, 1f, 0f, 0.5f);     // 半透明绿
+
+            CreateMapElement(characterModel, cA, playerIcon, st1.PlayerName);
+        }
+        else
+        {
+            var playerIcon = Traverse.Create(levelManager).Field<Sprite>("characterMapIcon").Value;
+            Color cA = new Color(0f, 1f, 0f, 0.5f);     // 半透明绿
+
+            CreateMapElement(characterModel, cA, playerIcon, "Player");
         }
 
         try
@@ -105,6 +127,42 @@ public static class CreateRemoteCharacter
         cmc.gameObject.SetActive(false);
         remoteCharacters[peer] = instance;
         cmc.gameObject.SetActive(true);
+
+        COOPManager.FriendlyFire?.OnRemoteCharacterCreated(cmc);
+        ModApiEvents.RaisePlayerSpawned(cmc, NetService.Instance?.GetPlayerId(peer), false);
+
+        if (IsServer)
+        {
+            var distanceField = Traverse.Create(SetActiveByPlayerDistance.Instance).Field<float>("distance");
+            var originalDistance = distanceField.Value;
+            var hasForceSpawnModel = false;
+
+            foreach (var entry in CoopSyncDatabase.AI.Entries)
+            {
+                if (entry == null)
+                    continue;
+
+                if (AISyncService.IsForceSpawnModel(entry.ModelName))
+                {
+                    distanceField.Value = 3000f;
+                    hasForceSpawnModel = true;
+                    break;
+                }
+            }
+
+            if (hasForceSpawnModel)
+            {
+                UniTask.Void(async () =>
+                {
+                    await UniTask.Delay(5000);
+                    distanceField.Value = originalDistance;
+                });
+            }
+            else
+            {
+                distanceField.Value = originalDistance;
+            }
+        }
         return instance;
     }
 
@@ -112,17 +170,20 @@ public static class CreateRemoteCharacter
     {
         if (NetService.Instance.IsSelfId(playerId)) return; // ★ 不给自己创建“远程自己”
         if (clientRemoteCharacters.ContainsKey(playerId) && clientRemoteCharacters[playerId] != null) return;
+        if (!ClientSpawnPending.Add(playerId)) return;
 
         Debug.Log(playerId + " CreateRemoteCharacterForClient");
 
-        var levelManager = LevelManager.Instance;
-        if (levelManager == null || levelManager.MainCharacter == null) return;
+        try
+        {
+            var levelManager = LevelManager.Instance;
+            if (levelManager == null || levelManager.MainCharacter == null) return;
 
-        var itemLoaded = await Coopbase.LoadOrCreateCharacterItemInstance();
-        var playerP = Traverse.Create(LevelManager.Instance).Field<CharacterModel>("characterModel").Value;
-        var player = await LevelManager.Instance.CharacterCreator.CreateCharacter(itemLoaded, playerP, position,rotation);
-        var instance = player.gameObject;
-        var characterModel = instance.GetComponent<CharacterMainControl>();
+            var itemLoaded = await Coopbase.LoadOrCreateCharacterItemInstance();
+            var playerP = Traverse.Create(LevelManager.Instance).Field<CharacterModel>("characterModel").Value;
+            var player = await LevelManager.Instance.CharacterCreator.CreateCharacter(itemLoaded, playerP, position, rotation);
+            var instance = player.gameObject;
+            var characterModel = instance.GetComponent<CharacterMainControl>();
 
         // Traverse.Create(characterModel).Field<Item>("characterItem").Value = itemLoaded;
         characterModel.SetItem(itemLoaded);
@@ -139,6 +200,8 @@ public static class CreateRemoteCharacter
             cmc0.modelRoot.transform.rotation = Quaternion.Euler(0f, e.y, 0f);
         }
 
+        //cmc.SetTeam(Teams.middle);
+
         MakeRemotePhysicsPassive(instance);
         CustomFace.StripAllCustomFaceParts(instance);
 
@@ -150,6 +213,22 @@ public static class CreateRemoteCharacter
             else if (CustomFace._cliPendingFace.TryGetValue(playerId, out var pending) && !string.IsNullOrEmpty(pending))
                 customFaceJson = pending;
         }
+
+        if (NetService.Instance.clientPlayerStatuses.TryGetValue(playerId, out var st1) && !string.IsNullOrEmpty(st1.PlayerName))
+        {
+            var playerIcon = Traverse.Create(levelManager).Field<Sprite>("characterMapIcon").Value;
+            Color cA = new Color(0f, 1f, 0f, 0.5f);     // 半透明绿
+
+            CreateMapElement(characterModel, cA, playerIcon, st1.PlayerName);
+        }
+        else
+        {
+            var playerIcon = Traverse.Create(levelManager).Field<Sprite>("characterMapIcon").Value;
+            Color cA = new Color(0f, 1f, 0f, 0.5f);     // 半透明绿
+
+            CreateMapElement(characterModel, cA, playerIcon, "Player");
+        }
+   
 
 
         CustomFace.Client_ApplyFaceIfAvailable(playerId, instance, customFaceJson);
@@ -187,6 +266,14 @@ public static class CreateRemoteCharacter
         cmc.gameObject.SetActive(false);
         clientRemoteCharacters[playerId] = instance;
         cmc.gameObject.SetActive(true);
+
+            COOPManager.FriendlyFire?.OnRemoteCharacterCreated(cmc);
+            ModApiEvents.RaisePlayerSpawned(cmc, playerId, false);
+        }
+        finally
+        {
+            ClientSpawnPending.Remove(playerId);
+        }
     }
 
     private static void MakeRemotePhysicsPassive(GameObject go)
@@ -226,4 +313,18 @@ public static class CreateRemoteCharacter
             }
         }
     }
+
+    public static void CreateMapElement(CharacterMainControl mainCharacter,Color color,Sprite characterMapIcon,string Name)
+    {
+        if (MultiSceneCore.Instance != null)
+        {
+            SimplePointOfInterest simplePointOfInterest = mainCharacter.gameObject.AddComponent<SimplePointOfInterest>();
+            simplePointOfInterest.Color = color;
+            simplePointOfInterest.ShadowColor = color;
+            simplePointOfInterest.ShadowDistance = 0f;
+            simplePointOfInterest.Setup(characterMapIcon, Name, followActiveScene: true);
+        }
+    }
+
+
 }

@@ -1,4 +1,5 @@
 using LiteNetLib.Utils;
+using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -11,6 +12,7 @@ public struct DeadLootSpawnRpc : IRpcMessage
     public Quaternion Rotation;
     public bool UseTombPrefab;
     public string PlayerId;
+    public string PrefabName;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -20,6 +22,7 @@ public struct DeadLootSpawnRpc : IRpcMessage
         writer.PutQuaternion(Rotation);
         writer.Put(UseTombPrefab);
         writer.Put(PlayerId ?? string.Empty);
+        writer.Put(PrefabName ?? string.Empty);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -30,5 +33,6 @@ public struct DeadLootSpawnRpc : IRpcMessage
         Rotation = reader.GetQuaternion();
         UseTombPrefab = reader.GetBool();
         PlayerId = reader.GetString();
+        PrefabName = reader.GetString();
     }
 }

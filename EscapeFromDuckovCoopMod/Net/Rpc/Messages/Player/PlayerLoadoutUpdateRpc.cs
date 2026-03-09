@@ -31,12 +31,14 @@ public struct WeaponUpdateRpc : IRpcMessage
     public string PlayerId;
     public int SlotHash;
     public string ItemId;
+    public ItemSnapshot Snapshot;
 
     public void Serialize(NetDataWriter writer)
     {
         writer.Put(PlayerId ?? string.Empty);
         writer.Put(SlotHash);
         writer.Put(ItemId ?? string.Empty);
+        ItemTool.WriteItemSnapshot(writer, Snapshot);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -44,5 +46,6 @@ public struct WeaponUpdateRpc : IRpcMessage
         PlayerId = reader.GetString();
         SlotHash = reader.GetInt();
         ItemId = reader.GetString();
+        Snapshot = ItemTool.ReadItemSnapshot(reader);
     }
 }

@@ -34,6 +34,8 @@ public struct CoopAudioEventPayload
     public string SwitchName;
     public bool HasSoundKey;
     public string SoundKey;
+    public bool HasKazooPitch;
+    public float KazooPitch;
 
     public void Write(NetDataWriter writer)
     {
@@ -57,6 +59,12 @@ public struct CoopAudioEventPayload
         if (HasSoundKey)
         {
             writer.Put(SoundKey ?? string.Empty);
+        }
+
+        writer.Put(HasKazooPitch);
+        if (HasKazooPitch)
+        {
+            writer.Put(KazooPitch);
         }
     }
 
@@ -82,6 +90,9 @@ public struct CoopAudioEventPayload
 
         payload.HasSoundKey = reader.GetBool();
         payload.SoundKey = payload.HasSoundKey ? reader.GetString() : string.Empty;
+
+        payload.HasKazooPitch = reader.GetBool();
+        payload.KazooPitch = payload.HasKazooPitch ? reader.GetFloat() : 0f;
 
         return payload;
     }

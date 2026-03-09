@@ -46,11 +46,17 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         go.AddComponent<HealthM>();
         go.AddComponent<LocalPlayerManager>();
         go.AddComponent<SendLocalPlayerStatus>();
+        go.AddComponent<SendLocalVehicleStatus>();
         go.AddComponent<Spectator>();
         go.AddComponent<DeadLootBox>();
         go.AddComponent<LootManager>();
         go.AddComponent<SceneNet>();
         go.AddComponent<MModUI>();
+        go.AddComponent<CoopAISettings>();
+        go.AddComponent<AISyncSettingsUI>();
+        go.AddComponent<CoopLootSettings>();
+        go.AddComponent<WaitingSynchronizationUI>();
+        go.AddComponent<VersionOverlayTMP>();
         CoopTool.Init();
 
         DeferredInit();
@@ -64,8 +70,12 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         SafeInit<LocalPlayerManager>(lpm => lpm.Init());
         SafeInit<HealthM>(hm => hm.Init());
         SafeInit<SendLocalPlayerStatus>(s => s.Init());
+        SafeInit<SendLocalVehicleStatus>(s => s.Init());
         SafeInit<Spectator>(s => s.Init());
         SafeInit<MModUI>(ui => ui.Init());
+        SafeInit<CoopLootSettings>(s => s.Init());
+        SafeInit<CoopAISettings>(s => s.Init());
+        SafeInit<AISyncSettingsUI>(ui => ui.Init());
         SafeInit<Send_ClientStatus>(s => s.Init());
         SafeInit<DeadLootBox>(s => s.Init());
         

@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -82,6 +82,12 @@ namespace EscapeFromDuckovCoopMod
                     break;
                 case SystemLanguage.Japanese:
                     currentLanguageCode = "ja-JP";
+                    break;
+                case SystemLanguage.Russian:
+                    currentLanguageCode = "ru-RU";
+                    break;
+                case SystemLanguage.German:
+                    currentLanguageCode = "de-DE";
                     break;
                 case SystemLanguage.English:
                 default:
@@ -285,6 +291,12 @@ namespace EscapeFromDuckovCoopMod
             currentTranslations["ui.vote.readyIcon"] = "✅ Ready";
             currentTranslations["ui.vote.notReadyIcon"] = "⌛ Not Ready";
             currentTranslations["ui.spectator.mode"] = "Spectator Mode: LMB ▶ Next | RMB ◀ Previous | Press F8 to end and view results (failsafe)";
+            currentTranslations["ui.settings.friendlyFirePlayers"] = "Friendly Fire (Players)";
+            currentTranslations["ui.settings.friendlyFirePlayers.desc"] = "Host only. When enabled, new and existing player proxies are set to the neutral team so friendly fire is possible; disabling restores everyone to the Player team.";
+            currentTranslations["ui.difficulty.spawnBonus"] = "Enemy Spawn Bonus (additive)";
+            currentTranslations["ui.difficulty.spawnBonus.desc"] = "Adds to the base enemy spawn multiplier (e.g., +1 doubles spawns).";
+            currentTranslations["ui.difficulty.forceBoss"] = "Force Boss Spawn";
+            currentTranslations["ui.difficulty.forceBoss.desc"] = "Only Impossible and custom difficulties should toggle this on.";
 
             // Scene 관련
             currentTranslations["scene.waitingForHost"] = "[Coop] Waiting for host to finish loading… (Auto-enter after 100s if delayed)";
@@ -313,6 +325,55 @@ namespace EscapeFromDuckovCoopMod
             currentTranslations["net.connectingTo"] = "Connecting to: {0}:{1}";
             currentTranslations["net.connectionFailedLog"] = "Failed to connect to host: {0}";
             currentTranslations["net.connectionFailed"] = "Connection failed";
+
+            // AI sync tuning
+            currentTranslations["ui.aiSettings.title"] = "Co-op AI Sync";
+            currentTranslations["ui.aiSettings.toggleHint"] = "{0} Show/Hide";
+            currentTranslations["ui.aiSettings.section.distance.title"] = "Sync Distance";
+            currentTranslations["ui.aiSettings.section.distance.subtitle"] = "Control when AI wakes or sleeps";
+            currentTranslations["ui.aiSettings.activationRadius"] = "Activation Radius";
+            currentTranslations["ui.aiSettings.deactivationRadius"] = "Sleep Radius";
+            currentTranslations["ui.aiSettings.section.pacing.title"] = "Sync Rhythm";
+            currentTranslations["ui.aiSettings.section.pacing.subtitle"] = "Broadcast and sampling cadence";
+            currentTranslations["ui.aiSettings.activationRetryInterval"] = "Activation Retry Interval";
+            currentTranslations["ui.aiSettings.stateBroadcastInterval"] = "State Broadcast Interval";
+            currentTranslations["ui.aiSettings.idleStateRecordInterval"] = "Idle Sample Interval";
+            currentTranslations["ui.aiSettings.healthBroadcastInterval"] = "Health Broadcast Interval";
+            currentTranslations["ui.aiSettings.section.precision.title"] = "Interpolation & Precision";
+            currentTranslations["ui.aiSettings.section.precision.subtitle"] = "Thresholds and velocity smoothing";
+            currentTranslations["ui.aiSettings.minPositionDelta"] = "Min Position Delta";
+            currentTranslations["ui.aiSettings.minRotationDelta"] = "Min Rotation Delta";
+            currentTranslations["ui.aiSettings.velocityLerp"] = "Velocity Lerp";
+            currentTranslations["ui.aiSettings.section.snapshot.title"] = "Snapshots & Queues";
+            currentTranslations["ui.aiSettings.section.snapshot.subtitle"] = "Host-side refresh, queue caps, and drop recovery";
+            currentTranslations["ui.aiSettings.snapshotRefreshInterval"] = "Snapshot Refresh Interval";
+            currentTranslations["ui.aiSettings.snapshotRequestTimeout"] = "Snapshot Request Timeout";
+            currentTranslations["ui.aiSettings.snapshotRecoveryCooldown"] = "Snapshot Recovery Cooldown";
+            currentTranslations["ui.aiSettings.snapshotChunkSize"] = "Snapshot Chunk Size";
+            currentTranslations["ui.aiSettings.maxStoredBuffs"] = "Max Stored Buffs";
+            currentTranslations["ui.aiSettings.maxSnapshotAppliesPerFrame"] = "Max Snapshot Applies/Frame";
+            currentTranslations["ui.aiSettings.maxStateUpdatesPerFrame"] = "Max State Updates/Frame";
+            currentTranslations["ui.aiSettings.maxPendingSnapshotQueue"] = "Snapshot Queue Limit";
+            currentTranslations["ui.aiSettings.maxPendingStateQueue"] = "State Queue Limit";
+            currentTranslations["ui.aiSettings.snapshotDropResyncThreshold"] = "Snapshot Drop Resync Threshold";
+            currentTranslations["ui.aiSettings.stateDropResyncThreshold"] = "State Drop Resync Threshold";
+            currentTranslations["ui.aiSettings.section.hostOnly.title"] = "Host Only";
+            currentTranslations["ui.aiSettings.section.hostOnly.subtitle"] = "Only the host’s changes take effect";
+            currentTranslations["ui.aiSettings.serverControllerRescanInterval"] = "Controller Rescan Interval";
+            currentTranslations["ui.aiSettings.serverSnapshotBroadcastInterval"] = "Snapshot Broadcast Interval";
+            currentTranslations["ui.aiSettings.serverSnapshotRetryInterval"] = "Snapshot Retry Interval";
+            currentTranslations["ui.aiSettings.badge.hostOnly"] = "Host Only";
+            currentTranslations["ui.aiSettings.badge.hostOnlyShort"] = "Host";
+
+            // Waiting screen
+            currentTranslations["ui.waiting.initializing"] = "Initializing...";
+            currentTranslations["ui.waiting.syncComplete"] = "Sync complete!";
+            currentTranslations["ui.waiting.map"] = "Map: {0}";
+            currentTranslations["ui.waiting.time"] = "Time: Day {0} {1:D2}:{2:D2}";
+            currentTranslations["ui.waiting.timeUnknown"] = "Time: --:--";
+            currentTranslations["ui.waiting.weather"] = "Weather: {0}";
+            currentTranslations["ui.waiting.weatherUnknown"] = "Weather: Unknown";
+            currentTranslations["ui.waiting.loadingPlayers"] = "Loading player list...";
         }
 
         /// <summary>

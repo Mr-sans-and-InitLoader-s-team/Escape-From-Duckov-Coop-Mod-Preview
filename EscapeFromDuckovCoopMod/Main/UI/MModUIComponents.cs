@@ -35,6 +35,7 @@ public class MModUIComponents
     // 输入字段
     public TMP_InputField IpInputField;
     public TMP_InputField PortInputField;
+    public Toggle StreamerModeToggle;
 
     // 文本组件
     public TMP_Text StatusText;
@@ -48,8 +49,17 @@ public class MModUIComponents
     public TMP_Text DifficultyValueText;
     public TMP_Text SpectatorHintText;
 
+    // 聊天
+    public GameObject ChatPanel;
+    public TMP_InputField ChatInput;
+    public Transform ChatContent;
+    public ScrollRect ChatScroll;
+
     // 图像组件
     public Image ModeIndicator;
+    public Image LeftDecorationImage;
+    public Image RightDecorationImage;
+    public Image TopDecorationImage;
 
     // 容器Transform
     public Transform HostListContent;
@@ -73,4 +83,3 @@ public class MModUIComponents
     public GameObject DirectServerListArea;
     public GameObject SteamServerListArea;
 }
-

@@ -31,7 +31,7 @@ public static class Patch_SceneLoaderProxy_Authority
         if (mod == null || !mod.networkStarted) return true;
         if (SceneNet.Instance.allowLocalSceneLoad) return true;
 
-
+        if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var proxySceneId = Traverse.Create(__instance).Field<string>("sceneID").Value;
         var useLoc = Traverse.Create(__instance).Field<bool>("useLocation").Value;
         var loc = Traverse.Create(__instance).Field<MultiSceneLocation>("location").Value;
@@ -171,11 +171,11 @@ internal static class Patch_Mapen_DoTeleport
        // SceneNet.Instance.Host_BeginSceneVote_Simple(__instance.Target.SceneID, "", false, false, false, "DoTeleport");
         if (mod.IsServer)
         {
-            SceneNet.Instance.Host_BeginSceneVote_Simple(__instance.Target.SceneID, "", false, false, false, "DoTeleport");
+            SceneNet.Instance.Host_BeginSceneVote_Simple(__instance.Target.SceneID, __instance.name, false, false, false, "DoTeleport");
             return false;
         }
 
-        SceneNet.Instance.Client_RequestBeginSceneVote(__instance.Target.SceneID, "", false, false, false, "DoTeleport");
+        SceneNet.Instance.Client_RequestBeginSceneVote(__instance.Target.SceneID, __instance.name, false, false, false, "DoTeleport");
         return false;
     }
 }

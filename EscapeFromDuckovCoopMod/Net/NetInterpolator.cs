@@ -20,9 +20,9 @@ public class NetInterpolator : MonoBehaviour
 {
     public const string MirrorVersionUsed = "73.3.0";
 
-    [Tooltip("渲染回看时间；越大越稳，越小越跟手")] public float interpolationBackTime = 0.12f;
+    [Tooltip("渲染回看时间；越大越稳，越小越跟手")] public float interpolationBackTime = 0.16f;
 
-    [Tooltip("缺帧时最多允许预测多久")] public float maxExtrapolate = 0.05f;
+    [Tooltip("缺帧时最多允许预测多久")] public float maxExtrapolate = 0.12f;
 
     [Tooltip("误差过大时直接硬对齐距离")] public float hardSnapDistance = 6f; // 6 米 Sans看不懂就给设置个Tooltip
 
@@ -49,6 +49,7 @@ public class NetInterpolator : MonoBehaviour
 
     private readonly List<Snap> _buf = new(64);
     private Vector3 _lastVel = Vector3.zero;
+    private float _smoothedSnapshotInterval = 0.05f;
     private double _timeOffset;
     private bool _offsetInitialized;
     private Transform modelRoot; // 驱动朝向
@@ -76,7 +77,8 @@ public class NetInterpolator : MonoBehaviour
         if (_buf.Count == 0) return;
 
         var localTime = Time.unscaledTimeAsDouble;
-        var backTime = Math.Max(interpolationBackTime, sendInterval * bufferTimeMultiplier);
+        var effectiveSendInterval = ResolveEffectiveSendInterval();
+        var backTime = Math.Max(interpolationBackTime, effectiveSendInterval * bufferTimeMultiplier);
 
         // Mirror SnapshotInterpolation: 根据 drift 轻微调整 timeOffset，使本地时间线贴合远端
         if (_offsetInitialized)
@@ -94,8 +96,8 @@ public class NetInterpolator : MonoBehaviour
 
         if (i == 0)
         {
-            // 数据太新：直接用第一帧（刚开始的 100ms 内）
-            Apply(_buf[0].pos, _buf[0].rot, true);
+            // 数据太新：平滑靠近第一帧，避免每次缓冲重建时硬跳
+            Apply(_buf[0].pos, _buf[0].rot);
             return;
         }
 
@@ -118,13 +120,8 @@ public class NetInterpolator : MonoBehaviour
             var last = _buf[_buf.Count - 1];
             var dt = renderT - last.t;
 
-            // 是否允许本帧预测
+            // 是否允许本帧预测：与其直接“停住等待下一包”，优先做短时预测避免电影帧感。
             var allow = dt <= maxExtrapolate;
-            if (!extrapolateWhenRunning)
-            {
-                var speed = _lastVel.magnitude;
-                if (speed > runSpeedThreshold) allow = false; // 跑步：禁用预测，避免超前后拉
-            }
 
             if (allow)
             {
@@ -140,6 +137,25 @@ public class NetInterpolator : MonoBehaviour
 
             if (_buf.Count > 2) _buf.RemoveRange(0, _buf.Count - 2);
         }
+    }
+
+    private float ResolveEffectiveSendInterval()
+    {
+        var interval = _smoothedSnapshotInterval > 0f
+            ? _smoothedSnapshotInterval
+            : sendInterval;
+
+        try
+        {
+            var settings = CoopAISettings.Active;
+            if (settings != null && !float.IsNaN(settings.StateBroadcastInterval) && !float.IsInfinity(settings.StateBroadcastInterval))
+                interval = Mathf.Lerp(interval, settings.StateBroadcastInterval, 0.35f);
+        }
+        catch
+        {
+        }
+
+        return Mathf.Clamp(interval, 0.02f, 1f);
     }
 
     public void Init(Transform rootT, Transform modelRootT)
@@ -169,6 +185,8 @@ public class NetInterpolator : MonoBehaviour
         {
             var prev = _buf[_buf.Count - 1];
             var dt = when - prev.t;
+            if (dt > 1e-4)
+                _smoothedSnapshotInterval = Mathf.Lerp(_smoothedSnapshotInterval, (float)dt, 0.2f);
             if (velocity.HasValue)
                 _lastVel = velocity.Value;
             else if (dt > 1e-6)
@@ -199,10 +217,11 @@ public class NetInterpolator : MonoBehaviour
             return;
         }
 
-        // 正常平滑
-        root.position = Vector3.Lerp(root.position, pos, posLerpFactor);
-        if (modelRoot)
-            modelRoot.rotation = Quaternion.Slerp(modelRoot.rotation, rot, rotLerpFactor);
+        // 这里的 pos/rot 已经是快照缓冲后的插值结果；
+        // 再做一层 Lerp/Slerp 会让移动看起来像低帧率“走走停停”。
+        root.SetPositionAndRotation(pos, rot);
+        if (modelRoot && modelRoot != root)
+            modelRoot.rotation = rot;
     }
 
     private struct Snap

@@ -278,6 +278,10 @@
         </PackageReference>
     </ItemGroup>
 
+    <ItemGroup>
+        <ProjectReference Include="..\EscapeFromDuckovModApi\EscapeFromDuckovModApi.csproj" />
+    </ItemGroup>
+
     <!-- 本地化文件 -->
     <ItemGroup>
         <None Include="..\Localization\*.json">

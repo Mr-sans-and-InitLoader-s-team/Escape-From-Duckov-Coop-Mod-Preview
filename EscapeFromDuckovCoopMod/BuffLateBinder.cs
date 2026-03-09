@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -14,9 +14,10 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
-using System.Reflection;
 using Duckov.Buffs;
+using Duckov.Scenes;
 using ItemStatsSystem;
+using System.Reflection;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -33,7 +34,12 @@ internal class BuffLateBinder : MonoBehaviour
             Destroy(this);
             return;
         }
-
+        if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
+        var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
+        if (serverLoading)
+        {
+            return;
+        }
         // 取 CharacterItem（Buff 里已有安全 getter）
         var cmc = (_buff ? AccessTools.Field(typeof(Buff), "master")?.GetValue(_buff) as CharacterBuffManager : null)?.Master;
         var item = cmc ? cmc.CharacterItem : null;

@@ -50,10 +50,20 @@ public struct AISnapshotEntry
     public float CurrentHealth;
     public float BodyArmor;
     public float HeadArmor;
+    public bool ShowHealthBar;
+    public bool IsVehicle;
+    public int VehicleAnimationType;
+    public float VehicleWalkSpeed;
+    public float VehicleRunSpeed;
+    public Vector3 LastKnownPosition;
+    public Quaternion LastKnownRotation;
+    public Vector3 LastKnownVelocity;
+    public double LastKnownRemoteTime;
     public string[] EquipmentSlots;
     public int[] EquipmentItemTypeIds;
     public string[] WeaponSlots;
     public int[] WeaponItemTypeIds;
+    public ItemSnapshot[] WeaponItemSnapshots;
     public int[] BuffWeaponTypeIds;
     public int[] BuffIds;
 
@@ -75,9 +85,19 @@ public struct AISnapshotEntry
         writer.Put(CurrentHealth);
         writer.Put(BodyArmor);
         writer.Put(HeadArmor);
+        writer.Put(ShowHealthBar);
+        writer.Put(IsVehicle);
+        writer.Put(VehicleAnimationType);
+        writer.Put(VehicleWalkSpeed);
+        writer.Put(VehicleRunSpeed);
+        writer.PutVector3(LastKnownPosition);
+        writer.PutQuaternion(LastKnownRotation);
+        writer.PutVector3(LastKnownVelocity);
+        writer.Put(LastKnownRemoteTime);
 
         WriteArray(writer, EquipmentSlots, EquipmentItemTypeIds);
         WriteArray(writer, WeaponSlots, WeaponItemTypeIds);
+        WriteSnapshotArray(writer, WeaponItemSnapshots);
         WriteIntArray(writer, BuffWeaponTypeIds, BuffIds);
     }
 
@@ -99,9 +119,19 @@ public struct AISnapshotEntry
         CurrentHealth = reader.GetFloat();
         BodyArmor = reader.GetFloat();
         HeadArmor = reader.GetFloat();
+        ShowHealthBar = reader.GetBool();
+        IsVehicle = reader.GetBool();
+        VehicleAnimationType = reader.GetInt();
+        VehicleWalkSpeed = reader.GetFloat();
+        VehicleRunSpeed = reader.GetFloat();
+        LastKnownPosition = reader.GetVector3();
+        LastKnownRotation = reader.GetQuaternion();
+        LastKnownVelocity = reader.GetVector3();
+        LastKnownRemoteTime = reader.GetDouble();
 
         ReadArray(reader, out EquipmentSlots, out EquipmentItemTypeIds);
         ReadArray(reader, out WeaponSlots, out WeaponItemTypeIds);
+        WeaponItemSnapshots = ReadSnapshotArray(reader);
         ReadIntArray(reader, out BuffWeaponTypeIds, out BuffIds);
     }
 
@@ -128,6 +158,30 @@ public struct AISnapshotEntry
             slots[i] = reader.GetString();
             values[i] = reader.GetInt();
         }
+    }
+
+    private static void WriteSnapshotArray(NetDataWriter writer, ItemSnapshot[] snapshots)
+    {
+        var count = snapshots?.Length ?? 0;
+        writer.Put((ushort)count);
+        for (var i = 0; i < count; i++)
+        {
+            ItemTool.WriteItemSnapshot(writer, snapshots[i]);
+        }
+    }
+
+    private static ItemSnapshot[] ReadSnapshotArray(NetPacketReader reader)
+    {
+        var count = reader.GetUShort();
+        if (count == 0) return Array.Empty<ItemSnapshot>();
+
+        var result = new ItemSnapshot[count];
+        for (var i = 0; i < count; i++)
+        {
+            result[i] = ItemTool.ReadItemSnapshot(reader);
+        }
+
+        return result;
     }
 
     private static void WriteIntArray(NetDataWriter writer, int[] left, int[] right)

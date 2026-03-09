@@ -14,6 +14,7 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using Duckov.Scenes;
 using System;
 using System.Collections.Generic;
 
@@ -33,6 +34,8 @@ public class SendLocalPlayerStatus : MonoBehaviour
     private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
     private Vector3 _lastSentPosition;
     private double _lastSentTime;
+    private int _lastPlayerStatusSignature;
+    private bool _hasLastPlayerStatusSignature;
 
     public void Init()
     {
@@ -42,6 +45,8 @@ public class SendLocalPlayerStatus : MonoBehaviour
     public void SendPlayerStatusUpdate()
     {
         if (!IsServer) return;
+
+        if(LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
 
         var statuses = new List<PlayerStatusPayload>();
 
@@ -90,6 +95,13 @@ public class SendLocalPlayerStatus : MonoBehaviour
             Players = statuses.ToArray()
         };
 
+        var signature = ComputePlayerStatusesSignature(statuses);
+        if (_hasLastPlayerStatusSignature && _lastPlayerStatusSignature == signature)
+            return;
+
+        _hasLastPlayerStatusSignature = true;
+        _lastPlayerStatusSignature = signature;
+
         CoopTool.SendRpc(in rpc);
     }
 
@@ -101,8 +113,11 @@ public class SendLocalPlayerStatus : MonoBehaviour
         var main = CharacterMainControl.Main;
         if (!main) return;
 
-        var tr = main.transform;
-        var mr = main.modelRoot ? main.modelRoot.transform : null;
+        var source = ResolveLocalControlSource(main);
+        if (!source) source = main;
+
+        var tr = source.transform;
+        var mr = source.modelRoot ? source.modelRoot.transform : null;
 
         var pos = tr.position;
         var fwd = mr ? mr.forward : tr.forward;
@@ -154,7 +169,8 @@ public class SendLocalPlayerStatus : MonoBehaviour
         {
             PlayerId = localPlayerStatus.EndPoint,
             SlotHash = weaponSyncData.SlotHash,
-            ItemId = weaponSyncData.ItemId ?? string.Empty
+            ItemId = weaponSyncData.ItemId ?? string.Empty,
+            Snapshot = weaponSyncData.Snapshot
         };
 
         CoopTool.SendRpc(in rpc);
@@ -167,13 +183,12 @@ public class SendLocalPlayerStatus : MonoBehaviour
         var mainControl = CharacterMainControl.Main;
         if (mainControl == null) return;
 
-        var model = mainControl.modelRoot.Find("0_CharacterModel_Custom_Template(Clone)");
-        if (model == null) return;
+        var source = ResolveLocalControlSource(mainControl);
+        if (!source) source = mainControl;
 
-        var animCtrl = model.GetComponent<CharacterAnimationControl_MagicBlend>();
-        if (animCtrl == null || animCtrl.animator == null) return;
+        var anim = ResolveLocalAnimator(source);
+        if (anim == null) return;
 
-        var anim = animCtrl.animator;
         var state = anim.GetCurrentAnimatorStateInfo(0);
         var stateHash = state.shortNameHash;
         var normTime = state.normalizedTime;
@@ -188,10 +203,94 @@ public class SendLocalPlayerStatus : MonoBehaviour
             IsAttacking = anim.GetBool("Attack"),
             HandState = anim.GetInteger("HandState"),
             GunReady = anim.GetBool("GunReady"),
+            VehicleType = mainControl.ridingVehicleType > 0 ? mainControl.ridingVehicleType : anim.GetInteger("VehicleType"),
             StateHash = stateHash,
             NormTime = normTime
         };
 
         CoopTool.SendRpc(in rpc);
+    }
+
+    private static CharacterMainControl ResolveLocalControlSource(CharacterMainControl mainControl)
+    {
+        var level = LevelManager.Instance;
+        var controlling = level != null ? level.ControllingCharacter : null;
+        if (controlling != null && controlling != mainControl && controlling.isVehicle)
+            return controlling;
+
+        return mainControl;
+    }
+
+    private static Animator ResolveLocalAnimator(CharacterMainControl mainControl)
+    {
+        if (mainControl == null)
+            return null;
+
+        var model = mainControl.characterModel ? mainControl.characterModel.gameObject : null;
+        if (model == null && mainControl.modelRoot)
+            model = mainControl.modelRoot.Find("0_CharacterModel_Custom_Template(Clone)")?.gameObject;
+        if (model == null)
+            return null;
+
+        var magic = model.GetComponent<CharacterAnimationControl_MagicBlend>();
+        if (magic != null && magic.animator != null)
+            return magic.animator;
+
+        var basic = model.GetComponent<CharacterAnimationControl>();
+        if (basic != null && basic.animator != null)
+            return basic.animator;
+
+        return model.GetComponentInChildren<Animator>(true);
+    }
+
+    private static int ComputePlayerStatusesSignature(List<PlayerStatusPayload> statuses)
+    {
+        statuses.Sort((a, b) => string.CompareOrdinal(a.PlayerId ?? string.Empty, b.PlayerId ?? string.Empty));
+
+        var hash = new HashCode();
+        hash.Add(statuses.Count);
+
+        for (var i = 0; i < statuses.Count; i++)
+        {
+            var st = statuses[i];
+            hash.Add(st.PlayerId ?? string.Empty);
+            hash.Add(st.PlayerName ?? string.Empty);
+            hash.Add(st.Latency);
+            hash.Add(st.IsInGame);
+            hash.Add(st.Position);
+            hash.Add(st.Rotation);
+            hash.Add(st.SceneId ?? string.Empty);
+            hash.Add(st.CustomFaceJson ?? string.Empty);
+
+            if (st.Equipment != null)
+            {
+                hash.Add(st.Equipment.Length);
+                for (var e = 0; e < st.Equipment.Length; e++)
+                {
+                    hash.Add(st.Equipment[e].SlotHash);
+                    hash.Add(st.Equipment[e].ItemId ?? string.Empty);
+                }
+            }
+            else
+            {
+                hash.Add(0);
+            }
+
+            if (st.Weapons != null)
+            {
+                hash.Add(st.Weapons.Length);
+                for (var w = 0; w < st.Weapons.Length; w++)
+                {
+                    hash.Add(st.Weapons[w].SlotHash);
+                    hash.Add(st.Weapons[w].ItemId ?? string.Empty);
+                }
+            }
+            else
+            {
+                hash.Add(0);
+            }
+        }
+
+        return hash.ToHashCode();
     }
 }

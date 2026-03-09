@@ -47,7 +47,7 @@ public struct ItemDropSnapshotEntry
     public Vector3 Direction;
     public float Angle;
     public bool CreateRigidbody;
-    public LootNet.ItemSnapshot Snapshot;
+    public ItemSnapshot Snapshot;
 
     public void Serialize(NetDataWriter writer)
     {

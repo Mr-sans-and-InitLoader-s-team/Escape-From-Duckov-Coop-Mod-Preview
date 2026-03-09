@@ -48,7 +48,7 @@ public class Spectator : MonoBehaviour
     public bool TryEnterSpectatorOnDeath(DamageInfo dmgInfo)
     {
         var main = CharacterMainControl.Main;
-        if (!LevelManager.LevelInited || main == null) return false;
+       // if (!LevelManager.LevelInited || main == null) return false;
 
         BuildSpectateList(main);
         Debug.Log("观战: " + _spectateList.Count);
@@ -59,7 +59,11 @@ public class Spectator : MonoBehaviour
         _spectatorActive = true;
         _spectateIdx = 0;
 
-        if (GameCamera.Instance) GameCamera.Instance.SetTarget(_spectateList[_spectateIdx]);
+        if (GameCamera.Instance)
+        {
+            LevelManager.Instance.SetControllingCharacter(_spectateList[_spectateIdx]);
+        }
+       
 
         if (SceneNet.Instance.sceneVoteActive)
             _spectatorEndOnVotePending = true;
@@ -90,7 +94,7 @@ public class Spectator : MonoBehaviour
                 if (!SceneM._srvPeerScene.TryGetValue(kv.Key, out peerScene) && playerStatuses.TryGetValue(kv.Key, out var st))
                     peerScene = st?.SceneId;
 
-                if (AreSameMap(mySceneId, peerScene))
+                if (string.IsNullOrEmpty(peerScene) || AreSameMap(mySceneId, peerScene))
                 {
                     _spectateList.Add(cmc);
                     kept++;
@@ -113,14 +117,14 @@ public class Spectator : MonoBehaviour
                 if (string.IsNullOrEmpty(peerScene))
                     SceneNet.Instance._cliLastSceneIdByPlayer.TryGetValue(kv.Key, out peerScene);
 
-                if (AreSameMap(mySceneId, peerScene))
+                if (string.IsNullOrEmpty(peerScene) || AreSameMap(mySceneId, peerScene))
                 {
                     _spectateList.Add(cmc);
                     kept++;
                 }
             }
 
-        Debug.Log($"[SPECTATE] 候选={cand}, 同图保留={kept}, mySceneId={mySceneId} (canon={myK})");
+        Debug.Log($"[SPECTATE] 候选={cand}, 可观战保留={kept}, mySceneId={mySceneId} (canon={myK})");
     }
 
     //说实话这个方法没多大用   //说实话这个方法没多大用   //说实话这个方法没多大用   //说实话这个方法没多大用
@@ -198,14 +202,14 @@ public class Spectator : MonoBehaviour
     {
         if (_spectateList.Count == 0) return;
         _spectateIdx = (_spectateIdx + 1) % _spectateList.Count;
-        if (GameCamera.Instance) GameCamera.Instance.SetTarget(_spectateList[_spectateIdx]);
+        if (GameCamera.Instance) LevelManager.Instance.SetControllingCharacter(_spectateList[_spectateIdx]);
     }
 
     public void SpectatePrev()
     {
         if (_spectateList.Count == 0) return;
         _spectateIdx = (_spectateIdx - 1 + _spectateList.Count) % _spectateList.Count;
-        if (GameCamera.Instance) GameCamera.Instance.SetTarget(_spectateList[_spectateIdx]);
+        if (GameCamera.Instance) LevelManager.Instance.SetControllingCharacter(_spectateList[_spectateIdx]);
     }
 
     public void EndSpectatorAndShowClosure(bool force = false)

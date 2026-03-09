@@ -15,7 +15,10 @@
 // GNU Affero General Public License for more details.
 
 using System;
+using System.Collections;
+using Duckov.Scenes;
 using Duckov.UI;
+using Duckov.Utilities;
 using ItemStatsSystem;
 using ItemStatsSystem.Items;
 using UnityEngine.SceneManagement;
@@ -76,9 +79,11 @@ public class ModBehaviourF : MonoBehaviour
 
     private float _ensureRemoteTick = 0f;
     private string _envReqSid;
+    private string _exitReqSid;
+    private bool _exitReqPending;
+    private float _exitReqDeadline;
 
 
-    private int _spectateIdx = -1;
     private float _spectateNextSwitchTime;
 
 
@@ -120,10 +125,28 @@ public class ModBehaviourF : MonoBehaviour
         Instance = this;
         PerformanceDiagnostics.Instance.Reset();
         NetDiagnostics.Instance.Reset();
+
+        gameObject.AddComponent<DamageStatsTracker>();
+        gameObject.AddComponent<DamageStatsUI>();
     }
 
     private void Update()
     {
+        if (LevelManager.Instance == null)
+        {
+            return;
+        }
+        if (MultiSceneCore.Instance == null)
+        {
+            return;
+        }
+        //var serverLoading = IsServer && SceneNet.Instance.IsServerLoadInProgress();
+        //if (serverLoading)
+        //{
+        //    return;
+        //}
+
+
         PerformanceDiagnostics.Instance.Update(Time.unscaledDeltaTime);
 
         if (CharacterMainControl.Main != null && !isinit)
@@ -139,6 +162,12 @@ public class ModBehaviourF : MonoBehaviour
                 LocalPlayerManager.Instance.ModBehaviour_onSlotContentChanged;
             Traverse.Create(CharacterMainControl.Main.EquipmentController).Field<Slot>("headsetSlot").Value.onSlotContentChanged +=
                 LocalPlayerManager.Instance.ModBehaviour_onSlotContentChanged;
+
+            {
+                //   _exitReqSid = SceneNet.Instance._sceneReadySidSent;
+                _exitReqPending = true;
+                _exitReqDeadline = Time.unscaledTime + 3f;
+            }
 
             CharacterMainControl.Main.OnHoldAgentChanged += LocalPlayerManager.Instance.Main_OnHoldAgentChanged;
         }
@@ -157,6 +186,7 @@ public class ModBehaviourF : MonoBehaviour
 
         if (networkStarted)
         {
+
             netManager.PollEvents();
             SceneNet.Instance.TrySendSceneReadyOnce();
             if (!isinit2)
@@ -179,8 +209,12 @@ public class ModBehaviourF : MonoBehaviour
             syncTimer += Time.deltaTime;
             if (syncTimer >= syncInterval)
             {
-                SendLocalPlayerStatus.Instance.SendPositionUpdate();
-                SendLocalPlayerStatus.Instance.SendAnimationStatus();
+               // if (!serverLoading)
+                {
+                    SendLocalPlayerStatus.Instance.SendPositionUpdate();
+                    SendLocalPlayerStatus.Instance.SendAnimationStatus();
+                    SendLocalVehicleStatus.Instance?.SendVehicleTransformUpdate();
+                }
                 syncTimer = 0f;
 
                 //if (!IsServer)
@@ -207,18 +241,35 @@ public class ModBehaviourF : MonoBehaviour
                 COOPManager.Weather.Client_RequestSnapshot();
             }
 
-            if (IsServer)
+            if (!IsServer && !string.IsNullOrEmpty(SceneNet.Instance._sceneReadySidSent) &&
+                _exitReqSid != SceneNet.Instance._sceneReadySidSent)
             {
-                COOPManager.Weather.Server_Update(Time.deltaTime);
-                COOPManager.AI?.Server_Update(Time.deltaTime);
-                COOPManager.ItemNet?.Server_Update(Time.deltaTime);
+                _exitReqSid = SceneNet.Instance._sceneReadySidSent;
+                _exitReqPending = true;
+                _exitReqDeadline = Time.unscaledTime + 3f;
             }
-            else
+
+            if(LevelManager.Instance != null)
             {
-                COOPManager.Weather.Client_Update(Time.deltaTime);
-                COOPManager.AI?.Client_Update(Time.deltaTime);
-                COOPManager.ItemNet?.Client_Update(Time.deltaTime);
+                if (IsServer)
+                {
+                    if (!SceneNet.Instance.IsServerLoadInProgress())
+                    {
+                        COOPManager.Weather.Server_Update(Time.deltaTime);
+                        COOPManager.AI?.Server_Update(Time.deltaTime);
+                        COOPManager.ItemNet?.Server_Update(Time.deltaTime);
+                    }
+                }
+                else
+                {
+                    COOPManager.Weather.Client_Update(Time.deltaTime);
+                    COOPManager.AI?.Client_Update(Time.deltaTime);
+                    COOPManager.ItemNet?.Client_Update(Time.deltaTime);
+                    COOPManager.ExitSync?.Client_Update(Time.deltaTime);
+                }
             }
+
+            
 
             if (NetService.Instance.netManager != null)
             {
@@ -248,13 +299,31 @@ public class ModBehaviourF : MonoBehaviour
             else SceneNet.Instance.Client_SendReadySet(SceneNet.Instance.localReady); // 客户端上报主机
         }
 
-        if (networkStarted)
-        {
-            SceneNet.Instance.TrySendSceneReadyOnce();
-            if (_envReqSid != SceneNet.Instance._sceneReadySidSent)
+            if (networkStarted)
             {
-                _envReqSid = SceneNet.Instance._sceneReadySidSent;
-                COOPManager.Weather.Client_RequestSnapshot();
+                SceneNet.Instance.TrySendSceneReadyOnce();
+                if (IsServer)
+                {
+                    SceneNet.Instance.Server_TryExecutePendingBeginLoad();
+                    SceneNet.Instance.Server_TryExecutePendingLoad();
+                }
+                if (_envReqSid != SceneNet.Instance._sceneReadySidSent)
+                {
+                    _envReqSid = SceneNet.Instance._sceneReadySidSent;
+                    COOPManager.Weather.Client_RequestSnapshot();
+                }
+
+            if (!IsServer && _exitReqSid != SceneNet.Instance._sceneReadySidSent)
+            {
+                _exitReqSid = SceneNet.Instance._sceneReadySidSent;
+                _exitReqPending = true;
+                _exitReqDeadline = Time.unscaledTime + 3f;
+            }
+
+            if (!IsServer && _exitReqPending && Time.unscaledTime >= _exitReqDeadline)
+            {
+                _exitReqPending = false;
+                COOPManager.ExitSync?.Client_RequestSnapshot(true);
             }
 
             // 主机：每帧确保给所有 Health 打钩（含新生成/换图后新克隆）
@@ -317,11 +386,11 @@ public class ModBehaviourF : MonoBehaviour
                 return;
             }
 
-            if (_spectateIdx < 0 || _spectateIdx >= Spectator.Instance._spectateList.Count)
-                _spectateIdx = 0;
+            if (Spectator.Instance._spectateIdx < 0 || Spectator.Instance._spectateIdx >= Spectator.Instance._spectateList.Count)
+                Spectator.Instance._spectateIdx = 0;
 
             // 当前目标若死亡，自动跳到下一个
-            if (!LocalPlayerManager.Instance.IsAlive(Spectator.Instance._spectateList[_spectateIdx]))
+            if (!LocalPlayerManager.Instance.IsAlive(Spectator.Instance._spectateList[Spectator.Instance._spectateIdx]))
                 Spectator.Instance.SpectateNext();
 
             // 客户端观战：按 F8 直接退出观战并进入结算
@@ -383,27 +452,51 @@ public class ModBehaviourF : MonoBehaviour
     {
         if (IsServer && networkStarted)
             SceneNet.Instance.Server_SceneGateAsync().Forget();
+        if (!IsServer)
+            SceneNet.Instance.Client_OnLevelInitialized_PostLoad();
     }
 
     private void LevelManager_OnLevelInitialized()
     {
         SceneNet.Instance.TrySendSceneReadyOnce();
-        if (!IsServer) COOPManager.Weather.Client_RequestSnapshot();
+       
+        if (IsServer)
+        {
+            SceneNet.Instance.Server_ClearLoadInProgress();
+            COOPManager.ItemNet?.Server_RebuildDropRegistryFromScene();
+            COOPManager.ItemNet?.Server_BroadcastDropSnapshot();
+        }
+        else
+        {
+            COOPManager.Weather.Client_RequestSnapshot();
+            COOPManager.ItemNet?.Client_RequestDropSnapshot();
+            COOPManager.ExitSync?.Client_RequestSnapshot(true);
+        }
     }
+
+  
 
     private void OnSceneUnloaded_ClearRegistries(Scene scene)
     {
         CoopSyncDatabase.Environment.Clear();
         CoopSyncDatabase.AI.Clear();
         CoopSyncDatabase.Drops.Clear();
+        CoopSyncDatabase.Loot.Clear();
         COOPManager.AI?.Reset();
         COOPManager.ItemNet?.Reset();
         COOPManager.ExplosiveBarrels?.Reset();
+        COOPManager.LootNet?.Reset();
+        COOPManager.ExitSync?.Reset();
+        COOPManager.GrenadeM?.Reset();
     }
 
     //arg!!!!!!!!!!!
     private void SceneManager_sceneLoaded(Scene arg0, LoadSceneMode arg1)
     {
+        if(IsServer)
+        {
+            SceneNet.Instance.Server_ClearLoadInProgress();
+        }
         SceneNet.Instance.TrySendSceneReadyOnce();
         if (!IsServer) COOPManager.Weather.Client_RequestSnapshot();
     }
@@ -417,6 +510,13 @@ public class ModBehaviourF : MonoBehaviour
             reader.Recycle();
             return;
         }
+
+        //var serverLoading = IsServer && SceneNet.Instance.IsServerLoadInProgress();
+        //if (serverLoading)
+        //{
+        //    reader.Recycle();
+        //    return;
+        //}
 
         var totalBytes = reader.AvailableBytes;
         var opByte = reader.GetByte();
@@ -467,71 +567,32 @@ public class ModBehaviourF : MonoBehaviour
                     var face = reader.GetString();
 
                     if (IsServer) SceneNet.Instance.Server_HandleSceneReady(peer, id, sid, pos, rot, face);
+                    else SceneNet.Instance?.Client_OnRemoteSceneReady(id, sid, pos, rot);
+
                     // 客户端若收到这条（主机广播），实际创建工作由 REMOTE_CREATE 完成，这里不处理
                     break;
                 }
 
             case Op.LOOT_REQ_OPEN:
-                {
-                    if (IsServer) LootManager.Instance.Server_HandleLootOpenRequest(peer, reader);
-                    break;
-                }
-
-
+                break;
             case Op.LOOT_STATE:
-                {
-                    if (IsServer) break;
-                    COOPManager.LootNet.Client_ApplyLootboxState(reader);
-
-                    break;
-                }
+                break;
             case Op.LOOT_REQ_PUT:
-                {
-                    if (!IsServer) break;
-                    COOPManager.LootNet.Server_HandleLootPutRequest(peer, reader);
-                    break;
-                }
+                break;
             case Op.LOOT_REQ_TAKE:
-                {
-                    if (!IsServer) break;
-                    COOPManager.LootNet.Server_HandleLootTakeRequest(peer, reader);
-                    break;
-                }
+                break;
             case Op.LOOT_PUT_OK:
-                {
-                    if (IsServer) break;
-                    COOPManager.LootNet.Client_OnLootPutOk(reader);
-                    break;
-                }
+                break;
             case Op.LOOT_TAKE_OK:
-                {
-                    if (IsServer) break;
-                    COOPManager.LootNet.Client_OnLootTakeOk(reader);
-                    break;
-                }
+                break;
 
             case Op.LOOT_DENY:
-                {
-                    if (IsServer) break;
-                    var reason = reader.GetString();
-                    Debug.LogWarning($"[LOOT] 请求被拒绝：{reason}");
-
-                    // no_inv 不要立刻重试，避免请求风暴
-                    if (reason == "no_inv")
-                        break;
-
-                    // 其它可恢复类错误（如 rm_fail/bad_snapshot）再温和地刷新一次
-                    var lv = LootView.Instance;
-                    var inv = lv ? lv.TargetInventory : null;
-                    if (inv) COOPManager.LootNet.Client_RequestLootState(inv);
-                    break;
-                }
+                break;
 
 
             case Op.LOOT_REQ_SPLIT:
                 {
-                    if (!IsServer) break;
-                    COOPManager.LootNet.Server_HandleLootSplitRequest(peer, reader);
+                    // legacy packet path disabled; loot split now handled via RPC
                     break;
                 }
 
@@ -563,18 +624,6 @@ public class ModBehaviourF : MonoBehaviour
                     break;
                 }
 
-            case Op.LOOT_REQ_SLOT_UNPLUG:
-                {
-                    if (IsServer) COOPManager.LootNet.Server_HandleLootSlotUnplugRequest(peer, reader);
-                    break;
-                }
-            case Op.LOOT_REQ_SLOT_PLUG:
-                {
-                    if (IsServer) COOPManager.LootNet.Server_HandleLootSlotPlugRequest(peer, reader);
-                    break;
-                }
-
-
             case Op.SCENE_GATE_READY:
                 {
                     if (IsServer)
@@ -591,13 +640,6 @@ public class ModBehaviourF : MonoBehaviour
 
                     break;
                 }
-
-            case Op.PLAYER_DEAD_LOOT_SPAWN:
-            {
-                if (!IsServer) break;
-                COOPManager.LootNet.Server_HandlePlayerDeathWithInventory(reader);
-                break;
-            }
 
             case Op.SCENE_GATE_RELEASE:
                 {

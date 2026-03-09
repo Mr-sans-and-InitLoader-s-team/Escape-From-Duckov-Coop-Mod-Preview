@@ -8,6 +8,12 @@ public static class RPCEnvironment
         COOPManager.Weather?.Server_HandleSnapshotRequest(context);
     }
 
+    public static void HandleExitSnapshotRequest(RpcContext context, EnvExitSnapshotRequestRpc message)
+    {
+        if (!context.IsServer) return;
+        COOPManager.ExitSync?.Server_HandleSnapshotRequest(context, in message);
+    }
+
     public static void HandleClockState(RpcContext context, EnvClockStateRpc message)
     {
         if (context.IsServer) return;
@@ -42,5 +48,22 @@ public static class RPCEnvironment
     {
         if (context.IsServer) return;
         COOPManager.ExplosiveBarrels?.Client_ApplySnapshot(message);
+    }
+
+    public static void HandleLevelDataBool(RpcContext context, EnvLevelDataBoolRpc message)
+    {
+        LevelDataBoolNet.HandleRpc(context, in message);
+    }
+
+    public static void HandleExitSnapshot(RpcContext context, EnvExitSnapshotRpc message)
+    {
+        if (context.IsServer) return;
+        COOPManager.ExitSync?.Client_ApplySnapshot(in message);
+    }
+
+    public static void HandleDestructibleHealthReport(RpcContext context, EnvDestructibleHealthReportRpc message)
+    {
+        if (!context.IsServer) return;
+        COOPManager.destructible?.Server_HandleHealthReport(context, in message);
     }
 }

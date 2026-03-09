@@ -14,7 +14,10 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System;
+using System.Collections.Generic;
 using ItemStatsSystem;
+using UnityEngine;
 using Object = UnityEngine.Object;
 
 namespace EscapeFromDuckovCoopMod;
@@ -27,6 +30,7 @@ public class GrenadeM
 
     // ---------------- Grenade caches ----------------
     public readonly Dictionary<int, Grenade> prefabByTypeId = new();
+    private readonly Dictionary<string, Grenade> prefabByName = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<uint, Grenade> serverGrenades = new();
     private uint nextGrenadeId = 1;
     private float pendingTick;
@@ -94,8 +98,8 @@ public class GrenadeM
         var id = r.GetUInt();
         var typeId = r.GetInt();
 
-        _ = r.GetString(); // prefabType (ignored)
-        _ = r.GetString(); // prefabName (ignored)
+        var prefabType = r.GetString();
+        var prefabName = r.GetString();
 
         var start = r.GetV3cm();
         var vel = r.GetV3cm();
@@ -130,25 +134,23 @@ public class GrenadeM
 
         // 慢路径：立即异步精确解析（只按 typeId，不进 pending）
         ResolveAndSpawnClientAsync(
-            id, typeId, start, vel,
+            id, typeId, prefabType, prefabName, start, vel,
             create, shake, dmg, delayOnHit, delay, isMine, mineRange
         ).Forget();
     }
 
     // 客户端：只按 typeId 精确解析（Item → Skill_Grenade → grenadePfb）并生成
     public async UniTask ResolveAndSpawnClientAsync(
-        uint id, int typeId, Vector3 start, Vector3 vel,
+        uint id, int typeId, string prefabType, string prefabName, Vector3 start, Vector3 vel,
         bool create, float shake, float dmg, bool delayOnHit, float delay,
         bool isMine, float mineRange)
     {
-        var prefab = await COOPManager.GetGrenadePrefabByItemIdAsync(typeId);
+        var prefab = await ResolveGrenadePrefabAsync(typeId, prefabType, prefabName);
         if (!prefab)
         {
-            Debug.LogError($"[CLIENT] grenade prefab exact resolve failed: typeId={typeId}");
+            Debug.LogError($"[CLIENT] grenade prefab exact resolve failed: typeId={typeId}, prefabName={NormalizePrefabName(prefabName)}");
             return;
         }
-
-        CoopTool.CacheGrenadePrefab(typeId, prefab);
 
         var g = GameObject.Instantiate(prefab, start, Quaternion.identity);
         g.createExplosion = create;
@@ -168,15 +170,12 @@ public class GrenadeM
     // 只按 typeId 解析：从 itemId → Item → Skill_Grenade.grenadePfb
     public async UniTask ResolveAndSpawnClientAsync(PendingSpawn p)
     {
-        var prefab = await COOPManager.GetGrenadePrefabByItemIdAsync(p.typeId);
+        var prefab = await ResolveGrenadePrefabAsync(p.typeId, p.prefabType, p.prefabName);
         if (!prefab)
         {
-            Debug.LogError($"[CLIENT] grenade prefab exact resolve failed: typeId={p.typeId}");
+            Debug.LogError($"[CLIENT] grenade prefab exact resolve failed: typeId={p.typeId}, prefabName={NormalizePrefabName(p.prefabName)}");
             return;
         }
-
-        // 回灌缓存（只按 typeId）
-        CoopTool.CacheGrenadePrefab(p.typeId, prefab);
 
         // 实例化 + 参数回放 + 启动
         var g = GameObject.Instantiate(prefab, p.start, Quaternion.identity);
@@ -261,14 +260,14 @@ public class GrenadeM
         var isMine = r.GetBool();
         var mineRange = r.GetFloat();
 
-        HandleGrenadeThrowRequestAsync(peer, typeId, start, vel,
+        HandleGrenadeThrowRequestAsync(peer, typeId, prefabType, prefabName, start, vel,
             create, shake, dmg, delayOnHit, delay, isMine, mineRange).Forget();
     }
 
     // 服务器端：接到客户端投掷请求的处理 —— 不信任客户端数值，全按服务器默认模板来
     // 服务器端：接到客户端投掷请求 -> 用服务器模板灌入 Grenade
     private async UniTask HandleGrenadeThrowRequestAsync(
-        NetPeer peer, int typeId, Vector3 start, Vector3 vel,
+        NetPeer peer, int typeId, string prefabType, string prefabName, Vector3 start, Vector3 vel,
         bool _create, float _shake, float _dmg, bool _delayOnHit, float _delay, bool _isMine, float _mineRange)
     {
         // 解析 prefab（只按 typeId）
@@ -278,9 +277,9 @@ public class GrenadeM
 
         if (!prefab)
         {
-            // 兜底：让客户端自己解析（仍读空字符串）
+            // 兜底：让客户端自己解析（转发客户端传入的 prefab 字段用于名字解析）
             var fid = nextGrenadeId++;
-            Server_BroadcastGrenadeSpawn(fid, typeId, string.Empty, string.Empty, start, vel,
+            Server_BroadcastGrenadeSpawn(fid, typeId, prefabType, prefabName, start, vel,
                 _create, _shake, _dmg, _delayOnHit, _delay, _isMine, _mineRange);
             return;
         }
@@ -419,8 +418,8 @@ public class GrenadeM
             serverGrenades[id] = g;
         }
 
-        const string prefabType = "";
-        const string prefabName = "";
+        var prefabType = TypeNameOf(g);
+        var prefabName = NormalizePrefabName(g ? g.name : string.Empty);
         Server_BroadcastGrenadeSpawn(id, g, typeId, prefabType, prefabName, start, vel);
     }
 
@@ -514,5 +513,167 @@ public class GrenadeM
         public bool isMine;
         public float mineRange;
         public float expireAt;
+        public string prefabType;
+        public string prefabName;
+    }
+
+    private async UniTask<Grenade> ResolveGrenadePrefabAsync(int typeId, string prefabType, string prefabName)
+    {
+        Grenade prefab = null;
+        if (typeId != 0)
+            prefab = await COOPManager.GetGrenadePrefabByItemIdAsync(typeId);
+
+        if (!prefab)
+            prefab = FindGrenadePrefab(prefabType, prefabName);
+
+        if (prefab)
+        {
+            if (typeId != 0)
+                CoopTool.CacheGrenadePrefab(typeId, prefab);
+
+            var normalized = NormalizePrefabName(prefabName);
+            if (!string.IsNullOrEmpty(normalized))
+                prefabByName[normalized] = prefab;
+        }
+
+        return prefab;
+    }
+
+    private static bool TryParseFxType(string prefabType, out ExplosionFxTypes fx)
+    {
+        fx = default;
+        if (string.IsNullOrWhiteSpace(prefabType))
+            return false;
+
+        prefabType = prefabType.Trim();
+
+        // 支持 FX:5 或 FX:custom 的格式
+        const string fxPrefix = "FX:";
+        if (prefabType.StartsWith(fxPrefix, StringComparison.OrdinalIgnoreCase))
+            prefabType = prefabType.Substring(fxPrefix.Length);
+
+        if (Enum.TryParse(prefabType, true, out fx))
+            return true;
+
+        if (int.TryParse(prefabType, out var intFx) && Enum.IsDefined(typeof(ExplosionFxTypes), intFx))
+        {
+            fx = (ExplosionFxTypes)intFx;
+            return true;
+        }
+
+        return false;
+    }
+
+    private Grenade FindGrenadePrefab(string prefabType, string prefabName)
+    {
+        var normalized = NormalizePrefabName(prefabName);
+        if (!string.IsNullOrEmpty(normalized) && prefabByName.TryGetValue(normalized, out var cached) && cached)
+            return cached;
+
+        Grenade resolved = null;
+        var hasFx = TryParseFxType(prefabType, out var targetFx);
+
+        bool Matches(Grenade g)
+        {
+            if (!g) return false;
+            var name = NormalizePrefabName(g.name);
+            var goName = NormalizePrefabName(g.gameObject?.name);
+            var type = g.GetType();
+
+            if (hasFx && g.fxType == targetFx)
+                return true;
+
+            if (!string.IsNullOrEmpty(normalized) && (string.Equals(name, normalized, StringComparison.OrdinalIgnoreCase) ||
+                                                      string.Equals(goName, normalized, StringComparison.OrdinalIgnoreCase)))
+                return true;
+
+            if (type != null && !string.IsNullOrEmpty(prefabType))
+            {
+                if (string.Equals(type.FullName, prefabType, StringComparison.Ordinal) ||
+                    string.Equals(type.Name, prefabType, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            if (type != null && string.IsNullOrEmpty(prefabType) && !string.IsNullOrEmpty(normalized) &&
+                string.Equals(type.Name, normalized, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return false;
+        }
+
+        try
+        {
+            foreach (var g in Object.FindObjectsOfType<Grenade>(true))
+            {
+                if (Matches(g))
+                {
+                    resolved = g;
+                    break;
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        if (!resolved)
+        {
+            try
+            {
+                foreach (var g in Resources.FindObjectsOfTypeAll<Grenade>())
+                {
+                    if (Matches(g))
+                    {
+                        resolved = g;
+                        break;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            if (!resolved && !string.IsNullOrEmpty(normalized))
+            {
+                try
+                {
+                    resolved = Resources.Load<Grenade>(normalized);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        if (resolved && !string.IsNullOrEmpty(normalized))
+            prefabByName[normalized] = resolved;
+
+        return resolved;
+    }
+
+    private static string NormalizePrefabName(string n)
+    {
+        if (string.IsNullOrEmpty(n)) return string.Empty;
+        n = n.Trim();
+        const string clone = "(Clone)";
+        if (n.EndsWith(clone, StringComparison.Ordinal))
+            n = n.Substring(0, n.Length - clone.Length);
+        return n.Trim();
+    }
+
+    private static string TypeNameOf(Grenade g)
+    {
+        if (!g) return string.Empty;
+        return $"FX:{(int)g.fxType}:{g.fxType}";
+    }
+
+    public void Reset()
+    {
+        clientGrenades.Clear();
+        pending.Clear();
+        prefabByTypeId.Clear();
+        prefabByName.Clear();
+        serverGrenades.Clear();
+        nextGrenadeId = 1;
     }
 }

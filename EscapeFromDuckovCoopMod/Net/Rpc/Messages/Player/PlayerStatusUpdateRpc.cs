@@ -98,16 +98,19 @@ public struct PlayerStatusUpdateRpc : IRpcMessage
 [Rpc(Op.CLIENT_STATUS_UPDATE, DeliveryMethod.ReliableOrdered, RpcDirection.ClientToServer)]
 public struct ClientStatusUpdateRpc : IRpcMessage
 {
+    public string ClientVersion;
     public PlayerStatusPayload Player;
 
     public void Serialize(NetDataWriter writer)
     {
         Player.Serialize(writer);
+        writer.Put(ClientVersion ?? string.Empty);
     }
 
     public void Deserialize(NetPacketReader reader)
     {
         Player = new PlayerStatusPayload();
         Player.Deserialize(reader);
+        ClientVersion = reader.AvailableBytes > 0 ? reader.GetString() : string.Empty;
     }
 }

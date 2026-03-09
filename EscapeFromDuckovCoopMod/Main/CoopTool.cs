@@ -252,13 +252,13 @@ public static class CoopTool
         return null;
     }
 
-    public static void GoTeleport(string SceneID)
+    public static void GoTeleport(string SceneID,string MapName)
     {
         try
         {
             var launched = false; // 是否已触发加载
 
-           // COOPManager.TeleportAiClear();
+            COOPManager.TeleportAiClear();
 
             CoopSyncDatabase.AI.Clear();
 
@@ -266,14 +266,13 @@ public static class CoopTool
 
             Debug.Log("[SCENE] MultiSceneTeleporter 触发，已清理 AI 缓存与数据库，等待主机重新同步。");
 
-            // （如果后面你把 loader.LoadScene 恢复了，这里可以先试 loader 路径并把 launched=true）
 
             // 无论 loader 是否存在，都尝试 SceneLoaderProxy 兜底
             foreach (var ii in Object.FindObjectsOfType<MultiSceneTeleporter>())
             {
                 try
                 {
-                    if (ii.Target.SceneID == SceneID)
+                    if (ii.Target.SceneID == SceneID && ii.name == MapName)
                     {
                         ii.DoTeleport();
                         launched = true;
@@ -305,7 +304,8 @@ public static class CoopTool
 
     private static string TypeNameOf(Grenade g)
     {
-        return g ? g.GetType().FullName : string.Empty;
+        if (!g) return string.Empty;
+        return $"FX:{(int)g.fxType}:{g.fxType}";
     }
 
     public static void CacheGrenadePrefab(int typeId, Grenade prefab)

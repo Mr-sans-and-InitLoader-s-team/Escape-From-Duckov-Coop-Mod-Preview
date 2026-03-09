@@ -60,13 +60,7 @@ public class AutoRequestHealthBar : MonoBehaviour
         {
             if (!h) yield break;
 
-            try
-            {
-                h.showHealthBar = true;
-            }
-            catch
-            {
-            }
+            h.showHealthBar = true;
 
             try
             {

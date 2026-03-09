@@ -79,7 +79,7 @@ public static class SceneM
                 if (!_srvPeerScene.TryGetValue(kv.Key, out peerScene) && playerStatuses.TryGetValue(kv.Key, out var st))
                     peerScene = st?.SceneId;
 
-                if (Spectator.AreSameMap(mySceneId, peerScene)) aliveSameScene++;
+                if (string.IsNullOrEmpty(peerScene) || Spectator.AreSameMap(mySceneId, peerScene)) aliveSameScene++;
             }
         else
             foreach (var kv in clientRemoteCharacters)
@@ -88,7 +88,7 @@ public static class SceneM
                 if (!LocalPlayerManager.Instance.IsAlive(cmc)) continue;
 
                 var peerScene = NetService.Instance.clientPlayerStatuses.TryGetValue(kv.Key, out var st) ? st?.SceneId : null;
-                if (Spectator.AreSameMap(mySceneId, peerScene)) aliveSameScene++;
+                if (string.IsNullOrEmpty(peerScene) || Spectator.AreSameMap(mySceneId, peerScene)) aliveSameScene++;
             }
 
         var none = aliveSameScene <= 0;

@@ -194,4 +194,15 @@ public static class LocalHitKillFx
         var pos = (di.damagePoint.sqrMagnitude > 1e-6f ? di.damagePoint : basePos) + Vector3.up * 2f;
         PopDamageText(pos, di);
     }
+
+    /// <summary>
+    ///     本地命中/击杀玩家时复现 UI 与受击特效
+    /// </summary>
+    public static void ClientPlayForPlayer(CharacterMainControl target, DamageInfo di, bool predictedDead)
+    {
+        PlayUiHitKill(di, predictedDead, true);
+
+        var hv = FindHurtVisualOn(target);
+        PlayHurtVisual(hv, di, predictedDead);
+    }
 }

@@ -21,4 +21,7 @@ public static class NetSilenceGuards
     // 线程级：避免并发串线
     [ThreadStatic] public static bool InPickupItem; // 正在执行 CharacterItemControl.PickupItem
     [ThreadStatic] public static bool InCapacityShrinkCleanup; // 正在执行容量下调清理（可选，见下）
+    [ThreadStatic] public static bool InAIPopTextBroadcast; // 正在转发AI PopText，避免回环
+    [ThreadStatic] public static bool InAISoundBroadcast; // 正在转发AI Sound事件，避免回环
+    [ThreadStatic] public static bool InAIVoiceBroadcast; // 正在转发AI 语音事件，避免回环
 }

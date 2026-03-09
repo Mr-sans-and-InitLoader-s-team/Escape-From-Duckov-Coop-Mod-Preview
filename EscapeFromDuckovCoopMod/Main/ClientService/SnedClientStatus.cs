@@ -43,6 +43,7 @@ public class Send_ClientStatus : MonoBehaviour
 
         var rpc = new ClientStatusUpdateRpc
         {
+            ClientVersion = BuildInfo.ModVersion,
             Player = new PlayerStatusPayload
             {
                 PlayerId = localPlayerStatus.EndPoint,

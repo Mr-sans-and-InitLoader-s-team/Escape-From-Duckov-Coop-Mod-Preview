@@ -16,6 +16,7 @@
 
 using Duckov.Scenes;
 using Duckov.Utilities;
+using ItemStatsSystem;
 using ItemStatsSystem.Items;
 using System;
 using UnityEngine.SceneManagement;
@@ -68,17 +69,20 @@ public class LocalPlayerManager : MonoBehaviour
         var selfId = Service != null
             ? Service.GetSelfNetworkId()
             : (IsServer ? $"Host:{port}" : $"Client:{Guid.NewGuid().ToString().Substring(0, 8)}");
+
+        var resolvedName = Service != null ? Service.ResolveLocalPlayerName() : (IsServer ? "Host" : "Client");
+
         Service.localPlayerStatus = new PlayerStatus
         {
             EndPoint = selfId,
-            PlayerName = IsServer ? "Host" : "Client",
+            PlayerName = resolvedName,
             Latency = 0,
             IsInGame = bool1,
             LastIsInGame = bool1,
             Position = Vector3.zero,
             Rotation = Quaternion.identity,
             SceneId = ids,
-            CustomFaceJson = CustomFace.LoadLocalCustomFaceJson()
+            CustomFaceJson = CustomFace.LoadLocalCustomFaceJson(),
         };
         _localInvincibleUntil = 0f;
     }
@@ -195,14 +199,16 @@ public class LocalPlayerManager : MonoBehaviour
             weaponList.Add(new WeaponSyncData
             {
                 SlotHash = (int)HandheldSocketTypes.normalHandheld,
-                ItemId = rangedWeapon != null ? rangedWeapon.Item.TypeID.ToString() : ""
+                ItemId = rangedWeapon != null ? rangedWeapon.Item.TypeID.ToString() : "",
+                Snapshot = rangedWeapon != null ? ItemTool.MakeSnapshot(rangedWeapon.Item) : default
             });
 
             var meleeWeapon = mainControl.GetMeleeWeapon();
             weaponList.Add(new WeaponSyncData
             {
                 SlotHash = (int)HandheldSocketTypes.meleeWeapon,
-                ItemId = meleeWeapon != null ? meleeWeapon.Item.TypeID.ToString() : ""
+                ItemId = meleeWeapon != null ? meleeWeapon.Item.TypeID.ToString() : "",
+                Snapshot = meleeWeapon != null ? ItemTool.MakeSnapshot(meleeWeapon.Item) : default
             });
         }
         catch (Exception ex)
@@ -245,9 +251,26 @@ public class LocalPlayerManager : MonoBehaviour
         var weaponData = new WeaponSyncData
         {
             SlotHash = (int)slotHash,
-            ItemId = itemId
+            ItemId = itemId,
+            Snapshot = obj.Item ? ItemTool.MakeSnapshot(obj.Item) : default
         };
         SendLocalPlayerStatus.Instance.SendWeaponUpdate(weaponData);
+    }
+
+    public void SendWeaponAttachmentSnapshot(Item weapon, int slotHash)
+    {
+        var service = NetService.Instance;
+        if (service == null || !service.networkStarted) return;
+        if (weapon == null || slotHash == 0) return;
+
+        var data = new WeaponSyncData
+        {
+            SlotHash = slotHash,
+            ItemId = weapon.TypeID.ToString(),
+            Snapshot = ItemTool.MakeSnapshot(weapon)
+        };
+
+        SendLocalPlayerStatus.Instance?.SendWeaponUpdate(data);
     }
 
     public void ModBehaviour_onSlotContentChanged(Slot obj)

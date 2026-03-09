@@ -257,7 +257,7 @@ public class MModUILayoutBuilder
         BuildServerInfoCard(scrollContent);
 
         // 难度选择
-        BuildDifficultyCard(scrollContent);
+       // BuildDifficultyCard(scrollContent);
 
         // Direct模式面板
         BuildDirectModePanel(scrollContent);
@@ -337,10 +337,7 @@ public class MModUILayoutBuilder
     /// <summary>
     /// 创建难度选择卡片
     /// </summary>
-    private void BuildDifficultyCard(Transform parent)
-    {
-        _ui.CreateDifficultyCard(parent);
-    }
+   
 
     /// <summary>
     /// 创建Direct模式面板
@@ -365,6 +362,14 @@ public class MModUILayoutBuilder
         _ui.CreateSectionHeader(connectCard.transform, CoopLocalization.Get("ui.manualConnect.title"));
         _components.IpInputField = _ui.CreateModernInputField("IPInput", connectCard.transform, CoopLocalization.Get("ui.manualConnect.ip"), _ui.manualIP);
         _components.IpInputField.onValueChanged.AddListener((value) => _ui.manualIP = value);
+
+        var streamerRow = _ui.CreateHorizontalGroup(connectCard.transform, "StreamerModeRow");
+        _ui.CreateText("StreamerLabel", streamerRow.transform, "主播模式", 13, MModUI.ModernColors.TextSecondary);
+        _components.StreamerModeToggle = _ui.CreateModernToggle("StreamerModeToggle", streamerRow.transform, _ui.StreamerMode);
+        var streamerRowLayout = streamerRow.GetComponent<LayoutElement>();
+        streamerRowLayout.minHeight = 30;
+        streamerRowLayout.preferredHeight = 32;
+        _components.StreamerModeToggle.onValueChanged.AddListener(_ui.SetStreamerMode);
 
         _components.PortInputField = _ui.CreateModernInputField("PortInput", connectCard.transform, CoopLocalization.Get("ui.manualConnect.port"), _ui.manualPort);
         _components.PortInputField.onValueChanged.AddListener((value) => _ui.manualPort = value);
@@ -409,7 +414,17 @@ public class MModUILayoutBuilder
             _ui.StartCoroutine(_ui.AnimatePanel(_components.PlayerStatusPanel, _ui.showPlayerStatusWindow));
         }, -1, MModUI.ModernColors.Info, 40, 15);
 
-        _ui.CreateModernButton("Debug", actionsCard.transform, CoopLocalization.Get("ui.debug.printLootBoxes"), _ui.DebugPrintLootBoxes, -1, MModUI.ModernColors.Warning, 40, 15);
+        _ui.CreateModernButton("AISyncSettings", actionsCard.transform, CoopLocalization.Get("ui.actions.settings"), () =>
+        {
+            _ui.ToggleAISyncSettings();
+        }, -1, MModUI.ModernColors.Primary, 40, 15);
+
+        //_ui.CreateModernButton("LootSettings", actionsCard.transform, CoopLocalization.Get("ui.actions.lootSettings"), () =>
+        //{
+        //    _ui.OpenCoopSettingsPage("loot");
+        //}, -1, MModUI.ModernColors.Success, 40, 15);
+
+        //_ui.CreateModernButton("Debug", actionsCard.transform, CoopLocalization.Get("ui.debug.printLootBoxes"), _ui.DebugPrintLootBoxes, -1, MModUI.ModernColors.Warning, 40, 15);
     }
 }
 

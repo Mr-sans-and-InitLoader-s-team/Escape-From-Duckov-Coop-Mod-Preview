@@ -14,6 +14,10 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using System;
+using System.Reflection;
+using HarmonyLib;
+using UnityEngine;
 using Object = UnityEngine.Object;
 
 namespace EscapeFromDuckovCoopMod;
@@ -39,12 +43,59 @@ public class Destructible
     private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
     private bool networkStarted => Service != null && Service.networkStarted;
 
+    private static readonly FieldInfo _fiHealthValue = AccessTools.Field(typeof(HealthSimpleBase), "healthValue");
+    private static readonly FieldInfo _fiMaxHealthValue = AccessTools.Field(typeof(HealthSimpleBase), "maxHealthValue");
+
+    internal static float ReadHealthValue(HealthSimpleBase hs, float fallback = 0f)
+    {
+        if (!hs) return fallback;
+
+        try
+        {
+            return hs.HealthValue;
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
+    internal static float ReadMaxHealthValue(HealthSimpleBase hs, float fallback = 0f)
+    {
+        if (!hs) return fallback;
+
+        try
+        {
+            if (_fiMaxHealthValue != null && _fiMaxHealthValue.GetValue(hs) is float value)
+                return value;
+        }
+        catch
+        {
+        }
+
+        return fallback;
+    }
+
+    private static void ForceHealthValue(HealthSimpleBase hs, float value)
+    {
+        if (!hs || _fiHealthValue == null) return;
+
+        try
+        {
+            _fiHealthValue.SetValue(hs, value);
+        }
+        catch
+        {
+        }
+    }
+
 
     public void RegisterDestructible(uint id, HealthSimpleBase hs)
     {
         if (id == 0 || hs == null) return;
 
         CoopSyncDatabase.Environment.Destructibles.Register(id, hs);
+        ModApiEvents.RaiseDestructibleRegistered(hs, id);
 
         if (IsServer) _serverDestructibles[id] = hs;
         else _clientDestructibles[id] = hs;
@@ -62,6 +113,122 @@ public class Destructible
         else _clientDestructibles.TryGetValue(id, out hs);
 
         return hs;
+    }
+
+    public void Client_ReportDestructibleHealth(uint id, float maxHealth, float currentHealth, bool isDead, DamageInfo damageInfo)
+    {
+        if (!networkStarted || IsServer || id == 0) return;
+
+        var rpc = new EnvDestructibleHealthReportRpc
+        {
+            Id = id,
+            MaxHealth = maxHealth,
+            CurrentHealth = currentHealth,
+            IsDead = isDead,
+            HasDamage = true,
+            Damage = DamageForwardPayload.FromDamageInfo(damageInfo)
+        };
+
+        CoopTool.SendRpc(in rpc);
+    }
+
+    public void Server_HandleHealthReport(RpcContext context, in EnvDestructibleHealthReportRpc message)
+    {
+        if (!IsServer || context.Sender == null) return;
+        if (message.Id == 0u) return;
+
+        var hs = FindDestructible(message.Id);
+        if (!hs) return;
+
+        var maxHealth = ReadMaxHealthValue(hs, message.MaxHealth);
+        if (maxHealth <= 0f)
+            maxHealth = message.MaxHealth;
+
+        var currentHealth = ReadHealthValue(hs, maxHealth);
+        var targetHealth = Mathf.Clamp(message.CurrentHealth, 0f, maxHealth > 0f ? maxHealth : float.MaxValue);
+        if (targetHealth >= currentHealth)
+            targetHealth = currentHealth; // 不允许被客户端上报“回血”覆盖主机权威
+        var isDead = message.IsDead || targetHealth <= 0.0001f;
+        var damagePayload = message.HasDamage ? message.Damage : (DamageForwardPayload?)null;
+        var damageInfo = BuildDamageInfo(hs, damagePayload);
+
+        damageInfo.fromCharacter = null;
+        damageInfo.crit = 0;
+        damageInfo.critRate = 0f;
+        damageInfo.critDamageFactor = 1f;
+
+        var delta = Mathf.Max(0f, currentHealth - targetHealth);
+        var multiplier = Mathf.Max(0.0001f, hs.damageMultiplierIfNotMainCharacter);
+        var adjustedDamage = delta > 0f ? delta / multiplier : 0f;
+
+        if (isDead)
+        {
+            adjustedDamage = Math.Max(adjustedDamage, currentHealth > 0f ? currentHealth / multiplier : 0f);
+            damageInfo.damageValue = Math.Max(Math.Max(damageInfo.damageValue, adjustedDamage), 999999f);
+        }
+        else if (adjustedDamage > 0f)
+        {
+            damageInfo.damageValue = Math.Max(damageInfo.damageValue, adjustedDamage);
+        }
+
+        damageInfo.finalDamage = Math.Max(damageInfo.finalDamage, damageInfo.damageValue);
+
+        if ((isDead && currentHealth > 0f) || adjustedDamage > 0f)
+            TryApplyDestructibleHurt(hs, damageInfo);
+
+        ForceHealthValue(hs, targetHealth);
+
+        if (isDead)
+        {
+            _deadDestructibleIds.Add(message.Id);
+            Server_BroadcastDestructibleDead(message.Id, damageInfo);
+        }
+        else
+        {
+            Server_BroadcastDestructibleHurt(message.Id, targetHealth, damageInfo);
+        }
+    }
+
+    public void Server_RegisterDestructibleDeath(uint id)
+    {
+        if (!IsServer || id == 0u) return;
+        _deadDestructibleIds.Add(id);
+    }
+
+    private static void TryApplyDestructibleHurt(HealthSimpleBase hs, DamageInfo damageInfo)
+    {
+        if (!hs) return;
+
+        try
+        {
+            if (damageInfo.toDamageReceiver == null)
+                damageInfo.toDamageReceiver = hs.dmgReceiver;
+
+            hs.dmgReceiver?.Hurt(damageInfo);
+        }
+        catch
+        {
+        }
+    }
+
+    private static DamageInfo BuildDamageInfo(HealthSimpleBase hs, DamageForwardPayload? payload)
+    {
+        if (payload.HasValue)
+            return payload.Value.ToDamageInfo(null, hs ? hs.dmgReceiver : null);
+
+        var info = new DamageInfo
+        {
+            damagePoint = hs ? hs.transform.position : Vector3.zero,
+            damageNormal = Vector3.forward,
+            crit = 0,
+            critRate = 0f,
+            critDamageFactor = 1f
+        };
+
+        if (hs && hs.dmgReceiver)
+            info.toDamageReceiver = hs.dmgReceiver;
+
+        return info;
     }
 
 

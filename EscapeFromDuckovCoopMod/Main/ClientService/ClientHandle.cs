@@ -75,7 +75,7 @@ public class ClientHandle
         {
             CreateRemoteCharacter.CreateRemoteCharacterAsync(peer, position, rotation, customFaceJson).Forget();
             foreach (var e in equipmentList) COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(peer, e.SlotHash, e.ItemId).Forget();
-            foreach (var w in weaponList) COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(peer, w.SlotHash, w.ItemId).Forget();
+            foreach (var w in weaponList) COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(peer, w.SlotHash, w.ItemId, w.Snapshot).Forget();
         }
         else if (isInGame)
         {
@@ -86,7 +86,7 @@ public class ClientHandle
             }
 
             foreach (var e in equipmentList) COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(peer, e.SlotHash, e.ItemId).Forget();
-            foreach (var w in weaponList) COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(peer, w.SlotHash, w.ItemId).Forget();
+            foreach (var w in weaponList) COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(peer, w.SlotHash, w.ItemId, w.Snapshot).Forget();
         }
 
         playerStatuses[peer] = st;

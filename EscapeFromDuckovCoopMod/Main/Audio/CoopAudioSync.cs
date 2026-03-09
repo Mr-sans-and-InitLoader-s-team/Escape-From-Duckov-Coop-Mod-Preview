@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -24,6 +24,14 @@ namespace EscapeFromDuckovCoopMod;
 public static class CoopAudioSync
 {
     private static int _suppressCount;
+    private static readonly string[] LocalHurtAudioTokens =
+    {
+        "hurt",
+        "pain",
+        "damage",
+        "hit_organic",
+        "breath"
+    };
 
     private sealed class SuppressScope : IDisposable
     {
@@ -52,8 +60,6 @@ public static class CoopAudioSync
         }
     }
 
-    private static readonly char[] UiSeparators = { '/', '\\', '_', '-', '.', ' ' };
-
     private static readonly string[] UiTokens =
     {
         "ui",
@@ -75,7 +81,17 @@ public static class CoopAudioSync
         "map",
         "inspect",
         "examine",
-        "modding"
+        "modding",
+        "put_default",
+        "pickup_default",
+        "hitmarker_head",
+        "killmarker_head",
+        "death_organic",
+        "hit_solid",
+        "hit_organic_normal",
+        "killmarker",
+        "hitmarker",
+        "Kazoo" //虽然有针对卡祖笛的同步处理但效果不尽人意所以封存起来，待有人能解开这个卡祖笛同步诅咒
     };
 
     private static bool ShouldBlockUi(string eventName, bool hasEmitter)
@@ -86,22 +102,33 @@ public static class CoopAudioSync
         if (!hasEmitter)
             return true;
 
-        var normalized = eventName.ToLowerInvariant();
-
-        foreach (var token in UiTokens)
+        for (int i = 0; i < UiTokens.Length; i++)
         {
-            if (normalized.Contains(token))
+            if (eventName.IndexOf(UiTokens[i], StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;
         }
 
-        var split = normalized.Split(UiSeparators, StringSplitOptions.RemoveEmptyEntries);
-        foreach (var segment in split)
+        return false;
+    }
+
+    private static bool IsLocalPlayerDamageAudio(string eventName, GameObject emitter)
+    {
+        if (string.IsNullOrEmpty(eventName) || emitter == null)
+            return false;
+
+        var main = CharacterMainControl.Main;
+        if (main == null)
+            return false;
+
+        var emitterTransform = emitter.transform;
+        var mainTransform = main.transform;
+        if (emitterTransform != mainTransform && !emitterTransform.IsChildOf(mainTransform))
+            return false;
+
+        for (var i = 0; i < LocalHurtAudioTokens.Length; i++)
         {
-            foreach (var token in UiTokens)
-            {
-                if (segment == token)
-                    return true;
-            }
+            if (eventName.IndexOf(LocalHurtAudioTokens[i], StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
         }
 
         return false;
@@ -152,6 +179,8 @@ public static class CoopAudioSync
         if (!ShouldSend) return;
         var hasEmitter = emitter != null;
         if (ShouldBlockUi(eventName, hasEmitter)) return;
+        if (IsLocalPlayerDamageAudio(eventName, emitter)) return;
+        var isKazoo = eventName.IndexOf("kazoo", StringComparison.OrdinalIgnoreCase) >= 0;
         var position = Vector3.zero;
         if (hasEmitter)
         {
@@ -174,7 +203,9 @@ public static class CoopAudioSync
             HasSwitch = !string.IsNullOrEmpty(switchName),
             SwitchName = switchName ?? string.Empty,
             HasSoundKey = !string.IsNullOrEmpty(soundKey),
-            SoundKey = soundKey ?? string.Empty
+            SoundKey = soundKey ?? string.Empty,
+            HasKazooPitch = isKazoo,
+            KazooPitch = isKazoo ? UnityEngine.Random.Range(-10f, 10f) : 0f
         };
 
         Dispatch(payload);

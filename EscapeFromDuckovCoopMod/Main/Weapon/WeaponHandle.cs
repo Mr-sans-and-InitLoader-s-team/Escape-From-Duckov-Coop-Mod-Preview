@@ -15,6 +15,8 @@
 // GNU Affero General Public License for more details.
 
 using Duckov.Utilities;
+using UnityEngine;
+using UnityEngine.InputSystem.XR;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -37,6 +39,42 @@ public class WeaponHandle
     private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
     private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
     private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
+
+    private void BroadcastProjectileEvent(in WeaponFireEventRpc evt, NetPeer excludePeer = null)
+    {
+        if (!IsServer || !networkStarted)
+            return;
+
+        var maxDistance = CoopAISettings.ActiveGeneral.ProjectileSyncMaxDistance;
+        var svc = Service;
+        var manager = svc?.netManager;
+        var statuses = playerStatuses;
+
+        if (maxDistance <= 0f || svc == null || manager == null || statuses == null)
+        {
+            CoopTool.SendRpc(in evt, excludePeer);
+            return;
+        }
+
+        var sqrLimit = maxDistance * maxDistance;
+        var peers = manager.ConnectedPeerList;
+
+        for (var i = 0; i < peers.Count; i++)
+        {
+            var peer = peers[i];
+            if (peer == null || peer == excludePeer) continue;
+
+            var status = statuses.GetValueOrDefault(peer);
+            if (status != null && status.IsInGame)
+            {
+                var sqrDistance = (status.Position - evt.MuzzlePosition).sqrMagnitude;
+                if (sqrDistance > sqrLimit)
+                    continue;
+            }
+
+            CoopTool.SendRpcTo(peer, in evt);
+        }
+    }
 
     private CharacterMainControl TryResolveShooter(string shooterId, int aiId, out ItemAgent_Gun resolvedGun)
     {
@@ -96,6 +134,12 @@ public class WeaponHandle
     private void EmitGunshotSound(CharacterMainControl shooter, ItemAgent_Gun gun, Vector3 muzzlePos, Teams team)
     {
         if (!IsServer)
+            return;
+
+        if (shooter == null)
+            return;
+
+        if (gun == null)
             return;
 
         var radius = gun ? gun.SoundRange : 0f;
@@ -180,6 +224,13 @@ public class WeaponHandle
             ctx.penetrate = gun.Penetrate;
             ctx.fromWeaponItemID = gun.Item != null ? gun.Item.TypeID : 0;
             hasPayload = hasPayload || ctx.explosionRange > 0f || ctx.explosionDamage > 0f || ctx.penetrate != 0;
+        }
+        catch { }
+
+        try
+        {
+            ctx.traceAbility = gun.TraceAbility;
+            hasPayload = hasPayload || ctx.traceAbility > 0f;
         }
         catch { }
 
@@ -297,6 +348,7 @@ public class WeaponHandle
         proj.transform.position = spawn;
         proj.transform.rotation = Quaternion.LookRotation(dir, Vector3.up);
         proj.Init(ctx);
+        ModApiEvents.RaiseProjectileSpawned(proj, ctx, shooterId);
 
 
         if (isFake)
@@ -315,12 +367,41 @@ public class WeaponHandle
         if (!networkStarted) return;
         if (NetService.Instance.IsSelfId(message.ShooterId)) return;
 
+        var maxSyncDistance = CoopAISettings.ActiveGeneral.ProjectileSyncMaxDistance;
+        if (maxSyncDistance > 0f && localPlayerStatus != null && localPlayerStatus.IsInGame)
+        {
+            var sqrLimit = maxSyncDistance * maxSyncDistance;
+            var sqrDistance = (message.MuzzlePosition - localPlayerStatus.Position).sqrMagnitude;
+            if (sqrDistance > sqrLimit)
+                return;
+        }
+
         var ctx = message.HasPayload ? message.Payload : new ProjectileContext();
         ctx = FillPayloadFallbacks(message.WeaponTypeId, ctx);
         if (ctx.fromWeaponItemID == 0) ctx.fromWeaponItemID = message.WeaponTypeId;
         ctx.team = (Teams)message.Team;
         if (ctx.firstFrameCheckStartPoint == default)
             ctx.firstFrameCheckStartPoint = message.MuzzlePosition;
+
+        CharacterMainControl controller = null;
+        ItemAgent_Gun gun = null;
+        if (clientRemoteCharacters.TryGetValue(message.ShooterId, out var who) && who)
+        {
+             controller = who.GetComponent<CharacterMainControl>();
+            gun = controller ? controller.GetGun() : null;
+        }
+
+        if (message.AiId != 0 && COOPManager.AI != null)
+        {
+            var cmc = COOPManager.AI.TryGetCharacter(message.AiId);
+            if (cmc)
+            {
+                controller = cmc;
+                gun = cmc.GetGun();
+            }
+        }
+
+        EmitGunshotSound(controller, gun, message.MuzzlePosition, ctx.team);
 
         SpawnVisualProjectile(message.ShooterId, message.WeaponTypeId, message.MuzzlePosition, message.Direction.normalized,
             message.Speed, message.Distance, message.IsFake, ctx, null, null, message.AiId);
@@ -358,7 +439,7 @@ public class WeaponHandle
         EmitGunshotSound(controller, gun, message.MuzzlePosition, ctx.team);
 
         var evt = message.ToEvent(true, ctx, (int)ctx.team);
-        CoopTool.SendRpc(in evt, sender);
+        BroadcastProjectileEvent(in evt, sender);
     }
 
     public void Host_OnMainCharacterShoot(ItemAgent_Gun gun)
@@ -396,7 +477,7 @@ public class WeaponHandle
             Payload = payload
         };
 
-        CoopTool.SendRpc(in evt);
+        BroadcastProjectileEvent(in evt);
     }
 
     public void Server_BroadcastProjectileSpawn(ItemAgent_Gun gun, ProjectileContext ctx, Vector3 muzzle, Vector3 dir, int aiId,
@@ -420,7 +501,7 @@ public class WeaponHandle
             Payload = ctx
         };
 
-        CoopTool.SendRpc(in evt);
+        BroadcastProjectileEvent(in evt);
     }
 
     public void Server_HandleMeleeSwingRequest(NetPeer sender, in MeleeSwingRequestRpc message)

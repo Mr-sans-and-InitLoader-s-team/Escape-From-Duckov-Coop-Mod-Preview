@@ -1,0 +1,1136 @@
+﻿{
+    "translations": [
+        {
+            "key": "ui.window.title",
+            "value": "Панель управления кооперативным модом"
+        },
+        {
+            "key": "ui.window.playerStatus",
+            "value": "Статус игроков"
+        },
+        {
+            "key": "ui.mode.current",
+            "value": "Текущий режим"
+        },
+        {
+            "key": "ui.mode.server",
+            "value": "Сервер"
+        },
+        {
+            "key": "ui.mode.client",
+            "value": "Клиент"
+        },
+        {
+            "key": "ui.mode.switchTo",
+            "value": "Переключиться в режим {0}"
+        },
+
+        {
+            "key": "ui.hostList.title",
+            "value": "Список хостов LAN"
+        },
+        {
+            "key": "ui.hostList.empty",
+            "value": "(Ожидание широковещания, хосты не найдены)"
+        },
+        {
+            "key": "ui.hostList.connect",
+            "value": "Подключиться"
+        },
+
+        {
+            "key": "ui.manualConnect.title",
+            "value": "Ручное подключение по IP и порту:"
+        },
+        {
+            "key": "ui.manualConnect.ip",
+            "value": "IP:"
+        },
+        {
+            "key": "ui.manualConnect.port",
+            "value": "Порт:"
+        },
+        {
+            "key": "ui.manualConnect.button",
+            "value": "Подключиться вручную"
+        },
+        {
+            "key": "ui.manualConnect.portError",
+            "value": "Неверный формат порта"
+        },
+
+        {
+            "key": "ui.status.label",
+            "value": "Статус:"
+        },
+        {
+            "key": "ui.status.notConnected",
+            "value": "Не подключено"
+        },
+        {
+            "key": "ui.status.connecting",
+            "value": "Подключение..."
+        },
+        {
+            "key": "ui.status.connected",
+            "value": "Подключено"
+        },
+        {
+            "key": "ui.status.online",
+            "value": "В сети"
+        },
+
+        {
+            "key": "ui.server.listenPort",
+            "value": "Порт прослушивания сервера:"
+        },
+        {
+            "key": "ui.server.connections",
+            "value": "Текущие подключения:"
+        },
+
+        {
+            "key": "ui.playerStatus.toggle",
+            "value": "Показать окно статуса игроков (клавиша переключения: {0})"
+        },
+        {
+            "key": "ui.playerStatus.id",
+            "value": "ID:"
+        },
+        {
+            "key": "ui.playerStatus.name",
+            "value": "Имя:"
+        },
+        {
+            "key": "ui.playerStatus.latency",
+            "value": "Задержка:"
+        },
+        {
+            "key": "ui.playerStatus.inGame",
+            "value": "В игре:"
+        },
+        {
+            "key": "ui.playerStatus.yes",
+            "value": "Да"
+        },
+        {
+            "key": "ui.playerStatus.no",
+            "value": "Нет"
+        },
+        {
+            "key": "ui.playerStatus.local",
+            "value": "Локальный"
+        },
+        {
+            "key": "ui.playerStatus.inGameStatus",
+            "value": "В игре"
+        },
+        {
+            "key": "ui.playerStatus.idle",
+            "value": "Ожидание"
+        },
+
+        {
+            "key": "ui.debug.printLootBoxes",
+            "value": "[Отладка] Вывести все контейнеры с лутом на этой карте"
+        },
+        {
+            "key": "ui.debug.lootBoxCount",
+            "value": "Выведено контейнеров с лутом: {0}"
+        },
+
+        {
+            "key": "ui.vote.mapVote",
+            "value": "Голосование за карту / Готовность  [{0}]"
+        },
+        {
+            "key": "ui.vote.pressKey",
+            "value": "Нажмите {0}, чтобы переключить готовность (сейчас: {1})"
+        },
+        {
+            "key": "ui.vote.ready",
+            "value": "Готов"
+        },
+        {
+            "key": "ui.vote.notReady",
+            "value": "Не готов"
+        },
+        {
+            "key": "ui.vote.playerReadyStatus",
+            "value": "Статус готовности игроков:"
+        },
+        {
+            "key": "ui.vote.readyIcon",
+            "value": "Готов"
+        },
+        {
+            "key": "ui.vote.notReadyIcon",
+            "value": "Не готов"
+        },
+        {
+            "key": "ui.vote.cancel",
+            "value": "Отменить голосование"
+        },
+        {
+            "key": "ui.vote.title",
+            "value": "Голосование за карту"
+        },
+
+        {
+            "key": "ui.spectator.mode",
+            "value": "Режим наблюдателя: ЛКМ ▶ Следующий | ПКМ ◀ Предыдущий | Нажмите F8, чтобы завершить и увидеть результаты (защита)"
+        },
+
+        {
+            "key": "scene.waitingForHost",
+            "value": "[Coop] Ожидание завершения загрузки хоста… (автовход через 100 с при задержке)"
+        },
+        {
+            "key": "scene.hostReady",
+            "value": "Хост готов, вход..."
+        },
+
+        {
+            "key": "net.connectionSuccess",
+            "value": "Подключено успешно: {0}"
+        },
+        {
+            "key": "net.connectedTo",
+            "value": "Подключено к {0}"
+        },
+        {
+            "key": "net.disconnected",
+            "value": "Отключено: {0}, причина: {1}"
+        },
+        {
+            "key": "net.connectionLost",
+            "value": "Соединение потеряно"
+        },
+        {
+            "key": "net.networkError",
+            "value": "Сетевая ошибка: {0} от {1}"
+        },
+        {
+            "key": "net.hostDiscovered",
+            "value": "Обнаружен хост: {0}"
+        },
+        {
+            "key": "net.serverStarted",
+            "value": "Сервер запущен, прослушивание порта {0}"
+        },
+        {
+            "key": "net.serverStartFailed",
+            "value": "Не удалось запустить сервер, проверьте, не занят ли порт"
+        },
+        {
+            "key": "net.clientStarted",
+            "value": "Клиент запущен"
+        },
+        {
+            "key": "net.clientStartFailed",
+            "value": "Не удалось запустить клиента"
+        },
+        {
+            "key": "net.networkStarted",
+            "value": "Сеть запущена"
+        },
+        {
+            "key": "net.networkStopped",
+            "value": "Сеть остановлена"
+        },
+        {
+            "key": "net.ipEmpty",
+            "value": "IP пустой"
+        },
+        {
+            "key": "net.invalidPort",
+            "value": "Неверный порт"
+        },
+        {
+            "key": "net.serverModeCannotConnect",
+            "value": "В режиме сервера нельзя подключаться к другим хостам"
+        },
+        {
+            "key": "net.alreadyConnecting",
+            "value": "Подключение уже выполняется."
+        },
+        {
+            "key": "net.clientNetworkStartFailed",
+            "value": "Не удалось запустить сеть клиента: {0}"
+        },
+        {
+            "key": "net.clientNetworkStartFailedStatus",
+            "value": "Не удалось запустить сеть клиента"
+        },
+        {
+            "key": "net.clientNotStarted",
+            "value": "Клиент не запущен"
+        },
+        {
+            "key": "net.connectingTo",
+            "value": "Подключение к: {0}:{1}"
+        },
+        {
+            "key": "net.connectionFailedLog",
+            "value": "Не удалось подключиться к хосту: {0}"
+        },
+        {
+            "key": "net.connectionFailed",
+            "value": "Не удалось подключиться"
+        },
+        {
+            "key": "net.clientVersionMismatch",
+            "value": "Несовпадение версии клиента (клиент: {0}, хост: {1}), соединение отклонено"
+        },
+        {
+            "key": "net.clientVersionUnknown",
+            "value": "Версия клиента неизвестна, соединение отклонено"
+        },
+
+        {
+            "key": "ui.error",
+            "value": "Ошибка"
+        },
+        {
+            "key": "ui.server.management",
+            "value": "Управление сервером"
+        },
+        {
+            "key": "ui.server.info",
+            "value": "Информация о сервере"
+        },
+        {
+            "key": "ui.server.port",
+            "value": "Порт"
+        },
+        {
+            "key": "ui.server.create",
+            "value": "Создать хост"
+        },
+        {
+            "key": "ui.server.close",
+            "value": "Закрыть хост"
+        },
+        {
+            "key": "ui.server.closed",
+            "value": "Хост закрыт"
+        },
+        {
+            "key": "ui.server.created",
+            "value": "Хост успешно создан, прослушивание порта {0}"
+        },
+        {
+            "key": "ui.server.hint.waiting",
+            "value": "Режим сервера: ожидание подключения игроков"
+        },
+        {
+            "key": "ui.server.hint.willUsePort",
+            "value": "Прямое подключение: будет использован порт {0} для создания сервера"
+        },
+        {
+            "key": "ui.client.hint.browse",
+            "value": "Режим клиента: просмотр и подключение к серверам"
+        },
+        {
+            "key": "ui.error.serverNotInGame",
+            "value": "Сервер не в игровом уровне, отключено"
+        },
+        {
+            "key": "ui.error.gameNotInitialized",
+            "value": "Игра не инициализирована"
+        },
+        {
+            "key": "ui.error.mustInLevel",
+            "value": "Нужно войти в уровень перед подключением"
+        },
+
+        {
+            "key": "ui.hostList.lanServer",
+            "value": "LAN-сервер — {0}"
+        },
+        {
+            "key": "ui.hostList.serverDetails",
+            "value": "Порт: {0}  |  Игроки: 0/4  |  Пинг: <50 мс"
+        },
+
+        {
+            "key": "ui.steam.lobbyList",
+            "value": "Список лобби Steam"
+        },
+        {
+            "key": "ui.steam.client.connected",
+            "value": "Steam-клиент: подключён к лобби"
+        },
+        {
+            "key": "ui.steam.hint.createOrJoin",
+            "value": "Режим Steam P2P: создать или присоединиться к лобби"
+        },
+        {
+            "key": "ui.steam.joinPassword",
+            "value": "Пароль лобби"
+        },
+        {
+            "key": "ui.steam.joinPasswordPlaceholder",
+            "value": "Если лобби требует пароль"
+        },
+        {
+            "key": "ui.steam.lobbyNamePlaceholder",
+            "value": "Моё лобби"
+        },
+        {
+            "key": "ui.steam.lobbyPasswordPlaceholder",
+            "value": "Оставьте пустым для публичного"
+        },
+        {
+            "key": "ui.steam.visibility",
+            "value": "Видимость"
+        },
+        {
+            "key": "ui.steam.maxPlayers.label",
+            "value": "Макс. игроков"
+        },
+        {
+            "key": "ui.steam.lobby.left",
+            "value": "Вы покинули лобби"
+        },
+        {
+            "key": "ui.steam.lobby.creating",
+            "value": "Создание лобби Steam..."
+        },
+        {
+            "key": "ui.steam.playerCount",
+            "value": "Игроки: {0}/{1}"
+        },
+        {
+            "key": "ui.steam.notInitialized",
+            "value": "Steam не инициализирован"
+        },
+        {
+            "key": "ui.steam.refresh",
+            "value": "Обновить список"
+        },
+        {
+            "key": "ui.steam.lobbiesEmpty",
+            "value": "Лобби не найдены, нажмите «Обновить»"
+        },
+        {
+            "key": "ui.steam.lobbiesEmptyFiltered",
+            "value": "Нет лобби, подходящих под поиск"
+        },
+        {
+            "key": "ui.steam.searchPlaceholder",
+            "value": "Поиск по названию лобби или хоста"
+        },
+        {
+            "key": "ui.steam.joinButton",
+            "value": "Войти в лобби"
+        },
+        {
+            "key": "ui.steam.createHost",
+            "value": "Создать лобби"
+        },
+        {
+            "key": "ui.steam.leaveLobby",
+            "value": "Покинуть лобби"
+        },
+        {
+            "key": "ui.steam.lobbySettings",
+            "value": "Настройки лобби Steam"
+        },
+        {
+            "key": "ui.steam.lobbyName",
+            "value": "Название лобби"
+        },
+        {
+            "key": "ui.steam.lobbyPassword",
+            "value": "Пароль"
+        },
+        {
+            "key": "ui.steam.visibility.public",
+            "value": "Публичное"
+        },
+        {
+            "key": "ui.steam.visibility.friends",
+            "value": "Только друзья"
+        },
+        {
+            "key": "ui.steam.maxPlayers",
+            "value": "Макс. игроков: {0}"
+        },
+        {
+            "key": "ui.steam.currentLobby",
+            "value": "Текущее лобби: {0}  Игроки: {1}/{2}"
+        },
+        {
+            "key": "ui.steam.server.waiting",
+            "value": "Steam-хост: лобби создано"
+        },
+        {
+            "key": "ui.steam.tab.create",
+            "value": "Создать лобби"
+        },
+        {
+            "key": "ui.steam.tab.browse",
+            "value": "Просмотр лобби"
+        },
+        {
+            "key": "ui.steam.error.notInitialized",
+            "value": "Steam не инициализирован"
+        },
+        {
+            "key": "ui.steam.error.metadata",
+            "value": "Информация о лобби недоступна"
+        },
+        {
+            "key": "ui.steam.error.password",
+            "value": "Неверный пароль"
+        },
+        {
+            "key": "ui.steam.error.generic",
+            "value": "Не удалось присоединиться к лобби"
+        },
+
+        {
+            "key": "ui.transport.label",
+            "value": "Режим транспорта"
+        },
+        {
+            "key": "ui.transport.mode.direct",
+            "value": "Прямое подключение"
+        },
+        {
+            "key": "ui.transport.mode.steam",
+            "value": "Steam P2P"
+        },
+        {
+            "key": "ui.manualConnect.hint",
+            "value": "Подсказка: нужно быть в уровне для подключения"
+        },
+
+        {
+            "key": "ui.actions.quickActions",
+            "value": "Быстрые действия"
+        },
+        {
+            "key": "ui.actions.settings",
+            "value": "Настройки кооператива"
+        },
+        {
+            "key": "ui.actions.lootSettings",
+            "value": "Настройки лута"
+        },
+
+        {
+            "key": "ui.difficulty.title",
+            "value": "Сложность"
+        },
+        {
+            "key": "ui.difficulty.hint",
+            "value": "Хост может повышать или снижать осведомлённость ИИ и силу в бою."
+        },
+        {
+            "key": "ui.difficulty.current",
+            "value": "Текущая: {0}"
+        },
+        {
+            "key": "ui.difficulty.easy",
+            "value": "Лёгкая"
+        },
+        {
+            "key": "ui.difficulty.normal",
+            "value": "Нормальная"
+        },
+        {
+            "key": "ui.difficulty.hard",
+            "value": "Сложная"
+        },
+        {
+            "key": "ui.difficulty.veryHard",
+            "value": "Экстремальная"
+        },
+        {
+            "key": "ui.difficulty.impossible",
+            "value": "Невозможная"
+        },
+        {
+            "key": "ui.difficulty.custom",
+            "value": "Пользовательская"
+        },
+
+        {
+            "key": "ui.difficulty.section.title",
+            "value": "Сложность ИИ"
+        },
+        {
+            "key": "ui.difficulty.section.subtitle",
+            "value": "Выберите пресет или настройте своё."
+        },
+        {
+            "key": "ui.difficulty.section.hint",
+            "value": "Пресеты доступны только для чтения. Выберите «Пользовательская», чтобы разблокировать ползунки."
+        },
+        {
+            "key": "ui.difficulty.value.on",
+            "value": "Вкл"
+        },
+        {
+            "key": "ui.difficulty.value.off",
+            "value": "Выкл"
+        },
+
+        {
+            "key": "ui.difficulty.patrolTurnSpeed",
+            "value": "Скорость поворота в патруле"
+        },
+        {
+            "key": "ui.difficulty.combatTurnSpeed",
+            "value": "Скорость поворота в бою"
+        },
+        {
+            "key": "ui.difficulty.baseReactionTime",
+            "value": "Базовое время реакции"
+        },
+        {
+            "key": "ui.difficulty.scatterRunning",
+            "value": "Разброс при беге цели"
+        },
+        {
+            "key": "ui.difficulty.scatterOffScreen",
+            "value": "Разброс вне экрана"
+        },
+        {
+            "key": "ui.difficulty.nightReaction",
+            "value": "Коэффициент ночной реакции"
+        },
+        {
+            "key": "ui.difficulty.hearing",
+            "value": "Способность слышать"
+        },
+        {
+            "key": "ui.difficulty.traceTarget",
+            "value": "Шанс сопровождения цели"
+        },
+        {
+            "key": "ui.difficulty.shootDelay",
+            "value": "Множитель задержки перед выстрелом"
+        },
+        {
+            "key": "ui.difficulty.shootTime",
+            "value": "Множитель длительности очереди"
+        },
+        {
+            "key": "ui.difficulty.shootInterval",
+            "value": "Множитель интервала выстрелов"
+        },
+        {
+            "key": "ui.difficulty.combatMoveTime",
+            "value": "Множитель времени перемещения в бою"
+        },
+        {
+            "key": "ui.difficulty.sightAngle",
+            "value": "Множитель угла обзора"
+        },
+        {
+            "key": "ui.difficulty.sightDistance",
+            "value": "Множитель дальности обзора"
+        },
+        {
+            "key": "ui.difficulty.canDash",
+            "value": "Разрешить рывок"
+        },
+        {
+            "key": "ui.difficulty.dashCooldown",
+            "value": "Множитель перезарядки рывка"
+        },
+        {
+            "key": "ui.difficulty.moveSpeed",
+            "value": "Множитель скорости движения"
+        },
+        {
+            "key": "ui.difficulty.bulletSpeed",
+            "value": "Множитель скорости пули"
+        },
+        {
+            "key": "ui.difficulty.gunDistance",
+            "value": "Множитель дальности оружия"
+        },
+        {
+            "key": "ui.difficulty.damage",
+            "value": "Множитель урона"
+        },
+        {
+            "key": "ui.difficulty.healthMultiplier",
+            "value": "Множитель здоровья ИИ (предел 2,5×; доп. игроки добавляют бонус по сложности)"
+        },
+
+        {
+            "key": "ui.difficulty.spawnBonus",
+            "value": "Бонус спавна врагов (аддитивный)"
+        },
+        {
+            "key": "ui.difficulty.spawnBonus.desc",
+            "value": "Добавляет к базовому множителю спавна врагов (например, +1 удваивает спавн)."
+        },
+        {
+            "key": "ui.difficulty.forceBoss",
+            "value": "Принудительный спавн босса"
+        },
+        {
+            "key": "ui.difficulty.forceBoss.desc",
+            "value": "Включайте только на «Невозможной» или пользовательской сложности."
+        },
+
+        {
+            "key": "ui.hint.toggleUI",
+            "value": "{0} Показать/Скрыть"
+        },
+
+        {
+            "key": "ui.settings.title",
+            "value": "Настройки кооператива"
+        },
+        {
+            "key": "ui.settings.toggleHint",
+            "value": "{0} Показать/Скрыть"
+        },
+        {
+            "key": "ui.settings.applyChanges",
+            "value": "Применить изменения"
+        },
+        {
+            "key": "ui.settings.saveGlobal",
+            "value": "Сохранить глобальные настройки"
+        },
+        {
+            "key": "ui.settings.reset",
+            "value": "Сброс"
+        },
+        {
+            "key": "ui.settings.nav.network",
+            "value": "Сеть"
+        },
+        {
+            "key": "ui.settings.nav.aiSync",
+            "value": "Синхронизация ИИ"
+        },
+        {
+            "key": "ui.settings.nav.aiDifficulty",
+            "value": "Сложность ИИ"
+        },
+        {
+            "key": "ui.settings.nav.loot",
+            "value": "Лут"
+        },
+
+        {
+            "key": "ui.settings.section.network.title",
+            "value": "Сеть"
+        },
+        {
+            "key": "ui.settings.section.network.subtitle",
+            "value": "Транспорт и частота маяков (только хост)"
+        },
+        {
+            "key": "ui.settings.transportMode",
+            "value": "Транспорт"
+        },
+        {
+            "key": "ui.settings.transport.direct",
+            "value": "Прямой"
+        },
+        {
+            "key": "ui.settings.transport.steam",
+            "value": "Steam P2P"
+        },
+        {
+            "key": "ui.settings.port",
+            "value": "Порт"
+        },
+        {
+            "key": "ui.settings.broadcastInterval",
+            "value": "Интервал маяка (секунды)"
+        },
+        {
+            "key": "ui.settings.syncInterval",
+            "value": "Интервал тика синхронизации (секунды)"
+        },
+        {
+            "key": "ui.settings.projectileSyncMaxDistance",
+            "value": "Макс. дистанция синхронизации снарядов (метры)"
+        },
+        {
+            "key": "ui.settings.teleporterSpawnTogether",
+            "value": "Спавнить всех вместе на телепорте"
+        },
+
+        {
+            "key": "ui.settings.broadcastInterval.desc",
+            "value": "Как часто хост рекламирует лобби в LAN (секунды). Меньше = чаще маяки."
+        },
+        {
+            "key": "ui.settings.syncInterval.desc",
+            "value": "Интервал между тиками синхронизации хоста для подключённых клиентов (секунды)."
+        },
+        {
+            "key": "ui.settings.projectileSyncMaxDistance.desc",
+            "value": "Не создавать удалённые снаряды, если точка выстрела дальше этого значения. Макс 500 м; 0 — отключить."
+        },
+        {
+            "key": "ui.settings.teleporterSpawnTogether.desc",
+            "value": "Только хост: при запуске голосования телепорта принудительно спавнить клиентов на позиции хоста при входе на карту."
+        },
+
+        {
+            "key": "ui.aiSettings.title",
+            "value": "Синхронизация ИИ в кооперативе"
+        },
+        {
+            "key": "ui.aiSettings.toggleHint",
+            "value": "{0} Показать/Скрыть"
+        },
+
+        {
+            "key": "ui.aiSettings.section.distance.title",
+            "value": "Дистанция синхронизации"
+        },
+        {
+            "key": "ui.aiSettings.section.distance.subtitle",
+            "value": "Управляет тем, когда ИИ просыпается или засыпает"
+        },
+        {
+            "key": "ui.aiSettings.activationRadius",
+            "value": "Радиус активации (метры)"
+        },
+        {
+            "key": "ui.aiSettings.deactivationRadius",
+            "value": "Радиус сна (метры)"
+        },
+
+        {
+            "key": "ui.aiSettings.section.pacing.title",
+            "value": "Ритм синхронизации"
+        },
+        {
+            "key": "ui.aiSettings.section.pacing.subtitle",
+            "value": "Частота широковещания и сэмплирования"
+        },
+        {
+            "key": "ui.aiSettings.activationRetryInterval",
+            "value": "Интервал повторной активации (секунды)"
+        },
+        {
+            "key": "ui.aiSettings.stateBroadcastInterval",
+            "value": "Интервал рассылки состояния (секунды)"
+        },
+        {
+            "key": "ui.aiSettings.idleStateRecordInterval",
+            "value": "Интервал сэмплов в простое (секунды)"
+        },
+        {
+            "key": "ui.aiSettings.healthBroadcastInterval",
+            "value": "Интервал рассылки здоровья (секунды)"
+        },
+
+        {
+            "key": "ui.aiSettings.section.precision.title",
+            "value": "Интерполяция и точность"
+        },
+        {
+            "key": "ui.aiSettings.section.precision.subtitle",
+            "value": "Пороги и сглаживание скорости"
+        },
+        {
+            "key": "ui.aiSettings.minPositionDelta",
+            "value": "Мин. дельта позиции (метры)"
+        },
+        {
+            "key": "ui.aiSettings.minRotationDelta",
+            "value": "Мин. дельта поворота (градусы)"
+        },
+        {
+            "key": "ui.aiSettings.velocityLerp",
+            "value": "Lerp скорости (коэффициент)"
+        },
+
+        {
+            "key": "ui.aiSettings.section.snapshot.title",
+            "value": "Снапшоты и очереди"
+        },
+        {
+            "key": "ui.aiSettings.section.snapshot.subtitle",
+            "value": "Обновление кэша у хоста, лимиты очередей и восстановление после потерь"
+        },
+        {
+            "key": "ui.aiSettings.snapshotRefreshInterval",
+            "value": "Интервал обновления снапшотов (секунды)"
+        },
+        {
+            "key": "ui.aiSettings.snapshotRequestTimeout",
+            "value": "Таймаут запроса снапшота (секунды)"
+        },
+        {
+            "key": "ui.aiSettings.snapshotRecoveryCooldown",
+            "value": "КД восстановления снапшота (секунды)"
+        },
+        {
+            "key": "ui.aiSettings.snapshotChunkSize",
+            "value": "Размер чанка снапшота (записей)"
+        },
+        {
+            "key": "ui.aiSettings.maxStoredBuffs",
+            "value": "Макс. сохранённых баффов (записей)"
+        },
+        {
+            "key": "ui.aiSettings.maxSnapshotAppliesPerFrame",
+            "value": "Макс. применений снапшотов/кадр (кол-во)"
+        },
+        {
+            "key": "ui.aiSettings.maxClientEntryChecksPerFrame",
+            "value": "Макс. проверок записей/кадр (кол-во)"
+        },
+        {
+            "key": "ui.aiSettings.maxStateUpdatesPerFrame",
+            "value": "Макс. обновлений состояния/кадр (кол-во)"
+        },
+        {
+            "key": "ui.aiSettings.maxPendingSnapshotQueue",
+            "value": "Лимит очереди снапшотов (кол-во)"
+        },
+        {
+            "key": "ui.aiSettings.maxPendingStateQueue",
+            "value": "Лимит очереди состояния (кол-во)"
+        },
+        {
+            "key": "ui.aiSettings.snapshotDropResyncThreshold",
+            "value": "Порог потерь снапшотов для ресинка (кол-во)"
+        },
+        {
+            "key": "ui.aiSettings.stateDropResyncThreshold",
+            "value": "Порог потерь состояния для ресинка (кол-во)"
+        },
+
+        {
+            "key": "ui.aiSettings.section.hostOnly.title",
+            "value": "Только хост"
+        },
+        {
+            "key": "ui.aiSettings.section.hostOnly.subtitle",
+            "value": "Изменения применяются только у хоста"
+        },
+        {
+            "key": "ui.aiSettings.serverControllerRescanInterval",
+            "value": "Интервал пересканирования контроллеров (секунды)"
+        },
+        {
+            "key": "ui.aiSettings.serverSnapshotBroadcastInterval",
+            "value": "Интервал рассылки снапшотов (секунды)"
+        },
+        {
+            "key": "ui.aiSettings.serverSnapshotRetryInterval",
+            "value": "Интервал повторной рассылки снапшотов (секунды)"
+        },
+
+        {
+            "key": "ui.aiSettings.activationRadius.desc",
+            "value": "Дистанция, на которой удалённый ИИ активируется и начинает синхронизацию (метры)."
+        },
+        {
+            "key": "ui.aiSettings.deactivationRadius.desc",
+            "value": "Дистанция, на которой удалённый ИИ уходит в сон и перестаёт синхронизироваться (метры)."
+        },
+        {
+            "key": "ui.aiSettings.activationRetryInterval.desc",
+            "value": "Задержка между попытками активировать удалённый ИИ, который ранее не удалось активировать (секунды)."
+        },
+        {
+            "key": "ui.aiSettings.stateBroadcastInterval.desc",
+            "value": "Базовый интервал рассылки снапшотов состояния ИИ (секунды)."
+        },
+        {
+            "key": "ui.aiSettings.idleStateRecordInterval.desc",
+            "value": "Как часто записываются позиции ИИ в простое для сглаживания (секунды)."
+        },
+        {
+            "key": "ui.aiSettings.healthBroadcastInterval.desc",
+            "value": "Интервал отправки изменений здоровья ИИ (секунды)."
+        },
+        {
+            "key": "ui.aiSettings.minPositionDelta.desc",
+            "value": "Минимальное изменение движения перед отправкой обновления позиции (метры)."
+        },
+        {
+            "key": "ui.aiSettings.minRotationDelta.desc",
+            "value": "Минимальное изменение поворота перед отправкой обновления вращения (градусы)."
+        },
+        {
+            "key": "ui.aiSettings.velocityLerp.desc",
+            "value": "Коэффициент lerp при согласовании скорости ИИ (множитель)."
+        },
+        {
+            "key": "ui.aiSettings.snapshotRefreshInterval.desc",
+            "value": "Частота обновления кэша снапшотов ИИ у хоста (секунды)."
+        },
+        {
+            "key": "ui.aiSettings.snapshotRequestTimeout.desc",
+            "value": "Таймаут перед повторной отправкой запроса снапшота (секунды)."
+        },
+        {
+            "key": "ui.aiSettings.snapshotRecoveryCooldown.desc",
+            "value": "КД перед повторной попыткой восстановления снапшота после потери (секунды)."
+        },
+        {
+            "key": "ui.aiSettings.snapshotChunkSize.desc",
+            "value": "Количество записей в чанке снапшота при пересборке состояния (кол-во)."
+        },
+        {
+            "key": "ui.aiSettings.maxStoredBuffs.desc",
+            "value": "Максимум записей баффов на ИИ перед очисткой (записей)."
+        },
+        {
+            "key": "ui.aiSettings.maxSnapshotAppliesPerFrame.desc",
+            "value": "Лимит операций применения снапшотов за кадр (кол-во)."
+        },
+        {
+            "key": "ui.aiSettings.maxClientEntryChecksPerFrame.desc",
+            "value": "Лимит проверок активации/сна записей ИИ за кадр."
+        },
+        {
+            "key": "ui.aiSettings.maxStateUpdatesPerFrame.desc",
+            "value": "Лимит пакетов обновления состояния за кадр (кол-во)."
+        },
+        {
+            "key": "ui.aiSettings.maxPendingSnapshotQueue.desc",
+            "value": "Максимум пакетов снапшотов в очереди перед сбросом самых старых (кол-во)."
+        },
+        {
+            "key": "ui.aiSettings.maxPendingStateQueue.desc",
+            "value": "Максимум пакетов состояния в очереди перед сбросом самых старых (кол-во)."
+        },
+        {
+            "key": "ui.aiSettings.snapshotDropResyncThreshold.desc",
+            "value": "Количество потерянных снапшотов, при котором запрашивается ресинхронизация (кол-во)."
+        },
+        {
+            "key": "ui.aiSettings.stateDropResyncThreshold.desc",
+            "value": "Количество потерянных обновлений состояния, при котором запрашивается ресинхронизация (кол-во)."
+        },
+        {
+            "key": "ui.aiSettings.serverControllerRescanInterval.desc",
+            "value": "Интервал хоста для пересканирования и переназначения осиротевших контроллеров ИИ (секунды)."
+        },
+        {
+            "key": "ui.aiSettings.serverSnapshotBroadcastInterval.desc",
+            "value": "Интервал хоста для рассылки авторитетных снапшотов (секунды)."
+        },
+        {
+            "key": "ui.aiSettings.serverSnapshotRetryInterval.desc",
+            "value": "Задержка между повторными попытками хоста, если рассылка снапшота не удалась (секунды)."
+        },
+
+        {
+            "key": "ui.aiSettings.badge.hostOnly",
+            "value": "Только хост"
+        },
+        {
+            "key": "ui.aiSettings.badge.hostOnlyShort",
+            "value": "Хост"
+        },
+
+        {
+            "key": "ui.settings.search.placeholder",
+            "value": "Поиск настроек..."
+        },
+
+        {
+            "key": "ui.lootSettings.title",
+            "value": "Тюнинг лута (только хост)"
+        },
+        {
+            "key": "ui.lootSettings.hostOnly",
+            "value": "Только хост может менять эти значения"
+        },
+        {
+            "key": "ui.lootSettings.spawnChanceMultiplier",
+            "value": "Множитель шанса спавна"
+        },
+        {
+            "key": "ui.lootSettings.itemCountMultiplier",
+            "value": "Множитель количества предметов"
+        },
+        {
+            "key": "ui.lootSettings.globalWeight",
+            "value": "Множитель общего веса"
+        },
+        {
+            "key": "ui.lootSettings.qualityBias",
+            "value": "Смещение веса качества"
+        },
+        {
+            "key": "ui.lootSettings.apply",
+            "value": "Применить (только хост)"
+        },
+
+        {
+            "key": "ui.chat.title",
+            "value": "Чат"
+        },
+        {
+            "key": "ui.chat.inputPlaceholder",
+            "value": "Введите сообщение..."
+        },
+        {
+            "key": "ui.chat.send",
+            "value": "Отправить"
+        },
+        {
+            "key": "ui.chat.unknown",
+            "value": "Неизвестно"
+        },
+        {
+            "key": "ui.playerlist.kick",
+            "value": "Выгнать"
+        },
+
+        {
+            "key": "ui.waiting.initializing",
+            "value": "Инициализация..."
+        },
+        {
+            "key": "ui.waiting.syncComplete",
+            "value": "Синхронизация завершена!"
+        },
+        {
+            "key": "ui.waiting.map",
+            "value": "Карта: {0}"
+        },
+        {
+            "key": "ui.waiting.time",
+            "value": "Время: День {0} {1:D2}:{2:D2}"
+        },
+        {
+            "key": "ui.waiting.timeUnknown",
+            "value": "Время: --:--"
+        },
+        {
+            "key": "ui.waiting.weather",
+            "value": "Погода: {0}"
+        },
+        {
+            "key": "ui.waiting.weatherUnknown",
+            "value": "Погода: Неизвестно"
+        },
+        {
+            "key": "ui.waiting.loadingPlayers",
+            "value": "Загрузка списка игроков..."
+        },
+
+        {
+            "key": "ui.settings.friendlyFirePlayers",
+            "value": "Огонь по своим (игроки)"
+        },
+        {
+            "key": "ui.settings.friendlyFirePlayers.desc",
+            "value": "Только хост. При включении новые и существующие прокси игроков переводятся в нейтральную команду, чтобы был возможен огонь по своим; при выключении все возвращаются в команду Игрока."
+        }
+    ]
+}

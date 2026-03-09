@@ -1,0 +1,1136 @@
+﻿{
+    "translations": [
+        {
+            "key": "ui.window.title",
+            "value": "Co-op-Mod-Kontrollpanel"
+        },
+        {
+            "key": "ui.window.playerStatus",
+            "value": "Spielerstatus"
+        },
+        {
+            "key": "ui.mode.current",
+            "value": "Aktueller Modus"
+        },
+        {
+            "key": "ui.mode.server",
+            "value": "Server"
+        },
+        {
+            "key": "ui.mode.client",
+            "value": "Client"
+        },
+        {
+            "key": "ui.mode.switchTo",
+            "value": "In den Modus {0} wechseln"
+        },
+
+        {
+            "key": "ui.hostList.title",
+            "value": "LAN-Hostliste"
+        },
+        {
+            "key": "ui.hostList.empty",
+            "value": "(Warte auf Broadcast, keine Hosts gefunden)"
+        },
+        {
+            "key": "ui.hostList.connect",
+            "value": "Verbinden"
+        },
+
+        {
+            "key": "ui.manualConnect.title",
+            "value": "Manuelle Verbindung über IP und Port:"
+        },
+        {
+            "key": "ui.manualConnect.ip",
+            "value": "IP:"
+        },
+        {
+            "key": "ui.manualConnect.port",
+            "value": "Port:"
+        },
+        {
+            "key": "ui.manualConnect.button",
+            "value": "Manuell verbinden"
+        },
+        {
+            "key": "ui.manualConnect.portError",
+            "value": "Ungültiges Port-Format"
+        },
+        {
+            "key": "ui.manualConnect.hint",
+            "value": "Hinweis: Zum Verbinden musst du in einem Level sein"
+        },
+
+        {
+            "key": "ui.status.label",
+            "value": "Status:"
+        },
+        {
+            "key": "ui.status.notConnected",
+            "value": "Nicht verbunden"
+        },
+        {
+            "key": "ui.status.connecting",
+            "value": "Verbinde..."
+        },
+        {
+            "key": "ui.status.connected",
+            "value": "Verbunden"
+        },
+        {
+            "key": "ui.status.online",
+            "value": "Online"
+        },
+
+        {
+            "key": "ui.server.listenPort",
+            "value": "Server-Listening-Port:"
+        },
+        {
+            "key": "ui.server.connections",
+            "value": "Aktuelle Verbindungen:"
+        },
+
+        {
+            "key": "ui.playerStatus.toggle",
+            "value": "Spielerstatusfenster anzeigen (Umschalttaste: {0})"
+        },
+        {
+            "key": "ui.playerStatus.id",
+            "value": "ID:"
+        },
+        {
+            "key": "ui.playerStatus.name",
+            "value": "Name:"
+        },
+        {
+            "key": "ui.playerStatus.latency",
+            "value": "Latenz:"
+        },
+        {
+            "key": "ui.playerStatus.inGame",
+            "value": "Im Spiel:"
+        },
+        {
+            "key": "ui.playerStatus.yes",
+            "value": "Ja"
+        },
+        {
+            "key": "ui.playerStatus.no",
+            "value": "Nein"
+        },
+        {
+            "key": "ui.playerStatus.local",
+            "value": "Lokal"
+        },
+        {
+            "key": "ui.playerStatus.inGameStatus",
+            "value": "Im Spiel"
+        },
+        {
+            "key": "ui.playerStatus.idle",
+            "value": "Leerlauf"
+        },
+
+        {
+            "key": "ui.debug.printLootBoxes",
+            "value": "[Debug] Alle Lootboxen auf dieser Karte ausgeben"
+        },
+        {
+            "key": "ui.debug.lootBoxCount",
+            "value": "{0} Lootboxen ausgegeben"
+        },
+
+        {
+            "key": "ui.vote.mapVote",
+            "value": "Kartenabstimmung / Bereit  [{0}]"
+        },
+        {
+            "key": "ui.vote.pressKey",
+            "value": "Drücke {0}, um „bereit“ umzuschalten (Aktuell: {1})"
+        },
+        {
+            "key": "ui.vote.ready",
+            "value": "Bereit"
+        },
+        {
+            "key": "ui.vote.notReady",
+            "value": "Nicht bereit"
+        },
+        {
+            "key": "ui.vote.playerReadyStatus",
+            "value": "Bereit-Status der Spieler:"
+        },
+        {
+            "key": "ui.vote.readyIcon",
+            "value": "Bereit"
+        },
+        {
+            "key": "ui.vote.notReadyIcon",
+            "value": "Nicht bereit"
+        },
+        {
+            "key": "ui.vote.cancel",
+            "value": "Abstimmung abbrechen"
+        },
+        {
+            "key": "ui.vote.title",
+            "value": "Kartenabstimmung"
+        },
+
+        {
+            "key": "ui.spectator.mode",
+            "value": "Zuschauermodus: LMB ▶ Nächster | RMB ◀ Vorheriger | F8 drücken, um zu beenden und Ergebnisse anzusehen (Failsafe)"
+        },
+
+        {
+            "key": "scene.waitingForHost",
+            "value": "[Coop] Warte, bis der Host mit dem Laden fertig ist… (Auto-Enter nach 100 s bei Verzögerung)"
+        },
+        {
+            "key": "scene.hostReady",
+            "value": "Host bereit, betrete..."
+        },
+
+        {
+            "key": "net.connectionSuccess",
+            "value": "Erfolgreich verbunden: {0}"
+        },
+        {
+            "key": "net.connectedTo",
+            "value": "Verbunden mit {0}"
+        },
+        {
+            "key": "net.disconnected",
+            "value": "Getrennt: {0}, Grund: {1}"
+        },
+        {
+            "key": "net.connectionLost",
+            "value": "Verbindung verloren"
+        },
+        {
+            "key": "net.networkError",
+            "value": "Netzwerkfehler: {0} von {1}"
+        },
+        {
+            "key": "net.hostDiscovered",
+            "value": "Host gefunden: {0}"
+        },
+        {
+            "key": "net.serverStarted",
+            "value": "Server gestartet, lauscht auf Port {0}"
+        },
+        {
+            "key": "net.serverStartFailed",
+            "value": "Serverstart fehlgeschlagen, prüfe, ob der Port bereits belegt ist"
+        },
+        {
+            "key": "net.clientStarted",
+            "value": "Client gestartet"
+        },
+        {
+            "key": "net.clientStartFailed",
+            "value": "Clientstart fehlgeschlagen"
+        },
+        {
+            "key": "net.networkStarted",
+            "value": "Netzwerk gestartet"
+        },
+        {
+            "key": "net.networkStopped",
+            "value": "Netzwerk gestoppt"
+        },
+        {
+            "key": "net.ipEmpty",
+            "value": "IP ist leer"
+        },
+        {
+            "key": "net.invalidPort",
+            "value": "Ungültiger Port"
+        },
+        {
+            "key": "net.serverModeCannotConnect",
+            "value": "Im Servermodus kann nicht zu anderen Hosts verbunden werden"
+        },
+        {
+            "key": "net.alreadyConnecting",
+            "value": "Verbindung läuft bereits."
+        },
+        {
+            "key": "net.clientNetworkStartFailed",
+            "value": "Client-Netzwerk konnte nicht gestartet werden: {0}"
+        },
+        {
+            "key": "net.clientNetworkStartFailedStatus",
+            "value": "Client-Netzwerkstart fehlgeschlagen"
+        },
+        {
+            "key": "net.clientNotStarted",
+            "value": "Client nicht gestartet"
+        },
+        {
+            "key": "net.connectingTo",
+            "value": "Verbinde zu: {0}:{1}"
+        },
+        {
+            "key": "net.connectionFailedLog",
+            "value": "Verbindung zum Host fehlgeschlagen: {0}"
+        },
+        {
+            "key": "net.connectionFailed",
+            "value": "Verbindung fehlgeschlagen"
+        },
+        {
+            "key": "net.clientVersionMismatch",
+            "value": "Client-Version stimmt nicht überein (Client: {0}, Host: {1}), Verbindung abgewiesen"
+        },
+        {
+            "key": "net.clientVersionUnknown",
+            "value": "Client-Version unbekannt, Verbindung abgewiesen"
+        },
+
+        {
+            "key": "ui.error",
+            "value": "Fehler"
+        },
+        {
+            "key": "ui.server.management",
+            "value": "Serververwaltung"
+        },
+        {
+            "key": "ui.server.info",
+            "value": "Serverinformationen"
+        },
+        {
+            "key": "ui.server.port",
+            "value": "Port"
+        },
+        {
+            "key": "ui.server.create",
+            "value": "Host erstellen"
+        },
+        {
+            "key": "ui.server.close",
+            "value": "Host schließen"
+        },
+        {
+            "key": "ui.server.closed",
+            "value": "Host geschlossen"
+        },
+        {
+            "key": "ui.server.created",
+            "value": "Host erfolgreich erstellt, lauscht auf Port {0}"
+        },
+        {
+            "key": "ui.server.hint.waiting",
+            "value": "Servermodus: Warte auf Spieler, die sich verbinden"
+        },
+        {
+            "key": "ui.server.hint.willUsePort",
+            "value": "Direktverbindung: Port {0} wird zum Erstellen des Servers verwendet"
+        },
+        {
+            "key": "ui.client.hint.browse",
+            "value": "Clientmodus: Server durchsuchen und verbinden"
+        },
+        {
+            "key": "ui.error.serverNotInGame",
+            "value": "Server ist nicht im Spiellevel, getrennt"
+        },
+        {
+            "key": "ui.error.gameNotInitialized",
+            "value": "Spiel nicht initialisiert"
+        },
+        {
+            "key": "ui.error.mustInLevel",
+            "value": "Vor dem Verbinden muss ein Level betreten werden"
+        },
+
+        {
+            "key": "ui.hostList.lanServer",
+            "value": "LAN-Server — {0}"
+        },
+        {
+            "key": "ui.hostList.serverDetails",
+            "value": "Port: {0}  |  Spieler: 0/4  |  Ping: <50 ms"
+        },
+
+        {
+            "key": "ui.steam.lobbyList",
+            "value": "Steam-Lobbyliste"
+        },
+        {
+            "key": "ui.steam.client.connected",
+            "value": "Steam-Client: Mit Lobby verbunden"
+        },
+        {
+            "key": "ui.steam.hint.createOrJoin",
+            "value": "Steam-P2P-Modus: Lobby erstellen oder beitreten"
+        },
+        {
+            "key": "ui.steam.joinPassword",
+            "value": "Lobby-Passwort"
+        },
+        {
+            "key": "ui.steam.joinPasswordPlaceholder",
+            "value": "Falls die Lobby ein Passwort erfordert"
+        },
+        {
+            "key": "ui.steam.lobbyNamePlaceholder",
+            "value": "Meine Lobby"
+        },
+        {
+            "key": "ui.steam.lobbyPasswordPlaceholder",
+            "value": "Leer lassen für öffentlich"
+        },
+        {
+            "key": "ui.steam.visibility",
+            "value": "Sichtbarkeit"
+        },
+        {
+            "key": "ui.steam.maxPlayers.label",
+            "value": "Max. Spieler"
+        },
+        {
+            "key": "ui.steam.lobby.left",
+            "value": "Lobby verlassen"
+        },
+        {
+            "key": "ui.steam.lobby.creating",
+            "value": "Steam-Lobby wird erstellt..."
+        },
+        {
+            "key": "ui.steam.playerCount",
+            "value": "Spieler: {0}/{1}"
+        },
+        {
+            "key": "ui.steam.notInitialized",
+            "value": "Steam nicht initialisiert"
+        },
+        {
+            "key": "ui.steam.refresh",
+            "value": "Liste aktualisieren"
+        },
+        {
+            "key": "ui.steam.lobbiesEmpty",
+            "value": "Keine Lobbys gefunden, klicke „Aktualisieren“"
+        },
+        {
+            "key": "ui.steam.lobbiesEmptyFiltered",
+            "value": "Keine Lobbys passen zu deiner Suche"
+        },
+        {
+            "key": "ui.steam.searchPlaceholder",
+            "value": "Suche nach Lobby- oder Hostname"
+        },
+        {
+            "key": "ui.steam.joinButton",
+            "value": "Lobby beitreten"
+        },
+        {
+            "key": "ui.steam.createHost",
+            "value": "Lobby erstellen"
+        },
+        {
+            "key": "ui.steam.leaveLobby",
+            "value": "Lobby verlassen"
+        },
+        {
+            "key": "ui.steam.lobbySettings",
+            "value": "Steam-Lobby-Einstellungen"
+        },
+        {
+            "key": "ui.steam.lobbyName",
+            "value": "Lobbyname"
+        },
+        {
+            "key": "ui.steam.lobbyPassword",
+            "value": "Passwort"
+        },
+        {
+            "key": "ui.steam.visibility.public",
+            "value": "Öffentlich"
+        },
+        {
+            "key": "ui.steam.visibility.friends",
+            "value": "Nur Freunde"
+        },
+        {
+            "key": "ui.steam.maxPlayers",
+            "value": "Max. Spieler: {0}"
+        },
+        {
+            "key": "ui.steam.currentLobby",
+            "value": "Aktuelle Lobby: {0}  Spieler: {1}/{2}"
+        },
+        {
+            "key": "ui.steam.server.waiting",
+            "value": "Steam-Host: Lobby erstellt"
+        },
+        {
+            "key": "ui.steam.tab.create",
+            "value": "Lobby erstellen"
+        },
+        {
+            "key": "ui.steam.tab.browse",
+            "value": "Lobbys durchsuchen"
+        },
+        {
+            "key": "ui.steam.error.notInitialized",
+            "value": "Steam nicht initialisiert"
+        },
+        {
+            "key": "ui.steam.error.metadata",
+            "value": "Lobbyinformationen nicht verfügbar"
+        },
+        {
+            "key": "ui.steam.error.password",
+            "value": "Falsches Passwort"
+        },
+        {
+            "key": "ui.steam.error.generic",
+            "value": "Beitritt zur Lobby fehlgeschlagen"
+        },
+
+        {
+            "key": "ui.transport.label",
+            "value": "Transportmodus"
+        },
+        {
+            "key": "ui.transport.mode.direct",
+            "value": "Direktverbindung"
+        },
+        {
+            "key": "ui.transport.mode.steam",
+            "value": "Steam P2P"
+        },
+
+        {
+            "key": "ui.actions.quickActions",
+            "value": "Schnellaktionen"
+        },
+        {
+            "key": "ui.actions.settings",
+            "value": "Co-op-Einstellungen"
+        },
+        {
+            "key": "ui.actions.lootSettings",
+            "value": "Loot-Einstellungen"
+        },
+
+        {
+            "key": "ui.difficulty.title",
+            "value": "Schwierigkeit"
+        },
+        {
+            "key": "ui.difficulty.hint",
+            "value": "Der Host kann die KI-Wahrnehmung und Kampfstärke erhöhen oder senken."
+        },
+        {
+            "key": "ui.difficulty.current",
+            "value": "Aktuell: {0}"
+        },
+        {
+            "key": "ui.difficulty.easy",
+            "value": "Leicht"
+        },
+        {
+            "key": "ui.difficulty.normal",
+            "value": "Normal"
+        },
+        {
+            "key": "ui.difficulty.hard",
+            "value": "Schwer"
+        },
+        {
+            "key": "ui.difficulty.veryHard",
+            "value": "Sehr schwer"
+        },
+        {
+            "key": "ui.difficulty.impossible",
+            "value": "Unmöglich"
+        },
+        {
+            "key": "ui.difficulty.custom",
+            "value": "Benutzerdefiniert"
+        },
+
+        {
+            "key": "ui.difficulty.section.title",
+            "value": "KI-Schwierigkeit"
+        },
+        {
+            "key": "ui.difficulty.section.subtitle",
+            "value": "Wähle ein Preset oder passe es selbst an."
+        },
+        {
+            "key": "ui.difficulty.section.hint",
+            "value": "Presets sind schreibgeschützt. Wähle „Benutzerdefiniert“, um die Regler freizuschalten."
+        },
+        {
+            "key": "ui.difficulty.value.on",
+            "value": "An"
+        },
+        {
+            "key": "ui.difficulty.value.off",
+            "value": "Aus"
+        },
+
+        {
+            "key": "ui.difficulty.patrolTurnSpeed",
+            "value": "Drehgeschwindigkeit (Patrouille)"
+        },
+        {
+            "key": "ui.difficulty.combatTurnSpeed",
+            "value": "Drehgeschwindigkeit (Kampf)"
+        },
+        {
+            "key": "ui.difficulty.baseReactionTime",
+            "value": "Basis-Reaktionszeit"
+        },
+        {
+            "key": "ui.difficulty.scatterRunning",
+            "value": "Streuung bei laufendem Ziel"
+        },
+        {
+            "key": "ui.difficulty.scatterOffScreen",
+            "value": "Streuung außerhalb des Bildschirms"
+        },
+        {
+            "key": "ui.difficulty.nightReaction",
+            "value": "Nacht-Reaktionsfaktor"
+        },
+        {
+            "key": "ui.difficulty.hearing",
+            "value": "Hörfähigkeit"
+        },
+        {
+            "key": "ui.difficulty.traceTarget",
+            "value": "Chance, Ziel zu verfolgen"
+        },
+        {
+            "key": "ui.difficulty.shootDelay",
+            "value": "Multiplikator für Schussverzögerung"
+        },
+        {
+            "key": "ui.difficulty.shootTime",
+            "value": "Multiplikator für Burst-Dauer"
+        },
+        {
+            "key": "ui.difficulty.shootInterval",
+            "value": "Multiplikator für Schussintervall"
+        },
+        {
+            "key": "ui.difficulty.combatMoveTime",
+            "value": "Multiplikator für Kampfbewegungszeit"
+        },
+        {
+            "key": "ui.difficulty.sightAngle",
+            "value": "Multiplikator für Sichtwinkel"
+        },
+        {
+            "key": "ui.difficulty.sightDistance",
+            "value": "Multiplikator für Sichtdistanz"
+        },
+        {
+            "key": "ui.difficulty.canDash",
+            "value": "Dash erlauben"
+        },
+        {
+            "key": "ui.difficulty.dashCooldown",
+            "value": "Multiplikator für Dash-Cooldown"
+        },
+        {
+            "key": "ui.difficulty.moveSpeed",
+            "value": "Multiplikator für Bewegungsgeschwindigkeit"
+        },
+        {
+            "key": "ui.difficulty.bulletSpeed",
+            "value": "Multiplikator für Projektilgeschwindigkeit"
+        },
+        {
+            "key": "ui.difficulty.gunDistance",
+            "value": "Multiplikator für Waffenreichweite"
+        },
+        {
+            "key": "ui.difficulty.damage",
+            "value": "Schadensmultiplikator"
+        },
+        {
+            "key": "ui.difficulty.healthMultiplier",
+            "value": "KI-Lebensmultiplikator (max. 2,5×; zusätzliche Spieler geben einen Schwierigkeitsbonus)"
+        },
+
+        {
+            "key": "ui.difficulty.spawnBonus",
+            "value": "Gegner-Spawn-Bonus (additiv)"
+        },
+        {
+            "key": "ui.difficulty.spawnBonus.desc",
+            "value": "Addiert zum Basis-Gegner-Spawn-Multiplikator (z. B. verdoppelt +1 die Spawns)."
+        },
+        {
+            "key": "ui.difficulty.forceBoss",
+            "value": "Boss-Spawn erzwingen"
+        },
+        {
+            "key": "ui.difficulty.forceBoss.desc",
+            "value": "Nur bei „Unmöglich“ oder benutzerdefinierten Schwierigkeiten aktivieren."
+        },
+
+        {
+            "key": "ui.hint.toggleUI",
+            "value": "{0} Ein-/Ausblenden"
+        },
+
+        {
+            "key": "ui.settings.title",
+            "value": "Co-op-Einstellungen"
+        },
+        {
+            "key": "ui.settings.toggleHint",
+            "value": "{0} Ein-/Ausblenden"
+        },
+        {
+            "key": "ui.settings.applyChanges",
+            "value": "Änderungen anwenden"
+        },
+        {
+            "key": "ui.settings.saveGlobal",
+            "value": "Globale Einstellungen speichern"
+        },
+        {
+            "key": "ui.settings.reset",
+            "value": "Zurücksetzen"
+        },
+        {
+            "key": "ui.settings.nav.network",
+            "value": "Netzwerk"
+        },
+        {
+            "key": "ui.settings.nav.aiSync",
+            "value": "KI-Sync"
+        },
+        {
+            "key": "ui.settings.nav.aiDifficulty",
+            "value": "KI-Schwierigkeit"
+        },
+        {
+            "key": "ui.settings.nav.loot",
+            "value": "Loot"
+        },
+
+        {
+            "key": "ui.settings.section.network.title",
+            "value": "Netzwerk"
+        },
+        {
+            "key": "ui.settings.section.network.subtitle",
+            "value": "Transport und Broadcast-Takt (nur Host)"
+        },
+        {
+            "key": "ui.settings.transportMode",
+            "value": "Transport"
+        },
+        {
+            "key": "ui.settings.transport.direct",
+            "value": "Direkt"
+        },
+        {
+            "key": "ui.settings.transport.steam",
+            "value": "Steam P2P"
+        },
+        {
+            "key": "ui.settings.port",
+            "value": "Port"
+        },
+        {
+            "key": "ui.settings.broadcastInterval",
+            "value": "Beacon-Intervall (Sekunden)"
+        },
+        {
+            "key": "ui.settings.syncInterval",
+            "value": "Sync-Tick-Intervall (Sekunden)"
+        },
+        {
+            "key": "ui.settings.projectileSyncMaxDistance",
+            "value": "Max. Projektil-Sync-Distanz (Meter)"
+        },
+        {
+            "key": "ui.settings.teleporterSpawnTogether",
+            "value": "Gemeinsam am Teleporter spawnen"
+        },
+
+        {
+            "key": "ui.settings.broadcastInterval.desc",
+            "value": "Wie oft der Host die Lobby im LAN bewirbt (Sekunden). Niedriger = häufigere Beacons."
+        },
+        {
+            "key": "ui.settings.syncInterval.desc",
+            "value": "Intervall zwischen Host-Sync-Ticks für verbundene Clients (Sekunden)."
+        },
+        {
+            "key": "ui.settings.projectileSyncMaxDistance.desc",
+            "value": "Remote-Projektile nicht spawnen, wenn der Abschusspunkt weiter entfernt ist. Max. 500 m; 0 zum Deaktivieren."
+        },
+        {
+            "key": "ui.settings.teleporterSpawnTogether.desc",
+            "value": "Nur Host: Beim Start einer Teleport-Abstimmung Clients beim Kartenbeitritt an der Host-Position spawnen lassen."
+        },
+
+        {
+            "key": "ui.aiSettings.title",
+            "value": "Co-op-KI-Sync"
+        },
+        {
+            "key": "ui.aiSettings.toggleHint",
+            "value": "{0} Ein-/Ausblenden"
+        },
+
+        {
+            "key": "ui.aiSettings.section.distance.title",
+            "value": "Sync-Distanz"
+        },
+        {
+            "key": "ui.aiSettings.section.distance.subtitle",
+            "value": "Steuert, wann KI aufwacht oder schläft"
+        },
+        {
+            "key": "ui.aiSettings.activationRadius",
+            "value": "Aktivierungsradius (Meter)"
+        },
+        {
+            "key": "ui.aiSettings.deactivationRadius",
+            "value": "Schlafradius (Meter)"
+        },
+
+        {
+            "key": "ui.aiSettings.section.pacing.title",
+            "value": "Sync-Rhythmus"
+        },
+        {
+            "key": "ui.aiSettings.section.pacing.subtitle",
+            "value": "Broadcast- und Sampling-Takt"
+        },
+        {
+            "key": "ui.aiSettings.activationRetryInterval",
+            "value": "Aktivierungs-Retry-Intervall (Sekunden)"
+        },
+        {
+            "key": "ui.aiSettings.stateBroadcastInterval",
+            "value": "State-Broadcast-Intervall (Sekunden)"
+        },
+        {
+            "key": "ui.aiSettings.idleStateRecordInterval",
+            "value": "Idle-Sampling-Intervall (Sekunden)"
+        },
+        {
+            "key": "ui.aiSettings.healthBroadcastInterval",
+            "value": "Health-Broadcast-Intervall (Sekunden)"
+        },
+
+        {
+            "key": "ui.aiSettings.section.precision.title",
+            "value": "Interpolation & Präzision"
+        },
+        {
+            "key": "ui.aiSettings.section.precision.subtitle",
+            "value": "Schwellenwerte und Geschwindigkeitsglättung"
+        },
+        {
+            "key": "ui.aiSettings.minPositionDelta",
+            "value": "Min. Positionsdelta (Meter)"
+        },
+        {
+            "key": "ui.aiSettings.minRotationDelta",
+            "value": "Min. Rotationsdelta (Grad)"
+        },
+        {
+            "key": "ui.aiSettings.velocityLerp",
+            "value": "Velocity-Lerp (Faktor)"
+        },
+
+        {
+            "key": "ui.aiSettings.section.snapshot.title",
+            "value": "Snapshots & Queues"
+        },
+        {
+            "key": "ui.aiSettings.section.snapshot.subtitle",
+            "value": "Host-Cache-Refresh, Queue-Limits und Drop-Recovery"
+        },
+        {
+            "key": "ui.aiSettings.snapshotRefreshInterval",
+            "value": "Snapshot-Refresh-Intervall (Sekunden)"
+        },
+        {
+            "key": "ui.aiSettings.snapshotRequestTimeout",
+            "value": "Snapshot-Request-Timeout (Sekunden)"
+        },
+        {
+            "key": "ui.aiSettings.snapshotRecoveryCooldown",
+            "value": "Snapshot-Recovery-Cooldown (Sekunden)"
+        },
+        {
+            "key": "ui.aiSettings.snapshotChunkSize",
+            "value": "Snapshot-Chunk-Größe (Einträge)"
+        },
+        {
+            "key": "ui.aiSettings.maxStoredBuffs",
+            "value": "Max. gespeicherte Buffs (Einträge)"
+        },
+        {
+            "key": "ui.aiSettings.maxSnapshotAppliesPerFrame",
+            "value": "Max. Snapshot-Applies/Frame (Anzahl)"
+        },
+        {
+            "key": "ui.aiSettings.maxClientEntryChecksPerFrame",
+            "value": "Max. Entry-Checks/Frame (Anzahl)"
+        },
+        {
+            "key": "ui.aiSettings.maxStateUpdatesPerFrame",
+            "value": "Max. State-Updates/Frame (Anzahl)"
+        },
+        {
+            "key": "ui.aiSettings.maxPendingSnapshotQueue",
+            "value": "Snapshot-Queue-Limit (Anzahl)"
+        },
+        {
+            "key": "ui.aiSettings.maxPendingStateQueue",
+            "value": "State-Queue-Limit (Anzahl)"
+        },
+        {
+            "key": "ui.aiSettings.snapshotDropResyncThreshold",
+            "value": "Snapshot-Drop-Resync-Schwelle (Anzahl)"
+        },
+        {
+            "key": "ui.aiSettings.stateDropResyncThreshold",
+            "value": "State-Drop-Resync-Schwelle (Anzahl)"
+        },
+
+        {
+            "key": "ui.aiSettings.section.hostOnly.title",
+            "value": "Nur Host"
+        },
+        {
+            "key": "ui.aiSettings.section.hostOnly.subtitle",
+            "value": "Änderungen wirken nur beim Host"
+        },
+        {
+            "key": "ui.aiSettings.serverControllerRescanInterval",
+            "value": "Controller-Rescan-Intervall (Sekunden)"
+        },
+        {
+            "key": "ui.aiSettings.serverSnapshotBroadcastInterval",
+            "value": "Snapshot-Broadcast-Intervall (Sekunden)"
+        },
+        {
+            "key": "ui.aiSettings.serverSnapshotRetryInterval",
+            "value": "Snapshot-Retry-Intervall (Sekunden)"
+        },
+
+        {
+            "key": "ui.aiSettings.activationRadius.desc",
+            "value": "Distanz, ab der Remote-KI aktiv wird und synchronisiert (Meter)."
+        },
+        {
+            "key": "ui.aiSettings.deactivationRadius.desc",
+            "value": "Distanz, ab der Remote-KI einschläft und nicht mehr synchronisiert (Meter)."
+        },
+        {
+            "key": "ui.aiSettings.activationRetryInterval.desc",
+            "value": "Verzögerung zwischen Aktivierungsversuchen für Remote-KI, wenn eine Aktivierung zuvor fehlgeschlagen ist (Sekunden)."
+        },
+        {
+            "key": "ui.aiSettings.stateBroadcastInterval.desc",
+            "value": "Basisintervall für das Senden von KI-State-Snapshots (Sekunden)."
+        },
+        {
+            "key": "ui.aiSettings.idleStateRecordInterval.desc",
+            "value": "Wie oft Idle-KI-Positionen für Glättung aufgezeichnet werden (Sekunden)."
+        },
+        {
+            "key": "ui.aiSettings.healthBroadcastInterval.desc",
+            "value": "Intervall für das Senden von KI-Gesundheitsänderungen (Sekunden)."
+        },
+        {
+            "key": "ui.aiSettings.minPositionDelta.desc",
+            "value": "Minimale Bewegungsänderung vor dem Senden eines Positionsupdates (Meter)."
+        },
+        {
+            "key": "ui.aiSettings.minRotationDelta.desc",
+            "value": "Minimale Rotationsänderung vor dem Senden eines Rotationsupdates (Grad)."
+        },
+        {
+            "key": "ui.aiSettings.velocityLerp.desc",
+            "value": "Lerp-Faktor beim Abgleich der KI-Geschwindigkeit (Multiplikator)."
+        },
+        {
+            "key": "ui.aiSettings.snapshotRefreshInterval.desc",
+            "value": "Host-Aktualisierungstakt für den KI-Snapshot-Cache (Sekunden)."
+        },
+        {
+            "key": "ui.aiSettings.snapshotRequestTimeout.desc",
+            "value": "Timeout, bevor ein Snapshot-Request erneut gesendet wird (Sekunden)."
+        },
+        {
+            "key": "ui.aiSettings.snapshotRecoveryCooldown.desc",
+            "value": "Cooldown, bevor Snapshot-Recovery nach einem Drop erneut versucht wird (Sekunden)."
+        },
+        {
+            "key": "ui.aiSettings.snapshotChunkSize.desc",
+            "value": "Einträge pro Snapshot-Chunk beim Neuaufbau (Anzahl)."
+        },
+        {
+            "key": "ui.aiSettings.maxStoredBuffs.desc",
+            "value": "Maximale Buff-Einträge pro KI vor dem Ausdünnen (Einträge)."
+        },
+        {
+            "key": "ui.aiSettings.maxSnapshotAppliesPerFrame.desc",
+            "value": "Limit der Snapshot-Apply-Operationen pro Frame (Anzahl)."
+        },
+        {
+            "key": "ui.aiSettings.maxClientEntryChecksPerFrame.desc",
+            "value": "Limit der Entry-Checks (Aktiv/Sleep) pro Frame."
+        },
+        {
+            "key": "ui.aiSettings.maxStateUpdatesPerFrame.desc",
+            "value": "Limit der State-Update-Pakete pro Frame (Anzahl)."
+        },
+        {
+            "key": "ui.aiSettings.maxPendingSnapshotQueue.desc",
+            "value": "Maximale queued Snapshot-Pakete, bevor die ältesten verworfen werden (Anzahl)."
+        },
+        {
+            "key": "ui.aiSettings.maxPendingStateQueue.desc",
+            "value": "Maximale queued State-Pakete, bevor die ältesten verworfen werden (Anzahl)."
+        },
+        {
+            "key": "ui.aiSettings.snapshotDropResyncThreshold.desc",
+            "value": "Anzahl verworfener Snapshots, die einen Resync auslöst (Anzahl)."
+        },
+        {
+            "key": "ui.aiSettings.stateDropResyncThreshold.desc",
+            "value": "Anzahl verworfener State-Updates, die einen Resync auslöst (Anzahl)."
+        },
+        {
+            "key": "ui.aiSettings.serverControllerRescanInterval.desc",
+            "value": "Host-Intervall zum Rescan und Neu-Zuweisen verwaister KI-Controller (Sekunden)."
+        },
+        {
+            "key": "ui.aiSettings.serverSnapshotBroadcastInterval.desc",
+            "value": "Host-Intervall zum Senden autoritativer Snapshots (Sekunden)."
+        },
+        {
+            "key": "ui.aiSettings.serverSnapshotRetryInterval.desc",
+            "value": "Verzögerung zwischen Host-Retries, wenn ein Snapshot-Broadcast fehlschlägt (Sekunden)."
+        },
+
+        {
+            "key": "ui.aiSettings.badge.hostOnly",
+            "value": "Nur Host"
+        },
+        {
+            "key": "ui.aiSettings.badge.hostOnlyShort",
+            "value": "Host"
+        },
+
+        {
+            "key": "ui.settings.search.placeholder",
+            "value": "Einstellungen suchen..."
+        },
+
+        {
+            "key": "ui.lootSettings.title",
+            "value": "Loot-Tuning (nur Host)"
+        },
+        {
+            "key": "ui.lootSettings.hostOnly",
+            "value": "Nur der Host kann diese Werte ändern"
+        },
+        {
+            "key": "ui.lootSettings.spawnChanceMultiplier",
+            "value": "Spawn-Chance-Multiplikator"
+        },
+        {
+            "key": "ui.lootSettings.itemCountMultiplier",
+            "value": "Item-Anzahl-Multiplikator"
+        },
+        {
+            "key": "ui.lootSettings.globalWeight",
+            "value": "Globaler Gewichts-Multiplikator"
+        },
+        {
+            "key": "ui.lootSettings.qualityBias",
+            "value": "Qualitätsgewicht-Bias"
+        },
+        {
+            "key": "ui.lootSettings.apply",
+            "value": "Anwenden (nur Host)"
+        },
+
+        {
+            "key": "ui.chat.title",
+            "value": "Chat"
+        },
+        {
+            "key": "ui.chat.inputPlaceholder",
+            "value": "Nachricht eingeben..."
+        },
+        {
+            "key": "ui.chat.send",
+            "value": "Senden"
+        },
+        {
+            "key": "ui.chat.unknown",
+            "value": "Unbekannt"
+        },
+        {
+            "key": "ui.playerlist.kick",
+            "value": "Kicken"
+        },
+
+        {
+            "key": "ui.waiting.initializing",
+            "value": "Initialisiere..."
+        },
+        {
+            "key": "ui.waiting.syncComplete",
+            "value": "Sync abgeschlossen!"
+        },
+        {
+            "key": "ui.waiting.map",
+            "value": "Karte: {0}"
+        },
+        {
+            "key": "ui.waiting.time",
+            "value": "Zeit: Tag {0} {1:D2}:{2:D2}"
+        },
+        {
+            "key": "ui.waiting.timeUnknown",
+            "value": "Zeit: --:--"
+        },
+        {
+            "key": "ui.waiting.weather",
+            "value": "Wetter: {0}"
+        },
+        {
+            "key": "ui.waiting.weatherUnknown",
+            "value": "Wetter: Unbekannt"
+        },
+        {
+            "key": "ui.waiting.loadingPlayers",
+            "value": "Spielerliste wird geladen..."
+        },
+
+        {
+            "key": "ui.settings.friendlyFirePlayers",
+            "value": "Friendly Fire (Spieler)"
+        },
+        {
+            "key": "ui.settings.friendlyFirePlayers.desc",
+            "value": "Nur Host. Wenn aktiviert, werden neue und bestehende Spieler-Proxys auf das neutrale Team gesetzt, sodass Friendly Fire möglich ist; deaktivieren stellt alle wieder auf das Spieler-Team zurück."
+        }
+    ]
+}

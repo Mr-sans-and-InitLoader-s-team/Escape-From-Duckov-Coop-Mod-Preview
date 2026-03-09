@@ -325,7 +325,7 @@ namespace EscapeFromDuckovCoopMod
             var maxPlayers = Mathf.Clamp(options.MaxPlayers, 2, 16);
             SteamMatchmaking.SetLobbyMemberLimit(_currentLobbyId, maxPlayers);
             SteamMatchmaking.SetLobbyData(_currentLobbyId, LobbyModIdKey, LobbyModIdentifier);
-            SteamMatchmaking.SetLobbyData(_currentLobbyId, LobbyVersionKey, "1.0.0");
+            SteamMatchmaking.SetLobbyData(_currentLobbyId, LobbyVersionKey, BuildInfo.ModVersion);
             SteamMatchmaking.SetLobbyData(_currentLobbyId, LobbyNameKey, lobbyName);
 
             var hostName = SteamFriends.GetPersonaName();

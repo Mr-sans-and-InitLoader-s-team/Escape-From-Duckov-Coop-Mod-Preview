@@ -34,6 +34,8 @@ public class COOPManager
     public static HurtM HurtM;
     public static WeaponHandle WeaponHandle;
     public static Weather Weather;
+    public static ExitSyncService ExitSync;
+    public static FriendlyFireSync FriendlyFire;
     public static ClientHandle ClientHandle;
     public static PublicHandleUpdate PublicHandleUpdate;
     public static ItemNet ItemNet;
@@ -50,6 +52,8 @@ public class COOPManager
         Door = new Door();
         destructible = new Destructible();
         ExplosiveBarrels = new ExplosiveOilBarrel();
+        ExitSync = new ExitSyncService();
+        FriendlyFire = new FriendlyFireSync();
         GrenadeM = new GrenadeM();
         HurtM = new HurtM();
         WeaponHandle = new WeaponHandle();
@@ -85,7 +89,7 @@ public class COOPManager
         }
 
         var faceMaskSocket = characterModel.ArmorSocket;
-        var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
+        var itemAgent = EnsureEquipmentAgent(item, faceMaskSocket);
         if (itemAgent == null)
         {
             Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
@@ -121,7 +125,7 @@ public class COOPManager
         characterModel.CustomFace.hairSocket.gameObject.SetActive(false);
         characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(false);
         var faceMaskSocket = characterModel.HelmatSocket;
-        var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
+        var itemAgent = EnsureEquipmentAgent(item, faceMaskSocket);
         if (itemAgent == null)
         {
             Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
@@ -156,7 +160,7 @@ public class COOPManager
         characterModel.CustomFace.hairSocket.gameObject.SetActive(false);
         characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(false);
         var faceMaskSocket = characterModel.HelmatSocket;
-        var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
+        var itemAgent = EnsureEquipmentAgent(item, faceMaskSocket);
         if (itemAgent == null)
         {
             Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
@@ -187,7 +191,7 @@ public class COOPManager
         }
 
         var faceMaskSocket = characterModel.BackpackSocket;
-        var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
+        var itemAgent = EnsureEquipmentAgent(item, faceMaskSocket);
         if (itemAgent == null)
         {
             Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
@@ -219,7 +223,7 @@ public class COOPManager
         }
 
         var faceMaskSocket = characterModel.FaceMaskSocket;
-        var itemAgent = item.AgentUtilities.CreateAgent(CharacterEquipmentController.equipmentModelHash, ItemAgent.AgentTypes.equipment);
+        var itemAgent = EnsureEquipmentAgent(item, faceMaskSocket);
         if (itemAgent == null)
         {
             Debug.LogError("生成的装备Item没有装备agent，Item名称：" + item.gameObject.name);
@@ -293,6 +297,28 @@ public class COOPManager
     //	currentHoldItemAgent.transform.localRotation = global::UnityEngine.Quaternion.identity;
 
     //}
+
+    private static ItemAgent EnsureEquipmentAgent(Item item, Transform socket)
+    {
+        if (item == null) return null;
+
+        var itemAgent = item.ActiveAgent;
+        if (itemAgent != null) return itemAgent;
+
+        const int equipmentModelHash = 1900327206;
+        var prefab = item.AgentUtilities?.GetPrefab(equipmentModelHash);
+        if (prefab != null)
+        {
+            itemAgent = item.AgentUtilities.CreateAgent(prefab, ItemAgent.AgentTypes.equipment);
+        }
+        else if (item.ItemGraphic)
+        {
+            itemAgent = ItemGraphicInfo.CreateAGraphic(item, socket).gameObject.AddComponent<DuckovItemAgent>();
+            item.AgentUtilities?.BindNewAgent(itemAgent, ItemAgent.AgentTypes.equipment);
+        }
+
+        return itemAgent;
+    }
 
 
     public static async Task<Grenade> GetGrenadePrefabByItemIdAsync(int itemId)
@@ -379,8 +405,11 @@ public class COOPManager
         // 不管换上还是清空，先把该 socket 槽位里的旧可视对象清掉，避免残留
         ClearChildren(tSocket);
 
-        characterModel.characterMainControl.CharacterItem.TryPlug(item);
+      
+       // characterModel.characterMainControl.CharacterItem.TryPlug(item);
         characterModel.characterMainControl.ChangeHoldItem(item);
+
+
         //if (item == null) return;
 
         //ItemAgent itemAgent = null;
@@ -410,6 +439,7 @@ public class COOPManager
         //if (duck != null)
         //    duck.handheldSocket = handheldSocket;
 
+  
         //// 设为 socket 的子物体并归零局部变换
         //var tr = itemAgent.transform;
         //tr.SetParent(tSocket, true);

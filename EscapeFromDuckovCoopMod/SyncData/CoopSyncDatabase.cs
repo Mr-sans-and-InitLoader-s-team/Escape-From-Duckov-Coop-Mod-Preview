@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -16,6 +16,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using Duckov.Utilities;
 using ItemStatsSystem;
@@ -67,6 +68,24 @@ public sealed class AISyncRegistry
         if (id == 0)
             id = controller.GetInstanceID();
 
+        // If another controller already claimed this stable id (e.g., two nearly identical AI spawned together),
+        // salt the id with the unique instance id so both replicas keep distinct sync keys instead of masking
+        // each other on the client.
+        if (_entries.TryGetValue(id, out var existing) && existing?.Controller != null && existing.Controller != controller)
+        {
+            unchecked
+            {
+                var salted = (id * 486187739) ^ controller.GetInstanceID();
+                if (salted == 0)
+                    salted = controller.GetInstanceID();
+
+                while (_entries.TryGetValue(salted, out var collision) && collision?.Controller != controller)
+                    salted++;
+
+                id = salted;
+            }
+        }
+
         var entry = GetOrCreate(id);
         entry.Controller = controller;
         entry.Buffs.Clear();
@@ -87,7 +106,11 @@ public sealed class AISyncRegistry
         entry.PositionKey = ComputePositionKey(entry.SpawnPosition, entry.SceneBuildIndex, entry.ScenePath);
         entry.Status = AIStatus.Active;
         if (cmc && cmc.characterPreset)
-            entry.CharacterPresetKey = cmc.characterPreset.nameKey;
+            entry.CharacterPresetKey = string.IsNullOrEmpty(cmc.characterPreset.nameKey)
+                ? cmc.characterPreset.name
+                : cmc.characterPreset.nameKey;
+
+ 
 
         _byController[controller] = entry;
         if (entry.PositionKey != 0)
@@ -136,6 +159,30 @@ public sealed class AISyncRegistry
                 entry.Controller = null;
 
             _byController.Remove(controller);
+        }
+    }
+
+    public void RemoveEntry(int id)
+    {
+        if (id == 0)
+            return;
+
+        if (!_entries.TryGetValue(id, out var entry) || entry == null)
+        {
+            _entries.Remove(id);
+            return;
+        }
+
+        _entries.Remove(id);
+
+        if (entry.Controller)
+            _byController.Remove(entry.Controller);
+
+        if (entry.PositionKey != 0 &&
+            _byPositionKey.TryGetValue(entry.PositionKey, out var positionEntry) &&
+            ReferenceEquals(positionEntry, entry))
+        {
+            _byPositionKey.Remove(entry.PositionKey);
         }
     }
 
@@ -209,354 +256,267 @@ public sealed class AISyncRegistry
     }
 }
 
-public enum AIStatus : byte
-{
-    Dormant = 0,
-    Spawning = 1,
-    Active = 2,
-    Despawned = 3,
-    Dead = 4
-}
-
-public struct AIBuffState
-{
-    public int WeaponTypeId;
-    public int BuffId;
-}
-
-public sealed class AISyncEntry
-{
-    public int Id { get; set; }
-    public int SpawnerGuid { get; set; }
-    public int PositionKey { get; set; }
-    public Vector3 SpawnPosition { get; set; }
-    public Quaternion SpawnRotation { get; set; } = Quaternion.identity;
-    public string ModelName { get; set; }
-    public string CustomFaceJson { get; set; }
-    public string CharacterPresetKey { get; set; }
-    public string HideIfFoundEnemyName { get; set; }
-    public bool Activated { get; set; } = true;
-    public string ScenePath { get; set; }
-    public int SceneBuildIndex { get; set; }
-    public Teams Team { get; set; } = Teams.scav;
-    public AIStatus Status { get; set; }
-    public float MaxHealth { get; set; }
-    public float CurrentHealth { get; set; }
-    public float BodyArmor { get; set; }
-    public float HeadArmor { get; set; }
-    public Vector3 LastKnownPosition { get; set; }
-    public Quaternion LastKnownRotation { get; set; } = Quaternion.identity;
-    public Vector3 LastKnownVelocity { get; set; }
-    public double LastKnownRemoteTime { get; set; }
-    public float LastStateSentTime { get; set; }
-    public float LastStateReceivedTime { get; set; }
-    public AICharacterController Controller { get; set; }
-    public readonly Dictionary<string, int> Equipment = new(StringComparer.Ordinal);
-    public readonly Dictionary<string, int> Weapons = new(StringComparer.Ordinal);
-    public readonly List<AIBuffState> Buffs = new();
-    public AnimSample LastAnimSample;
-
-    // 记录服务端是否已执行过一次死亡流程（OnDead → 掉落广播），避免重复触发或遗漏
-    public bool ServerDeathHandled { get; set; }
-}
-
 public sealed class LootSyncRegistry
 {
-    private readonly Dictionary<int, LootSyncEntry> _byKey = new();
+    private sealed class InventoryRefEq : IEqualityComparer<Inventory>
+    {
+        public bool Equals(Inventory x, Inventory y) => ReferenceEquals(x, y);
+        public int GetHashCode(Inventory obj) => obj ? obj.GetHashCode() : 0;
+    }
+
+    private readonly List<LootSyncEntry> _entries = new();
+    private readonly Dictionary<Inventory, LootSyncEntry> _byInventory = new(new InventoryRefEq());
+    private readonly Dictionary<int, LootSyncEntry> _byPositionKey = new();
     private readonly Dictionary<int, LootSyncEntry> _byInstanceId = new();
     private readonly Dictionary<int, LootSyncEntry> _byLootUid = new();
-    private readonly Dictionary<Inventory, LootSyncEntry> _byInventory =
-        new(ReferenceEqualityComparer<Inventory>.Instance);
+    private readonly Dictionary<LootBoxLoader, LootSyncEntry> _byLoader = new();
 
-    public IEnumerable<LootSyncEntry> Entries => _byInventory.Values;
-
-    private static LootBoxLoader ResolveLoader(InteractableLootbox lootbox)
-    {
-        try
-        {
-            return lootbox ? lootbox.GetComponent<LootBoxLoader>() : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private LootSyncEntry GetOrCreateByKey(int positionKey)
-    {
-        if (!_byKey.TryGetValue(positionKey, out var entry) || entry == null)
-        {
-            entry = new LootSyncEntry();
-            _byKey[positionKey] = entry;
-        }
-
-        return entry;
-    }
+    public IEnumerable<LootSyncEntry> Entries => _entries;
 
     public bool ContainsInventory(Inventory inventory)
     {
-        return inventory != null && _byInventory.ContainsKey(inventory);
+        return inventory && _byInventory.ContainsKey(inventory);
     }
 
     public bool TryGetByInventory(Inventory inventory, out LootSyncEntry entry)
     {
         entry = null;
-        return inventory != null && _byInventory.TryGetValue(inventory, out entry) && entry != null;
+        if (inventory == null) return false;
+
+        if (_byInventory.TryGetValue(inventory, out entry) && entry != null && entry.Inventory)
+            return true;
+
+        entry = null;
+        return false;
     }
 
     public bool TryGetByPositionKey(int key, out LootSyncEntry entry)
     {
-        return _byKey.TryGetValue(key, out entry) && entry != null;
+        entry = null;
+        if (key == 0) return false;
+
+        if (_byPositionKey.TryGetValue(key, out entry) && entry != null && entry.Inventory)
+            return true;
+
+        entry = null;
+        return false;
     }
 
     public bool TryGetByInstanceId(int instanceId, out LootSyncEntry entry)
     {
-        return _byInstanceId.TryGetValue(instanceId, out entry) && entry != null;
+        entry = null;
+        if (instanceId == 0) return false;
+
+        if (_byInstanceId.TryGetValue(instanceId, out entry) && entry != null && entry.Inventory)
+            return true;
+
+        entry = null;
+        return false;
     }
 
     public void Register(InteractableLootbox lootbox, Inventory inventory, int lootUid = -1)
     {
-        if (!lootbox || inventory == null) return;
+        if (!inventory) return;
+        if (LootboxDetectUtil.IsPrivateInventory(inventory)) return;
 
-        var positionKey = LootManager.ComputeLootKeyFromPos(lootbox.transform.position);
-        var instanceId = lootbox.GetInstanceID();
-        var sceneIndex = lootbox.gameObject.scene.buildIndex;
-        var worldPosition = lootbox.transform.position;
-        var loader = ResolveLoader(lootbox);
-        var isWorld = loader != null;
+        var instanceId = lootbox ? lootbox.GetInstanceID() : 0;
+        var posKey = 0;
+        var sceneIndex = 0;
+        var worldPos = Vector3.zero;
 
-        var tracker = lootbox.GetComponent<LootSyncTracker>();
-        if (!tracker)
+        if (lootbox)
         {
-            tracker = lootbox.gameObject.AddComponent<LootSyncTracker>();
+            var p = lootbox.transform.position * 10f;
+            posKey = new Vector3Int(
+                Mathf.RoundToInt(p.x),
+                Mathf.RoundToInt(p.y),
+                Mathf.RoundToInt(p.z)).GetHashCode();
+            sceneIndex = lootbox.gameObject.scene.buildIndex;
+            worldPos = lootbox.transform.position;
         }
-        tracker.Lootbox = lootbox;
 
-        var entry = GetOrCreateByKey(positionKey);
-        _byInventory[inventory] = entry;
-
-        var oldKey = entry.PositionKey;
-        var oldInstance = entry.InstanceId;
-        var oldInventory = entry.Inventory;
+        var entry = _byInventory.TryGetValue(inventory, out var existing) ? existing : null;
+        if (entry == null)
+        {
+            entry = new LootSyncEntry();
+            _entries.Add(entry);
+        }
 
         entry.Inventory = inventory;
         entry.Lootbox = lootbox;
-        entry.PositionKey = positionKey;
+        entry.PositionKey = posKey;
         entry.InstanceId = instanceId;
         entry.SceneIndex = sceneIndex;
-        entry.WorldPosition = worldPosition;
-        entry.IsWorldLoot = isWorld;
-        if (loader)
-            entry.Loader = loader;
+        entry.WorldPosition = worldPos;
+        entry.IsWorldLoot = !LootboxDetectUtil.IsPrivateInventory(inventory);
 
-        if (oldInventory != null && !ReferenceEquals(oldInventory, inventory) &&
-            _byInventory.TryGetValue(oldInventory, out var prevInv) && ReferenceEquals(prevInv, entry))
-            _byInventory.Remove(oldInventory);
+        if (lootUid >= 0) entry.LootUid = lootUid;
 
-        if (lootUid >= 0)
+        if (lootbox)
         {
-            var oldUid = entry.LootUid;
-            if (oldUid >= 0 && oldUid != lootUid &&
-                _byLootUid.TryGetValue(oldUid, out var prevUid) && ReferenceEquals(prevUid, entry))
-                _byLootUid.Remove(oldUid);
-
-            entry.LootUid = lootUid;
-            _byLootUid[lootUid] = entry;
+            if (instanceId != 0) _byInstanceId[instanceId] = entry;
+            if (posKey != 0) _byPositionKey[posKey] = entry;
         }
 
-        if (oldKey != positionKey &&
-            _byKey.TryGetValue(oldKey, out var prev) && ReferenceEquals(prev, entry))
-            _byKey.Remove(oldKey);
+        _byInventory[inventory] = entry;
 
-        if (oldInstance != instanceId &&
-            _byInstanceId.TryGetValue(oldInstance, out var prevInst) && ReferenceEquals(prevInst, entry))
-            _byInstanceId.Remove(oldInstance);
+        if (lootUid >= 0) _byLootUid[lootUid] = entry;
 
-        _byKey[positionKey] = entry;
-        _byInstanceId[instanceId] = entry;
+        var loader = lootbox ? lootbox.GetComponent<LootBoxLoader>() : null;
+        if (loader) _byLoader[loader] = entry;
     }
 
     public void RegisterLoader(LootBoxLoader loader)
     {
         if (!loader) return;
-
         var lootbox = loader.GetComponent<InteractableLootbox>();
-        var positionKey = LootManager.ComputeLootKeyFromPos(loader.transform.position);
-        var entry = GetOrCreateByKey(positionKey);
-
-        var instanceId = lootbox ? lootbox.GetInstanceID() : loader.GetInstanceID();
-        var oldInstance = entry.InstanceId;
-
-        entry.PositionKey = positionKey;
-        entry.InstanceId = instanceId;
-        entry.SceneIndex = loader.gameObject.scene.buildIndex;
-        entry.WorldPosition = loader.transform.position;
-        entry.IsWorldLoot = true;
-        entry.Loader = loader;
-
-        if (lootbox)
-        {
-            entry.Lootbox = lootbox;
-
-            var tracker = lootbox.GetComponent<LootSyncTracker>();
-            if (!tracker)
-            {
-                tracker = lootbox.gameObject.AddComponent<LootSyncTracker>();
-            }
-            tracker.Lootbox = lootbox;
-
-            if (entry.Inventory != null)
-                _byInventory[entry.Inventory] = entry;
-        }
-
-        if (oldInstance != instanceId &&
-            _byInstanceId.TryGetValue(oldInstance, out var prevInst) && ReferenceEquals(prevInst, entry))
-            _byInstanceId.Remove(oldInstance);
-
-        _byKey[positionKey] = entry;
-        _byInstanceId[instanceId] = entry;
+        Register(lootbox, lootbox ? lootbox.Inventory : null, -1);
     }
 
     public void Unregister(InteractableLootbox lootbox)
     {
         if (!lootbox) return;
-
         var instanceId = lootbox.GetInstanceID();
-        if (!_byInstanceId.TryGetValue(instanceId, out var entry) || entry == null) return;
+        if (!_byInstanceId.TryGetValue(instanceId, out var entry) || entry == null)
+            return;
 
         _byInstanceId.Remove(instanceId);
+        if (entry.PositionKey != 0 && _byPositionKey.TryGetValue(entry.PositionKey, out var prevPos) &&
+            ReferenceEquals(prevPos, entry))
+            _byPositionKey.Remove(entry.PositionKey);
 
-        if (_byKey.TryGetValue(entry.PositionKey, out var byKey) && ReferenceEquals(byKey, entry))
-            _byKey.Remove(entry.PositionKey);
-
-        if (entry.Inventory != null &&
-            _byInventory.TryGetValue(entry.Inventory, out var byInv) && ReferenceEquals(byInv, entry))
-            _byInventory.Remove(entry.Inventory);
-
-        if (entry.LootUid >= 0 &&
-            _byLootUid.TryGetValue(entry.LootUid, out var byUid) && ReferenceEquals(byUid, entry))
+        if (entry.LootUid >= 0 && _byLootUid.TryGetValue(entry.LootUid, out var prevUid) && ReferenceEquals(prevUid, entry))
             _byLootUid.Remove(entry.LootUid);
 
-        entry.Inventory = null;
-        entry.Lootbox = null;
-        entry.Loader = null;
-    }
+        if (entry.Inventory && _byInventory.TryGetValue(entry.Inventory, out var prevInv) && ReferenceEquals(prevInv, entry))
+            _byInventory.Remove(entry.Inventory);
 
-    public bool TryGetByLootUid(int lootUid, out LootSyncEntry entry)
-    {
-        if (lootUid < 0)
-        {
-            entry = null;
-            return false;
-        }
+        var loader = lootbox.GetComponent<LootBoxLoader>();
+        if (loader && _byLoader.TryGetValue(loader, out var prevLoader) && ReferenceEquals(prevLoader, entry))
+            _byLoader.Remove(loader);
 
-        return _byLootUid.TryGetValue(lootUid, out entry) && entry != null;
+        _entries.Remove(entry);
     }
 
     public void SetLootUid(Inventory inventory, int lootUid)
     {
-        if (inventory == null || lootUid < 0) return;
-        if (!_byInventory.TryGetValue(inventory, out var entry) || entry == null) return;
-
-        if (entry.LootUid == lootUid) return;
-
-        if (entry.LootUid >= 0 &&
-            _byLootUid.TryGetValue(entry.LootUid, out var prev) && ReferenceEquals(prev, entry))
-            _byLootUid.Remove(entry.LootUid);
+        if (!inventory || lootUid < 0) return;
+        if (!_byInventory.TryGetValue(inventory, out var entry) || entry == null)
+            return;
 
         entry.LootUid = lootUid;
         _byLootUid[lootUid] = entry;
+    }
+
+    public bool TryGetByLootUid(int lootUid, out LootSyncEntry entry)
+    {
+        entry = null;
+        if (lootUid < 0) return false;
+        if (_byLootUid.TryGetValue(lootUid, out entry) && entry != null && entry.Inventory)
+            return true;
+
+        entry = null;
+        return false;
+    }
+
+    public void Clear()
+    {
+        _entries.Clear();
+        _byInventory.Clear();
+        _byPositionKey.Clear();
+        _byInstanceId.Clear();
+        _byLootUid.Clear();
+        _byLoader.Clear();
     }
 }
 
 public sealed class DropSyncRegistry
 {
-    private readonly Dictionary<uint, DropSyncEntry> _byId = new();
-    private readonly Dictionary<Item, DropSyncEntry> _byItem =
-        new(ReferenceEqualityComparer<Item>.Instance);
+    private readonly Dictionary<uint, DropSyncEntry> _entries = new();
+    private readonly Dictionary<Item, DropSyncEntry> _byItem = new(new RefEq<Item>());
 
-    public IEnumerable<DropSyncEntry> Entries => _byId.Values;
+    public IEnumerable<DropSyncEntry> Entries => _entries.Values;
 
-    public bool Contains(uint dropId)
+    public DropSyncEntry Register(uint dropId, Item item, GameObject agent = null)
     {
-        return _byId.ContainsKey(dropId);
-    }
+        if (dropId == 0 || item == null) return null;
 
-    public void Clear()
-    {
-        _byId.Clear();
-        _byItem.Clear();
-    }
-
-    public DropSyncEntry Register(uint dropId, Item item)
-    {
-        if (!_byId.TryGetValue(dropId, out var entry) || entry == null)
+        if (!_entries.TryGetValue(dropId, out var entry) || entry == null)
         {
-            entry = new DropSyncEntry { DropId = dropId };
-            _byId[dropId] = entry;
+            entry = new DropSyncEntry();
+            _entries[dropId] = entry;
         }
 
-        if (entry.Item != null && entry.Item != item)
-            _byItem.Remove(entry.Item);
-
+        entry.DropId = dropId;
         entry.Item = item;
-        entry.PendingRemoval = false;
+        entry.Agent = agent;
 
-        if (item != null)
-            _byItem[item] = entry;
+        _byItem[item] = entry;
 
         return entry;
     }
 
     public bool TryGetById(uint dropId, out DropSyncEntry entry)
     {
-        return _byId.TryGetValue(dropId, out entry) && entry != null;
+        entry = null;
+        return dropId != 0 && _entries.TryGetValue(dropId, out entry) && entry != null;
     }
 
     public bool TryGetByItem(Item item, out DropSyncEntry entry)
     {
         entry = null;
-        if (item == null)
-            return false;
-
-        return _byItem.TryGetValue(item, out entry) && entry != null;
+        return item && _byItem.TryGetValue(item, out entry) && entry != null;
     }
 
     public void Unregister(uint dropId)
     {
-        if (!_byId.TryGetValue(dropId, out var entry) || entry == null)
-            return;
+        if (dropId == 0) return;
+        if (!_entries.TryGetValue(dropId, out var entry) || entry == null) return;
 
-        _byId.Remove(dropId);
-
-        if (entry.Item != null)
+        if (entry.Item)
             _byItem.Remove(entry.Item);
+
+        _entries.Remove(dropId);
+    }
+
+    public void Unregister(Item item)
+    {
+        if (!item) return;
+        if (_byItem.TryGetValue(item, out var entry) && entry != null)
+            Unregister(entry.DropId);
+    }
+
+    public void Clear()
+    {
+        _entries.Clear();
+        _byItem.Clear();
+    }
+
+    private sealed class RefEq<T> : IEqualityComparer<T> where T : class
+    {
+        public bool Equals(T x, T y) => ReferenceEquals(x, y);
+        public int GetHashCode(T obj) => RuntimeHelpers.GetHashCode(obj);
     }
 }
 
 public sealed class DropSyncEntry
 {
-    public uint DropId;
-    public Item Item;
-    public GameObject Agent;
-    public Vector3 Position;
-    public Vector3 Direction;
-    public float Angle;
-    public bool CreateRigidbody;
-    public bool PendingRemoval;
+    public uint DropId { get; set; }
+    public Item Item { get; set; }
+    public GameObject Agent { get; set; }
 }
 
 public sealed class LootSyncEntry
 {
-    public int PositionKey { get; set; }
-    public int InstanceId { get; set; }
-    public int SceneIndex { get; set; } = -1;
-    public UnityEngine.Vector3 WorldPosition { get; set; }
-    public Inventory Inventory { get; set; }
-    public InteractableLootbox Lootbox { get; set; }
     public LootBoxLoader Loader { get; set; }
     public bool IsWorldLoot { get; set; }
+    public Inventory Inventory { get; set; }
+    public InteractableLootbox Lootbox { get; set; }
+    public int PositionKey { get; set; }
+    public int InstanceId { get; set; }
+    public int SceneIndex { get; set; }
     public int LootUid { get; set; } = -1;
+    public Vector3 WorldPosition { get; set; }
 }
 
 public sealed class DoorSyncRegistry

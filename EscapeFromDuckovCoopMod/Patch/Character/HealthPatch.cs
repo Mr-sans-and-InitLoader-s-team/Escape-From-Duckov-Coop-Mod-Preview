@@ -17,8 +17,12 @@
 using Duckov.Scenes;
 using Duckov.UI;
 using Duckov.Utilities;
+using HarmonyLib;
+using System;
+using System.Reflection;
 using System.Reflection.Emit;
 using TMPro;
+using UnityEngine;
 using UnityEngine.UI;
 
 namespace EscapeFromDuckovCoopMod;
@@ -72,32 +76,31 @@ public static class Patch_HSB_Awake_TagRegister
 [HarmonyPatch(typeof(HealthSimpleBase), "OnHurt")]
 public static class Patch_HSB_OnHurt_RedirectNet
 {
-    private static bool Prefix(HealthSimpleBase __instance, DamageInfo dmgInfo)
+    private static float ReadMaxHealthValue(HealthSimpleBase hs)
     {
-        var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted) return true;
-
-        if (!mod.IsServer)
-        {
-            // 本地 UI：子弹/爆炸统一点亮 Hit；若你能在此处判断“必死”，可传 true 亮 Kill
-            LocalHitKillFx.ClientPlayForDestructible(__instance, dmgInfo, false);
-
-            var tag = __instance.GetComponent<NetDestructibleTag>();
-            if (!tag) tag = __instance.gameObject.AddComponent<NetDestructibleTag>();
-            COOPManager.HurtM.Client_RequestDestructibleHurt(tag.id, dmgInfo);
-            return false;
-        }
-
-        return true;
+        return Destructible.ReadMaxHealthValue(hs, 0f);
     }
 
     private static void Postfix(HealthSimpleBase __instance, DamageInfo dmgInfo)
     {
         var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted || !mod.IsServer) return;
+        if (mod == null || !mod.networkStarted) return;
 
         var tag = __instance.GetComponent<NetDestructibleTag>();
-        if (!tag) return;
+        if (!tag) tag = __instance.gameObject.AddComponent<NetDestructibleTag>();
+
+        if (!mod.IsServer)
+        {
+            // 仅转发本机玩家造成的伤害，避免 AI/环境事件反复覆写主机血量
+            if (dmgInfo.fromCharacter == null || dmgInfo.fromCharacter != CharacterMainControl.Main)
+                return;
+
+            var current = __instance != null ? __instance.HealthValue : 0f;
+            if (current > 0f)
+                COOPManager.destructible.Client_ReportDestructibleHealth(tag.id, ReadMaxHealthValue(__instance), current, false, dmgInfo);
+            return;
+        }
+
         COOPManager.destructible.Server_BroadcastDestructibleHurt(tag.id, __instance.HealthValue, dmgInfo);
     }
 }
@@ -109,46 +112,23 @@ public static class Patch_HSB_Dead_Broadcast
     private static void Postfix(HealthSimpleBase __instance, DamageInfo dmgInfo)
     {
         var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted || !mod.IsServer) return;
+        if (mod == null || !mod.networkStarted) return;
 
         var tag = __instance.GetComponent<NetDestructibleTag>();
+        if (!tag) tag = __instance.gameObject.AddComponent<NetDestructibleTag>();
         if (!tag) return;
-        COOPManager.destructible.Server_BroadcastDestructibleDead(tag.id, dmgInfo);
-    }
-}
 
-[HarmonyPatch(typeof(HealthSimpleBase), "OnHurt")]
-internal static class Patch_HealthSimpleBase_OnHurt_RedirectNet
-{
-    private static bool Prefix(HealthSimpleBase __instance, ref DamageInfo __0)
-    {
-        var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted) return true;
-
-        // 必须是本机玩家的命中才拦截；防止 AI 打障碍物也触发 UI
-        var from = __0.fromCharacter;
-        var fromLocalMain = from == CharacterMainControl.Main;
-
-        if (!mod.IsServer && fromLocalMain)
+        if (!mod.IsServer)
         {
-            // 预测是否致死（简单用 HealthValue 判断，足够做“演出预判”）
-            var predictedDead = false;
-            try
-            {
-                var cur = __instance.HealthValue;
-                predictedDead = cur > 0f && __0.damageValue >= cur - 0.001f;
-            }
-            catch
-            {
-            }
-
-            LocalHitKillFx.ClientPlayForDestructible(__instance, __0, predictedDead);
-
-            // 继续你的原有逻辑：把命中发给主机权威结算
-            return false;
+            var reported = dmgInfo;
+            reported.damageValue = 999999f;
+            reported.finalDamage = Math.Max(reported.finalDamage, 999999f);
+            COOPManager.destructible.Client_ReportDestructibleHealth(tag.id, Destructible.ReadMaxHealthValue(__instance, 0f), 0f, true, reported);
+            return;
         }
 
-        return true;
+        COOPManager.destructible.Server_RegisterDestructibleDeath(tag.id);
+        COOPManager.destructible.Server_BroadcastDestructibleDead(tag.id, dmgInfo);
     }
 }
 
@@ -210,35 +190,131 @@ internal static class Patch_Health_Hurt_AIdEAD
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return;
 
-        if (__instance.TryGetCharacter().GetComponentInChildren<RemoteAIReplicaTag>() == null) return;
+        if (Patch_Health_Hurt_RemoteAnti.IsSimulatingRemoteAiHurt)
+            return;
 
-        if (!mod.IsServer)
-        { 
-            if(__instance.IsDead)
+        if (mod.IsServer)
+        {
+            if(__instance.TryGetCharacter().GetComponentInChildren<RemoteAIReplicaTag>() == null)
             {
-                var forced = new DamageInfo();
-                forced.damageValue = 99999f;
-                forced.finalDamage = 99999f;;
-                COOPManager.AI.Client_ReportAiHealth(__instance.TryGetCharacter().GetComponentInChildren<RemoteAIReplicaTag>().Id, __instance, forced);
-            }
+                if (__instance.IsDead)
+                {
+                    DeadLootSpawnContext.InOnDead = __instance.TryGetCharacter();
+                }
+            }         
         }
 
+        var character = __instance.TryGetCharacter();
+        if (character == null) return;
+
+        var remoteTag = character.GetComponentInChildren<RemoteAIReplicaTag>();
+        if (remoteTag == null) return;
+
+        if (!mod.IsServer && __instance.IsDead)
+        {
+            var alreadyDead = false;
+            if (CoopSyncDatabase.AI.TryGet(remoteTag.Id, out var entry) && entry != null)
+            {
+                alreadyDead = entry.Status == AIStatus.Dead || entry.CurrentHealth <= 0.0001f;
+            }
+
+            if (!alreadyDead)
+            {
+                var forced = new DamageInfo
+                {
+                    damageValue = 99999f,
+                    finalDamage = 99999f
+                };
+                COOPManager.AI?.Client_ReportAiHealth(remoteTag.Id, __instance, forced);
+            }
+        }
     }
 }
 
 [HarmonyPatch(typeof(Health), "Hurt")]
 internal static class Patch_Health_Hurt_RemoteAnti
 {
+    [ThreadStatic] private static bool _simulatingRemoteAiHurt;
+
+    internal static bool IsSimulatingRemoteAiHurt => _simulatingRemoteAiHurt;
+
+    private static (float max, float cur, float body, float head) Snapshot(Health health)
+    {
+        float max = 0f, cur = 0f, body = 0f, head = 0f;
+
+        try { max = health.MaxHealth; } catch { }
+        try { cur = health.CurrentHealth; } catch { }
+        try { body = health.BodyArmor; } catch { }
+        try { head = health.HeadArmor; } catch { }
+
+        if (max <= 0f)
+            max = Mathf.Max(cur, 1f);
+
+        return (max, cur, body, head);
+    }
+
+    private static void Restore(Health health, (float max, float cur, float body, float head) snap)
+    {
+        if (health == null) return;
+        try
+        {
+            HealthM.Instance.ForceSetHealth(health, snap.max > 0f ? snap.max : Mathf.Max(1f, snap.cur), snap.cur, true, snap.body, snap.head);
+        }
+        catch
+        {
+        }
+    }
+
     private static bool Prefix(Health __instance, ref DamageInfo damageInfo)
     {
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true;
 
-        if (__instance.TryGetCharacter().GetComponentInChildren<RemoteAIReplicaTag>() != null) return true;
+        //if (_simulatingRemoteAiHurt)
+        //    return true;
+
+        //if (!mod.IsServer && CharacterMainControl.Main != null && damageInfo.fromCharacter == CharacterMainControl.Main)
+        //    DamageStatsTracker.Instance?.RecordLocalDamage(damageInfo.damageValue);
+
+        //if (mod.IsServer && CharacterMainControl.Main != null)
+        //{
+        //    var chr = __instance.TryGetCharacter();
+        //    if (chr != null && chr.GetComponentInChildren<AICharacterController>() != null)
+        //        DamageStatsTracker.Instance?.RecordLocalDamage(damageInfo.damageValue);
+        //}
+
+        // 客户端侧的远端 AI：仅转发给主机，不在本地再次结算伤害，避免“假伤害”比主机高
+        var remoteAi = __instance.TryGetCharacter().GetComponentInChildren<RemoteAIReplicaTag>();
+        if (remoteAi != null && !mod.IsServer && damageInfo.fromCharacter != null && damageInfo.fromCharacter == LevelManager.Instance.MainCharacter)
+        {
+            COOPManager.AI._clientLastDamage[remoteAi.Id] = damageInfo;
+            //COOPManager.AI?.Client_ReportAiHealth(remoteAi.Id, __instance, damageInfo);
+
+            //// 可选的“本地视觉预测”：在本地运行一次 Hurt 让击中特效/僵直正确，但随后立即恢复血量，避免和主机权威值偏差
+            //var snap = Snapshot(__instance);
+            //try
+            //{
+            //    _simulatingRemoteAiHurt = true;
+            //    __instance.Hurt(damageInfo);
+            //}
+            //catch (Exception ex)
+            //{
+            //    Debug.LogWarning($"[COOP] Remote AI local hurt simulate failed: {ex.Message}");
+            //}
+            //finally
+            //{
+            //    _simulatingRemoteAiHurt = false;
+            //    Restore(__instance, snap);
+            //}
+
+            COOPManager.AI?.Client_ReportAiHealth(remoteAi.Id, __instance, damageInfo);
+            return true;
+        }
+
         if (__instance.TryGetCharacter().GetComponentInChildren<AICharacterController>() != null) return true;
         if (__instance.TryGetCharacter().GetComponentInChildren<AutoRequestHealthBar>() != null) return false;
 
-       
+
 
         return true;
     }
@@ -295,6 +371,235 @@ public static class HealthILHelper
             }
 
         }
+
+        if (MultiSceneCore.Instance.SceneInfo.ID == "Base" && __instance.team == Teams.middle)
+        {
+
+            if (__instance.CurrentHealth <= 0f)
+            {
+                __instance.CurrentHealth = 1f;
+            }
+
+        }
     }
 }
 
+//[HarmonyPatch(typeof(HealthBar), "Refresh")]
+//internal static class Patch_Health_Refresh_Finalizer
+//{
+//    private static readonly Color RemoteHealthColor = new Color(0.227f, 0.839f, 0.227f, 1f);
+//    private static void Postfix(HealthBar __instance)
+//    {
+//        var mod = ModBehaviourF.Instance;
+//        if (mod == null || !mod.networkStarted)
+//            return;
+//        var health = __instance.target;
+
+//        Debug.Log("CreateHealthBarFor is ready");
+//        if (IsLocalPlayerHealth(health))
+//            return;
+
+//        if (__instance == null || health == null)
+//        {
+//            Debug.Log("CreateHealthBarFor __result or health null");
+
+//            return;
+//        }
+
+//        if (health.TryGetCharacter().GetComponentInChildren<AICharacterController>() != null)
+//        {
+//            Debug.Log("AICharacterController");
+//            return;
+//        }
+
+//        if (health.TryGetCharacter().GetComponentInChildren<RemoteAIReplicaTag>() != null)
+//        {
+//            Debug.Log("RemoteAIReplicaTag");
+//            return;
+//        }
+
+//        if (!TryResolvePlayerMetadata(health, out var playerId, out var fallbackName))
+//        {
+//            Debug.Log("TryResolvePlayerMetadata null");
+//            return;
+//        }
+
+//        Traverse.Create(__instance).Field<Image>("fill").Value.color = RemoteHealthColor;
+//        Traverse.Create(__instance).Field<Image>("followFill").Value.color = RemoteHealthColor;
+//    }
+
+//    private static bool IsLocalPlayerHealth(Health health)
+//    {
+//        var cmc = health.TryGetCharacter();
+//        return cmc != null && cmc == CharacterMainControl.Main;
+//    }
+
+
+
+//    private static bool TryResolvePlayerMetadata(Health health, out string playerId, out string fallbackName)
+//    {
+//        playerId = null;
+//        fallbackName = null;
+
+//        var service = NetService.Instance;
+//        if (service == null)
+//            return false;
+
+//        var cmc = health.TryGetCharacter();
+//        if (cmc != null && cmc == CharacterMainControl.Main)
+//        {
+//            playerId = service.localPlayerStatus?.EndPoint;
+//            fallbackName = service.localPlayerStatus?.PlayerName;
+//            return !string.IsNullOrEmpty(playerId) || !string.IsNullOrEmpty(fallbackName);
+//        }
+
+//        if (service.IsServer)
+//        {
+//            foreach (var kv in service.remoteCharacters)
+//            {
+//                var go = kv.Value;
+//                if (go == null)
+//                    continue;
+
+//                if (!health.transform.IsChildOf(go.transform))
+//                    continue;
+
+//                service.playerStatuses.TryGetValue(kv.Key, out var status);
+//                playerId = service.GetPlayerId(kv.Key);
+//                fallbackName = status?.PlayerName;
+//                break;
+//            }
+//        }
+//        else
+//        {
+//            foreach (var kv in service.clientRemoteCharacters)
+//            {
+//                var go = kv.Value;
+//                if (go == null)
+//                    continue;
+
+//                if (!health.transform.IsChildOf(go.transform))
+//                    continue;
+
+//                service.clientPlayerStatuses.TryGetValue(kv.Key, out var status);
+//                playerId = kv.Key;
+//                fallbackName = status?.PlayerName;
+//                break;
+//            }
+//        }
+
+//        return !string.IsNullOrEmpty(playerId) || !string.IsNullOrEmpty(fallbackName);
+//    }
+//}
+
+//[HarmonyPatch(typeof(HealthBarManager), "CreateHealthBarFor")]
+//internal static class Patch_HealthBarManager_CreateHealthBarFor
+//{
+//    private static readonly Color RemoteHealthColor = new Color(0.227f, 0.839f, 0.227f, 1f);
+
+//    private static void Postfix(HealthBar __result, ref Health health)
+//    {
+//        var mod = ModBehaviourF.Instance;
+//        if (mod == null || !mod.networkStarted)
+//            return;
+//        Debug.Log("CreateHealthBarFor is ready");
+//        if (IsLocalPlayerHealth(health))
+//            return;
+
+//        if (__result == null || health == null)
+//        {
+//            Debug.Log("CreateHealthBarFor __result or health null");
+
+//            return;
+//        }
+
+//        if (health.TryGetCharacter().GetComponentInChildren<AICharacterController>() != null)
+//        {
+//            Debug.Log("AICharacterController");
+//            return;
+//        }
+
+//        if (health.TryGetCharacter().GetComponentInChildren<RemoteAIReplicaTag>() != null)
+//        {
+//            Debug.Log("RemoteAIReplicaTag");
+//            return;
+//        }
+
+//        if (!TryResolvePlayerMetadata(health, out var playerId, out var fallbackName))
+//        {
+//            Debug.Log("TryResolvePlayerMetadata null");
+//            return;
+//        }
+
+ 
+//        Traverse.Create(__result).Field<Image>("fill").Value.color = RemoteHealthColor;
+//        Traverse.Create(__result).Field<Image>("followFill").Value.color = RemoteHealthColor;
+//        //Traverse.Create(__result).Field<Image>("hurtBlink").Value.color = RemoteHealthColor;
+//        //简单粗暴
+//        //var display = __result.GetComponent<HealthBarNameDisplay>() ?? __result.gameObject.AddComponent<HealthBarNameDisplay>();
+//        // display.Configure(playerId, fallbackName, health, __result);
+//    }
+
+//    private static bool IsLocalPlayerHealth(Health health)
+//    {
+//        var cmc = health.TryGetCharacter();
+//        return cmc != null && cmc == CharacterMainControl.Main;
+//    }
+
+ 
+
+//    private static bool TryResolvePlayerMetadata(Health health, out string playerId, out string fallbackName)
+//    {
+//        playerId = null;
+//        fallbackName = null;
+
+//        var service = NetService.Instance;
+//        if (service == null)
+//            return false;
+
+//        var cmc = health.TryGetCharacter();
+//        if (cmc != null && cmc == CharacterMainControl.Main)
+//        {
+//            playerId = service.localPlayerStatus?.EndPoint;
+//            fallbackName = service.localPlayerStatus?.PlayerName;
+//            return !string.IsNullOrEmpty(playerId) || !string.IsNullOrEmpty(fallbackName);
+//        }
+
+//        if (service.IsServer)
+//        {
+//            foreach (var kv in service.remoteCharacters)
+//            {
+//                var go = kv.Value;
+//                if (go == null)
+//                    continue;
+
+//                if (!health.transform.IsChildOf(go.transform))
+//                    continue;
+
+//                service.playerStatuses.TryGetValue(kv.Key, out var status);
+//                playerId = service.GetPlayerId(kv.Key);
+//                fallbackName = status?.PlayerName;
+//                break;
+//            }
+//        }
+//        else
+//        {
+//            foreach (var kv in service.clientRemoteCharacters)
+//            {
+//                var go = kv.Value;
+//                if (go == null)
+//                    continue;
+
+//                if (!health.transform.IsChildOf(go.transform))
+//                    continue;
+
+//                service.clientPlayerStatuses.TryGetValue(kv.Key, out var status);
+//                playerId = kv.Key;
+//                fallbackName = status?.PlayerName;
+//                break;
+//            }
+//        }
+
+//        return !string.IsNullOrEmpty(playerId) || !string.IsNullOrEmpty(fallbackName);
+//    }
+//}

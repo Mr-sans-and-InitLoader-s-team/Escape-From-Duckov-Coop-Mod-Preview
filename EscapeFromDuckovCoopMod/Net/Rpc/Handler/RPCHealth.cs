@@ -20,6 +20,12 @@ public static class RPCHealth
         HealthM.Instance?.Client_HandlePlayerDamageForward(message);
     }
 
+    public static void HandlePlayerDamageRequest(RpcContext context, PlayerDamageRequestRpc message)
+    {
+        if (!context.IsServer) return;
+        HealthM.Instance?.Server_HandlePlayerDamageRequest(context.Sender, message);
+    }
+
     public static void HandlePlayerBuffReport(RpcContext context, PlayerBuffReportRpc message)
     {
         if (!context.IsServer) return;

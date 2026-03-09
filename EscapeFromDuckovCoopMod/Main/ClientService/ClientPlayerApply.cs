@@ -114,7 +114,7 @@ public class ClientPlayerApply
     }
 
     // 客户端：按 玩家ID 应用武器（幂等 + 去抖 + 杀残留 agent + 只清目标 + 等一帧再挂）
-    public async UniTask ApplyWeaponUpdate_Client(string playerId, int slotHash, string itemId)
+    public async UniTask ApplyWeaponUpdate_Client(string playerId, int slotHash, string itemId, ItemSnapshot snapshot)
     {
         if (NetService.Instance.IsSelfId(playerId)) return;
 
@@ -136,9 +136,18 @@ public class ClientPlayerApply
 
         try
         {
-            if (!string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var typeId))
+            var typeId = snapshot.TypeId;
+            if (typeId == 0 && !string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var parsed))
+                typeId = parsed;
+
+            if (typeId != 0)
             {
-                var item = await COOPManager.GetItemAsync(typeId);
+                var item = snapshot.TypeId != 0
+                    ? ItemTool.BuildItemFromSnapshot(snapshot)
+                    : null;
+
+                if (item == null)
+                    item = await COOPManager.GetItemAsync(typeId);
                 if (item != null)
                 {
                     CoopTool.SafeKillItemAgent(item);

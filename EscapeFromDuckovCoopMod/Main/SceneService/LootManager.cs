@@ -20,11 +20,36 @@ using System.Runtime.CompilerServices;
 using Duckov.UI;
 using Duckov.Utilities;
 using ItemStatsSystem;
+using LiteNetLib.Utils;
 using UnityEngine.SceneManagement;
 using static EscapeFromDuckovCoopMod.LootNet;
 using Object = UnityEngine.Object;
 
 namespace EscapeFromDuckovCoopMod;
+
+public struct LootIdentifier
+{
+    public int Scene;
+    public int PositionKey;
+    public int InstanceId;
+    public int LootUid;
+
+    public void Serialize(NetDataWriter writer)
+    {
+        writer.Put(Scene);
+        writer.Put(PositionKey);
+        writer.Put(InstanceId);
+        writer.Put(LootUid);
+    }
+
+    public void Deserialize(NetPacketReader reader)
+    {
+        Scene = reader.GetInt();
+        PositionKey = reader.GetInt();
+        InstanceId = reader.GetInt();
+        LootUid = reader.GetInt();
+    }
+}
 
 public static class LootUiGuards
 {
@@ -126,7 +151,9 @@ internal static class LootSearchWorldGate
                 if (!it) continue;
                 try
                 {
-                    it.Inspected = false;
+                    // 保留已经鉴定过的物品，避免进度被重置
+                    if (!it.Inspected)
+                        it.Inspected = false;
                 }
                 catch
                 {
@@ -215,9 +242,13 @@ public static class LootboxDetectUtil
         if (inv == null) return false;
         if (DeadLootSpawnContext.LocalOnDead)
             return true;
-        
+
         if (ReferenceEquals(inv, PlayerStorage.Inventory)) return true; // 仓库
         if (ReferenceEquals(inv, PetProxy.PetInventory)) return true; // 宠物包
+        var mainInv = LevelManager.Instance != null && LevelManager.Instance.MainCharacter != null
+            ? LevelManager.Instance.MainCharacter.CharacterItem.Inventory
+            : null;
+        if (ReferenceEquals(inv, mainInv)) return true; // 玩家背包
         return false;
     }
 
@@ -257,6 +288,36 @@ public static class LootboxDetectUtil
         }
 
         return false;
+    }
+
+    public static bool TryResolveLootOwner(Inventory inv, out Inventory lootInv, out int slot, out Item master)
+    {
+        lootInv = null;
+        slot = -1;
+        master = null;
+
+        if (inv == null) return false;
+        if (IsPrivateInventory(inv)) return false;
+
+        if (IsLootboxInventory(inv))
+        {
+            lootInv = inv;
+            return true;
+        }
+
+        var attached = inv.AttachedToItem;
+        if (attached == null) return false;
+
+        var parentInv = attached.InInventory;
+        if (parentInv == null || IsPrivateInventory(parentInv) || !IsLootboxInventory(parentInv))
+            return false;
+
+        slot = parentInv.GetIndex(attached);
+        if (slot < 0) return false;
+
+        lootInv = parentInv;
+        master = attached;
+        return true;
     }
 }
 
@@ -309,13 +370,23 @@ public class LootManager : MonoBehaviour
     }
 
 
-    public void PutLootId(NetDataWriter w, Inventory inv)
+    public LootIdentifier BuildLootIdentifier(Inventory inv)
     {
         var scene = SceneManager.GetActiveScene().buildIndex;
         var posKey = -1;
         var instanceId = -1;
 
-        var dict = InteractableLootbox.Inventories;
+        Dictionary<int, Inventory> dict = null;
+        try
+        {
+            // InteractableLootbox.Inventories -> LevelManager.LootBoxInventories, which can be null when no level is active
+            if (LevelManager.Instance)
+                dict = InteractableLootbox.Inventories;
+        }
+        catch
+        {
+        }
+
         if (inv != null && dict != null)
             foreach (var kv in dict)
                 if (kv.Value == inv)
@@ -376,10 +447,19 @@ public class LootManager : MonoBehaviour
                     }
         }
 
-        w.Put(scene);
-        w.Put(posKey);
-        w.Put(instanceId);
-        w.Put(lootUid);
+        return new LootIdentifier
+        {
+            Scene = scene,
+            PositionKey = posKey,
+            InstanceId = instanceId,
+            LootUid = lootUid
+        };
+    }
+
+    public void PutLootId(NetDataWriter w, Inventory inv)
+    {
+        var id = BuildLootIdentifier(inv);
+        id.Serialize(w);
     }
 
 

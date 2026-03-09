@@ -12,20 +12,11 @@
 // This program is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details
+// GNU Affero General Public License for more details.
+
+using Duckov.Scenes;
 
 namespace EscapeFromDuckovCoopMod;
-
-public struct AnimSample
-{
-    public double t;
-    public float speed, dirX, dirY;
-    public int hand;
-    public bool gunReady, dashing;
-    public bool attack; // 兼容你现在的 Attack(bool)
-    public int stateHash; // 可选：状态同步
-    public float normTime; // 可选：状态时间
-}
 
 public class AnimParamInterpolator : MonoBehaviour
 {
@@ -39,6 +30,7 @@ public class AnimParamInterpolator : MonoBehaviour
     public float minHoldTime = 0.08f;
 
     [Header("状态过渡（可选）")] public float crossfadeDuration = 0.05f;
+    public float stateSwitchConfirmTime = 0.06f;
 
     public int crossfadeLayer;
     private readonly List<AnimSample> _buf = new(64);
@@ -46,14 +38,19 @@ public class AnimParamInterpolator : MonoBehaviour
     private Animator anim;
 
     private float curSpeed, curDirX, curDirY;
-    private int hMoveSpeed, hDirX, hDirY, hHand, hGunReady, hDashing, hAttack;
+    private int hMoveSpeed, hDirX, hDirY, hHand, hGunReady, hDashing, hAttack, hVehicleType;
     private bool lastGunReady, lastDashing, lastAttack;
     private int lastHand;
     private int lastStateHash = -1;
+    private float lastStateNorm;
+    private int pendingStateHash = -1;
+    private double pendingStateSince;
     private double tGun, tDash, tAtk;
     private double tHand;
     private double tState;
     private float vSpeed, vDirX, vDirY;
+    private int lastVehicleType;
+    private double tVehicle;
 
     //sans这个类你就不用看你了，你不会的
     private void Awake()
@@ -65,6 +62,18 @@ public class AnimParamInterpolator : MonoBehaviour
         }
         if (!anim) anim = GetComponentInChildren<Animator>(true);
         if (anim) anim.applyRootMotion = false;
+        if (anim)
+        {
+            try
+            {
+                var st = anim.GetCurrentAnimatorStateInfo(crossfadeLayer);
+                lastStateHash = st.shortNameHash;
+                lastStateNorm = st.normalizedTime;
+            }
+            catch
+            {
+            }
+        }
 
         hMoveSpeed = Animator.StringToHash("MoveSpeed");
         hDirX = Animator.StringToHash("MoveDirX");
@@ -73,11 +82,18 @@ public class AnimParamInterpolator : MonoBehaviour
         hGunReady = Animator.StringToHash("GunReady");
         hDashing = Animator.StringToHash("Dashing");
         hAttack = Animator.StringToHash("Attack");
+        hVehicleType = Animator.StringToHash("VehicleType");
     }
 
     private void LateUpdate()
     {
         if (!anim || _buf.Count == 0) return;
+        if(LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
+        var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
+        if (serverLoading)
+        {
+            return;
+        }
 
         var renderT = Time.unscaledTimeAsDouble - interpolationBackTime;
         var i = 0;
@@ -134,6 +150,14 @@ public class AnimParamInterpolator : MonoBehaviour
             tHand = now;
         }
 
+        var desiredVehicle = t01 < 0.5f ? a.vehicleType : b.vehicleType;
+        if (desiredVehicle != lastVehicleType && now - tVehicle >= minHoldTime)
+        {
+            TrySetInt(hVehicleType, desiredVehicle);
+            lastVehicleType = desiredVehicle;
+            tVehicle = now;
+        }
+
         var desiredGun = t01 < 0.5f ? a.gunReady : b.gunReady;
         if (desiredGun != lastGunReady && now - tGun >= minHoldTime)
         {
@@ -164,11 +188,33 @@ public class AnimParamInterpolator : MonoBehaviour
         {
             desiredState = t01 < 0.5f ? a.stateHash : b.stateHash;
             desiredNorm = t01 < 0.5f ? a.normTime : b.normTime;
-            if (desiredState >= 0 && (desiredState != lastStateHash || now - tState > 0.5))
+            if (desiredState >= 0 && desiredState != lastStateHash && now - tState >= minHoldTime)
             {
-                anim.CrossFade(desiredState, crossfadeDuration, crossfadeLayer, Mathf.Clamp01(desiredNorm));
+                if (pendingStateHash != desiredState)
+                {
+                    pendingStateHash = desiredState;
+                    pendingStateSince = now;
+                    return;
+                }
+
+                if (now - pendingStateSince < stateSwitchConfirmTime)
+                    return;
+
+                var currentState = anim.GetCurrentAnimatorStateInfo(crossfadeLayer);
+                if (currentState.shortNameHash != desiredState)
+                {
+                    var normalizedOffset = Mathf.Repeat(desiredNorm, 1f);
+                    anim.CrossFade(desiredState, crossfadeDuration, crossfadeLayer, normalizedOffset);
+                }
+
                 lastStateHash = desiredState;
+                lastStateNorm = desiredNorm;
                 tState = now;
+                pendingStateHash = -1;
+            }
+            else if (desiredState == lastStateHash)
+            {
+                pendingStateHash = -1;
             }
         }
     }

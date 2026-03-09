@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -15,7 +15,7 @@
 // GNU Affero General Public License for more details.
 
 namespace EscapeFromDuckovCoopMod;
-
+//此类可能已废弃 此注释编辑于 2025/12/17 by:InitLoader this class maybe deprecated this comment edited at 2025/12/17 by:InitLoader
 public class PublicHandleUpdate
 {
     private NetService Service => NetService.Instance;
@@ -55,8 +55,9 @@ public class PublicHandleUpdate
         var endPoint = reader.GetString();
         var slotHash = reader.GetInt();
         var itemId = reader.GetString();
+        var snapshot = reader.AvailableBytes > 0 ? ItemTool.ReadItemSnapshot(reader) : default;
 
-        COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(sender, slotHash, itemId).Forget();
+        COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(sender, slotHash, itemId, snapshot).Forget();
 
         foreach (var p in netManager.ConnectedPeerList)
         {
@@ -66,6 +67,7 @@ public class PublicHandleUpdate
             w.Put(endPoint);
             w.Put(slotHash);
             w.Put(itemId);
+            ItemTool.WriteItemSnapshot(w, snapshot);
             p.Send(w, DeliveryMethod.ReliableOrdered);
         }
     }

@@ -123,6 +123,117 @@ namespace EscapeFromDuckovCoopMod;
         _srvHookedItems.Clear();
     }
 
+    public void Server_HandlePlayerDeathWithInventory(NetPacketReader reader)
+    {
+        var pos = reader.GetV3cm();
+
+        var itemCount = reader.GetInt();
+        var itemSnapshots = new List<ItemSnapshot>();
+        
+        for (int i = 0; i < itemCount; i++)
+        {
+            try
+            {
+                var snap = ItemTool.ReadItemSnapshot(reader);
+                itemSnapshots.Add(snap);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[DEATH] Error reading item {i}: {ex}");
+            }
+        }
+        
+        Debug.Log($"[DEATH] Read {itemSnapshots.Count} item snapshots from client");
+        
+        // NOW spawn with the pre-read data
+        Server_SpawnDeadPlayerLoot(pos, itemSnapshots);
+    }
+
+    private async void Server_SpawnDeadPlayerLoot(Vector3 position, List<ItemSnapshot> itemSnapshots)
+    {
+        try
+        {            
+            // Get the loot box prefab
+            var prefab = LootManager.Instance.ResolveDeadLootPrefabOnServer();
+            if (!prefab)
+            {
+                Debug.LogError("[DEATH] Cannot find loot box prefab!");
+                return;
+            }
+            
+            // Spawn the loot container
+            var lootObj = GameObject.Instantiate(prefab.gameObject, position, Quaternion.identity);
+
+            var lootBox = lootObj.GetComponent<InteractableLootbox>();
+            if (!lootBox)
+            {
+                Debug.LogError("[DEATH] Spawned object doesn't have InteractableLootbox!");
+                GameObject.Destroy(lootObj);
+                return;
+            }
+            
+            var inventory = lootBox.Inventory;
+            if (!inventory)
+            {
+                Debug.LogError("[DEATH] Loot box doesn't have inventory!");
+                GameObject.Destroy(lootObj);
+                return;
+            }
+
+            var itemCount = itemSnapshots.Count;
+            Debug.Log($"[DEATH] Spawning loot at {position} with {itemCount} items");
+            
+            inventory.SetCapacity(Mathf.Max(itemCount, 10));
+            
+            for (int i = 0; i < itemCount; i++)
+            {
+                try
+                {
+                    var snap = itemSnapshots[i];
+                    var tmpItem = await ItemAssetsCollection.InstantiateAsync(snap.TypeId);
+                    ItemTool.ApplySnapshot(tmpItem, snap);
+                    inventory.AddItem(tmpItem);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[DEATH] Error creating item {i}: {ex}");
+                }
+            }
+            
+            // Register the loot box
+            var posKey = LootManager.Instance.ComputeLootKey(lootObj.transform);
+            Debug.Log($"[DEATH] Computed position key: {posKey}");
+            
+            if (posKey != 0)
+            {
+                CoopSyncDatabase.Loot.Register(lootBox, inventory);
+                Debug.Log($"[DEATH] Registered in CoopSyncDatabase");
+            }
+            
+            // Also register in InteractableLootbox.Inventories
+            try
+            {
+                var dict = InteractableLootbox.Inventories;
+                if (dict != null && posKey != 0)
+                {
+                    dict[posKey] = inventory;
+                    Debug.Log($"[DEATH] Registered in InteractableLootbox.Inventories");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[DEATH] Could not register in InteractableLootbox.Inventories: {ex}");
+            }
+            
+            Debug.Log($"[DEATH] Loot container spawned successfully!");
+            
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[DEATH] FATAL Error spawning loot: {ex}");
+        }
+    }    
+
     private int NextVersion(Inventory inv)
     {
         if (IsServer)

@@ -592,6 +592,13 @@ public class ModBehaviourF : MonoBehaviour
                     break;
                 }
 
+            case Op.PLAYER_DEAD_LOOT_SPAWN:
+            {
+                if (!IsServer) break;
+                COOPManager.LootNet.Server_HandlePlayerDeathWithInventory(reader);
+                break;
+            }
+
             case Op.SCENE_GATE_RELEASE:
                 {
                     if (!IsServer)

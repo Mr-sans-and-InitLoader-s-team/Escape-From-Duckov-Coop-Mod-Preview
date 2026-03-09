@@ -44,6 +44,8 @@ public class HealthM : MonoBehaviour
     private bool IsServer => Service != null && Service.IsServer;
     private bool networkStarted => Service != null && Service.networkStarted;
 
+    private bool _clientDeathReported = false;
+
     private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
     private Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
 
@@ -88,6 +90,13 @@ public class HealthM : MonoBehaviour
         Debug.Log($"Client_SendSnapshot {health.CurrentHealth} max:{health.MaxHealth}");
         var now = Time.time;
         force |= damage.HasValue;
+
+        if (cur > 0f && _clientDeathReported)
+        {
+            // Reset lock when player is alive again (e.g. after respawn)
+            _clientDeathReported = false;
+        }
+
         if (!force)
         {
             if (Mathf.Approximately(max, _cliLastSentHp.max) && Mathf.Approximately(cur, _cliLastSentHp.cur))
@@ -106,6 +115,60 @@ public class HealthM : MonoBehaviour
 
         _cliLastSentHp = (max, cur);
         _cliNextSendHp = now + CLIENT_SEND_INTERVAL;
+
+        if(cur < 0f && !_clientDeathReported)
+        {
+            // Lock to avoid sending multiple death reports before player respawns
+            _clientDeathReported = true;
+            Client_SendDeadLoot();
+        }
+    }
+
+    private void Client_SendDeadLoot()
+    {
+        var w = new NetDataWriter();
+        w.Put((byte)Op.PLAYER_DEAD_LOOT_SPAWN);
+
+        Debug.Log($"[Client Report Dead] Writing Op: {(byte)Op.PLAYER_DEAD_LOOT_SPAWN}");
+
+        var main = CharacterMainControl.Main;
+        w.PutV3cm(main.transform.position);
+        var inventory = CharacterMainControl.Main.CharacterItem.Inventory;
+        var equipedItems = new[]
+        {
+            CharacterMainControl.Main.PrimWeaponSlot().Content,
+            CharacterMainControl.Main.SecWeaponSlot().Content,
+            CharacterMainControl.Main.HelmatSlot().Content,
+            CharacterMainControl.Main.ArmorSlot().Content,
+            CharacterMainControl.Main.GetSlot(CharacterEquipmentController.faceMaskHash).Content,
+            CharacterMainControl.Main.GetSlot(CharacterEquipmentController.headsetHash).Content,
+            CharacterMainControl.Main.BackpackSlot().Content
+        };
+        var items = new List<Item>();
+        
+        foreach (var item in equipedItems)
+        {
+            if (item != null) items.Add(item);
+        }
+
+        if (inventory != null)
+        {
+            foreach (var item in inventory)
+            {
+                if (item != null) items.Add(item);
+            }
+        }
+
+        Debug.Log($"Sending {items.Count} items to server");
+
+        w.Put(items.Count);
+        foreach (var item in items)
+        {
+            ItemTool.WriteItemSnapshot(w, item);
+        }
+    
+        CoopTool.SendReliable(w);
+        Debug.Log($"Reporting Death message to server!");
     }
 
     private void Server_BroadcastHostSnapshot(Health health, DamageInfo? damage)

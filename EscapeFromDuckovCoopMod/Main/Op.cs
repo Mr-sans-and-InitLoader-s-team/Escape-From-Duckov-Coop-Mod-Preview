@@ -64,6 +64,7 @@ public enum Op : byte
     AI_STATE_UPDATE = 216,
     AI_ACTIVATION_STATE = 217,
 
+    PLAYER_DEAD_LOOT_SPAWN = 244, // Used to propage client death messages.
     DEAD_LOOT_DESPAWN = 247, // 主机 -> 客户端：AI 死亡掉落的箱子被移除（可选，先不强制使用）
     DEAD_LOOT_SPAWN = 248, // 主机 -> 客户端：AI 死亡掉落箱子生成（包含 scene 与变换）
 

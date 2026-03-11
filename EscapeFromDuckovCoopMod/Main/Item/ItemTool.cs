@@ -201,12 +201,25 @@ public static class ItemTool
 
             try
             {
+                bool hasQuest = false;
+                // Itemid 1411-1412 have both "Quest" and "Special" tags, but 
+                // its usable item and wasn't visible to client at all.
+                bool hasSpecial = false; 
+                
                 foreach (var tag in tags)
                 {
                     var name = tag?.name;
-                    if (!string.IsNullOrEmpty(name) && name.IndexOf("Quest", QuestTagComparison) >= 0)
-                        return true;
+                    if (string.IsNullOrEmpty(name)) continue;
+                    
+                    if (name.IndexOf("Quest", QuestTagComparison) >= 0)
+                        hasQuest = true;
+                    
+                    if (name.IndexOf("Special", QuestTagComparison) >= 0)
+                        hasSpecial = true;
                 }
+                
+                // Return true only if has Quest but NOT Special
+                return hasQuest && !hasSpecial;
             }
             catch
             {

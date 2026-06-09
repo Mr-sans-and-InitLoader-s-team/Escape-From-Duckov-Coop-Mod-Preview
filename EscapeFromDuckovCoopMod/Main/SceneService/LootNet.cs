@@ -37,6 +37,14 @@ namespace EscapeFromDuckovCoopMod;
     private readonly HashSet<Item> _srvPlayerPlaced = new();
     private readonly Dictionary<int, bool> _cliLootVisibility = new();
     private readonly Dictionary<Item, string> _cliSlotOrigins = new();
+    private const float ServerLootAccessDistance = 8f;
+    private const float ServerLootAccessDistanceSqr = ServerLootAccessDistance * ServerLootAccessDistance;
+    private const int ServerLootMaxStack = 999999;
+    private const int ServerLootMaxSnapshotDepth = 6;
+    private const int ServerLootMaxNestedEntries = 256;
+    private const int ServerLootMaxSlotKeyLength = 128;
+    private const int ServerLootMaxCustomDataEntries = 256;
+    private const int ServerLootMaxCustomDataTextLength = 4096;
 
     private sealed class InventoryRefEq : IEqualityComparer<Inventory>
     {
@@ -388,6 +396,12 @@ namespace EscapeFromDuckovCoopMod;
             return;
         }
 
+        if (!Server_ValidateLootAccess(context.Sender, inv, "open", false, rpc.Id.Scene, out var reason))
+        {
+            Server_DenyLoot(context.Sender, "open", reason);
+            return;
+        }
+
         Server_SendLootboxState(context.Sender, inv);
     }
 
@@ -437,6 +451,292 @@ namespace EscapeFromDuckovCoopMod;
         }
 
         viewers.Add(peer);
+    }
+
+    private bool Server_ValidateLootAccess(NetPeer peer, Inventory inv, string operation, bool requireViewer,
+        int requestedScene, out string reason)
+    {
+        reason = null;
+
+        if (!IsServer)
+        {
+            reason = "not_server";
+            return false;
+        }
+
+        if (peer == null)
+        {
+            reason = "bad_peer";
+            return false;
+        }
+
+        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv))
+        {
+            reason = "no_inv";
+            return false;
+        }
+
+        if (requireViewer && !Server_IsLootViewer(inv, peer))
+        {
+            reason = "not_viewer";
+            return false;
+        }
+
+        if (CoopSyncDatabase.Loot.TryGetByInventory(inv, out var entry) && entry != null)
+        {
+            if (requestedScene >= 0 && entry.SceneIndex >= 0 && requestedScene != entry.SceneIndex)
+            {
+                reason = "scene_id_mismatch";
+                return false;
+            }
+        }
+
+        if (Server_TryGetPeerScene(peer, out var peerScene) && Server_TryGetHostScene(out var hostScene) &&
+            !Spectator.AreSameMap(peerScene, hostScene))
+        {
+            reason = "scene_mismatch";
+            return false;
+        }
+
+        var lm = LootManagerInstance;
+        if (Server_TryGetPeerPosition(peer, out var peerPos) && lm != null &&
+            lm.TryGetLootboxWorldPos(inv, out var lootPos))
+        {
+            var distanceSqr = (peerPos - lootPos).sqrMagnitude;
+            if (distanceSqr > ServerLootAccessDistanceSqr)
+            {
+                reason = $"too_far:{Mathf.Sqrt(distanceSqr):0.0}m";
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool Server_IsLootViewer(Inventory inv, NetPeer peer)
+    {
+        return inv != null && peer != null &&
+               _srvViewers.TryGetValue(inv, out var viewers) &&
+               viewers != null &&
+               viewers.Contains(peer);
+    }
+
+    private bool Server_TryGetPeerScene(NetPeer peer, out string sceneId)
+    {
+        sceneId = null;
+        if (peer == null) return false;
+
+        if (SceneM._srvPeerScene.TryGetValue(peer, out sceneId) && !string.IsNullOrEmpty(sceneId))
+            return true;
+
+        var statuses = Service?.playerStatuses;
+        if (statuses != null && statuses.TryGetValue(peer, out var st) && st != null &&
+            !string.IsNullOrEmpty(st.SceneId))
+        {
+            sceneId = st.SceneId;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool Server_TryGetHostScene(out string sceneId)
+    {
+        sceneId = null;
+        var local = LocalPlayerManager.Instance;
+        if (local == null) return false;
+        local.ComputeIsInGame(out sceneId);
+        return !string.IsNullOrEmpty(sceneId);
+    }
+
+    private bool Server_TryGetPeerPosition(NetPeer peer, out Vector3 pos)
+    {
+        pos = default;
+        if (peer == null) return false;
+
+        var remotes = Service?.remoteCharacters;
+        if (remotes != null && remotes.TryGetValue(peer, out var go) && go)
+        {
+            pos = go.transform.position;
+            return IsFinite(pos);
+        }
+
+        var statuses = Service?.playerStatuses;
+        if (statuses != null && statuses.TryGetValue(peer, out var st) && st != null && IsFinite(st.Position))
+        {
+            pos = st.Position;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsFinite(Vector3 value)
+    {
+        return !(float.IsNaN(value.x) || float.IsNaN(value.y) || float.IsNaN(value.z) ||
+                 float.IsInfinity(value.x) || float.IsInfinity(value.y) || float.IsInfinity(value.z));
+    }
+
+    private static bool Server_ValidateLootSlot(Inventory inv, int slot, bool allowAutoSlot, out string reason)
+    {
+        reason = null;
+        if (allowAutoSlot && slot < 0) return true;
+        if (inv == null)
+        {
+            reason = "no_inv";
+            return false;
+        }
+
+        if (slot < 0 || slot >= inv.Capacity)
+        {
+            reason = "bad_slot";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool Server_ValidateLootStack(int stack, out string reason)
+    {
+        reason = null;
+        if (stack <= 0)
+        {
+            reason = "bad_count";
+            return false;
+        }
+
+        if (stack > ServerLootMaxStack)
+        {
+            reason = "count_too_large";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool Server_ValidateLootPutPayload(in LootPutRequestRpc rpc, out string reason)
+    {
+        reason = null;
+        var typeId = rpc.Item.TypeId != 0 ? rpc.Item.TypeId : rpc.TypeId;
+
+        if (typeId <= 0 || rpc.TypeId <= 0)
+        {
+            reason = "bad_type";
+            return false;
+        }
+
+        if (rpc.Item.TypeId != 0 && rpc.Item.TypeId != rpc.TypeId)
+        {
+            reason = "type_mismatch";
+            return false;
+        }
+
+        if (!Server_ValidateLootStack(rpc.Count, out reason))
+            return false;
+
+        return Server_ValidateItemSnapshot(rpc.Item, 0, out reason);
+    }
+
+    private static bool Server_ValidateItemSnapshot(ItemSnapshot snapshot, int depth, out string reason)
+    {
+        reason = null;
+        if (depth > ServerLootMaxSnapshotDepth)
+        {
+            reason = "snapshot_too_deep";
+            return false;
+        }
+
+        if (snapshot.TypeId < 0)
+        {
+            reason = "bad_type";
+            return false;
+        }
+
+        if (snapshot.Stack < 0 || snapshot.Stack > ServerLootMaxStack)
+        {
+            reason = "bad_count";
+            return false;
+        }
+
+        var inventory = snapshot.Inventory;
+        if (inventory != null)
+        {
+            if (inventory.Length > ServerLootMaxNestedEntries)
+            {
+                reason = "snapshot_inventory_too_large";
+                return false;
+            }
+
+            foreach (var entry in inventory)
+            {
+                if (entry.Slot < 0)
+                {
+                    reason = "bad_child_slot";
+                    return false;
+                }
+
+                if (!Server_ValidateItemSnapshot(entry.Item, depth + 1, out reason))
+                    return false;
+            }
+        }
+
+        var slots = snapshot.Slots;
+        if (slots != null)
+        {
+            if (slots.Length > ServerLootMaxNestedEntries)
+            {
+                reason = "snapshot_slots_too_large";
+                return false;
+            }
+
+            foreach (var slot in slots)
+            {
+                if ((slot.Key?.Length ?? 0) > ServerLootMaxSlotKeyLength)
+                {
+                    reason = "slot_key_too_long";
+                    return false;
+                }
+
+                if (slot.HasItem && !Server_ValidateItemSnapshot(slot.Item, depth + 1, out reason))
+                    return false;
+            }
+        }
+
+        var keys = snapshot.CustomDataKeys;
+        var values = snapshot.CustomDataValues;
+        if (keys != null || values != null)
+        {
+            if (keys == null || values == null || keys.Length != values.Length)
+            {
+                reason = "custom_data_mismatch";
+                return false;
+            }
+
+            if (keys.Length > ServerLootMaxCustomDataEntries)
+            {
+                reason = "custom_data_too_large";
+                return false;
+            }
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                if ((keys[i]?.Length ?? 0) > ServerLootMaxCustomDataTextLength ||
+                    (values[i]?.Length ?? 0) > ServerLootMaxCustomDataTextLength)
+                {
+                    reason = "custom_data_too_long";
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private void Server_DenyLoot(NetPeer peer, string operation, string reason)
+    {
+        var peerText = peer != null ? peer.EndPoint.ToString() : "null";
+        Debug.LogWarning($"[LOOT_AUTH] deny op={operation}, peer={peerText}, reason={reason}");
+        Server_SendLootDeny(peer, reason);
     }
 
     private void Server_EnsureInventoryHook(Inventory inv)
@@ -849,6 +1149,14 @@ namespace EscapeFromDuckovCoopMod;
             return;
         }
 
+        if (!Server_ValidateLootAccess(peer, inv, "put", true, rpc.Id.Scene, out var reason) ||
+            !Server_ValidateLootSlot(inv, rpc.PreferPos, true, out reason) ||
+            !Server_ValidateLootPutPayload(rpc, out reason))
+        {
+            Server_DenyLoot(peer, "put", reason);
+            return;
+        }
+
         try
         {
             _serverApplyingLoot = true;
@@ -963,6 +1271,13 @@ namespace EscapeFromDuckovCoopMod;
         if (!LootboxDetectUtil.IsLootboxInventory(inv) || inv == null)
         {
             Server_SendLootDeny(peer, "no_inv");
+            return;
+        }
+
+        if (!Server_ValidateLootAccess(peer, inv, "take", true, rpc.Id.Scene, out var reason) ||
+            !Server_ValidateLootSlot(inv, rpc.Position, false, out reason))
+        {
+            Server_DenyLoot(peer, "take", reason);
             return;
         }
 
@@ -1274,10 +1589,23 @@ namespace EscapeFromDuckovCoopMod;
     public void Server_HandleLootSplitRequest(RpcContext context, LootStackRequestRpc rpc)
     {
         var lm = LootManagerInstance;
-        if (!context.IsServer || lm == null) return;
+        var peer = context.Sender;
+        if (!context.IsServer || peer == null || lm == null) return;
 
         var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
-        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv)) return;
+        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv))
+        {
+            Server_DenyLoot(peer, "split", "no_inv");
+            return;
+        }
+
+        if (!Server_ValidateLootAccess(peer, inv, "split", true, rpc.Id.Scene, out var reason) ||
+            !Server_ValidateLootSlot(inv, rpc.Slot, false, out reason) ||
+            !Server_ValidateLootStack(rpc.Stack, out reason))
+        {
+            Server_DenyLoot(peer, "split", reason);
+            return;
+        }
 
         _serverApplyingLoot = true;
         try
@@ -1287,6 +1615,12 @@ namespace EscapeFromDuckovCoopMod;
 
             if (IsQuestTagged(item))
                 return;
+
+            if (rpc.Stack > item.StackCount)
+            {
+                Server_DenyLoot(peer, "split", "stack_increase");
+                return;
+            }
 
             item.StackCount = Mathf.Max(1, rpc.Stack);
             BroadcastLootDelta(inv, rpc.Slot, item.TypeID, item.StackCount, false);
@@ -1375,10 +1709,26 @@ namespace EscapeFromDuckovCoopMod;
     public void Server_HandleLootSlotPlugRequest(RpcContext context, LootSlotPlugRequestRpc rpc)
     {
         var lm = LootManagerInstance;
-        if (!context.IsServer || lm == null) return;
+        var peer = context.Sender;
+        if (!context.IsServer || peer == null || lm == null) return;
 
         var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
-        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
+        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv))
+        {
+            Server_DenyLoot(peer, "slot_plug", "no_inv");
+            return;
+        }
+
+        if (!Server_ValidateLootAccess(peer, inv, "slot_plug", true, rpc.Id.Scene, out var reason) ||
+            !Server_ValidateLootSlot(inv, rpc.ParentSlot, false, out reason) ||
+            string.IsNullOrEmpty(rpc.SlotKey) ||
+            rpc.SlotKey.Length > ServerLootMaxSlotKeyLength ||
+            (rpc.SourceSlotKey?.Length ?? 0) > ServerLootMaxSlotKeyLength ||
+            !Server_ValidateItemSnapshot(rpc.Child, 0, out reason))
+        {
+            Server_DenyLoot(peer, "slot_plug", reason ?? "bad_slot_key");
+            return;
+        }
 
         _serverApplyingLoot = true;
         try
@@ -1506,10 +1856,23 @@ namespace EscapeFromDuckovCoopMod;
     public void Server_HandleLootSlotSnapshot(RpcContext context, LootSlotSnapshotRpc rpc)
     {
         var lm = LootManagerInstance;
-        if (!context.IsServer || lm == null) return;
+        var peer = context.Sender;
+        if (!context.IsServer || peer == null || lm == null) return;
 
         var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
-        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
+        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv))
+        {
+            Server_DenyLoot(peer, "slot_snapshot", "no_inv");
+            return;
+        }
+
+        if (!Server_ValidateLootAccess(peer, inv, "slot_snapshot", true, rpc.Id.Scene, out var reason) ||
+            !Server_ValidateLootSlot(inv, rpc.ParentSlot, false, out reason) ||
+            !Server_ValidateItemSnapshot(rpc.Snapshot, 0, out reason))
+        {
+            Server_DenyLoot(peer, "slot_snapshot", reason);
+            return;
+        }
 
         _serverApplyingLoot = true;
         try
@@ -1525,22 +1888,8 @@ namespace EscapeFromDuckovCoopMod;
 
             if (master.TypeID != rpc.Snapshot.TypeId)
             {
-                inv.RemoveAt(rpc.ParentSlot, out _);
-                var rebuilt = ItemTool.BuildItemFromSnapshot(rpc.Snapshot);
-                if (rebuilt == null) return;
-
-                if (IsQuestTagged(rebuilt))
-                    return;
-
-                Server_MarkItemTreePlayerPlaced(rebuilt);
-                Server_HookItemSlots(rebuilt);
-                if (!inv.AddAt(rebuilt, rpc.ParentSlot))
-                {
-                    try { UnityEngine.Object.Destroy(rebuilt.gameObject); } catch { }
-                    return;
-                }
-
-                master = rebuilt;
+                Server_DenyLoot(peer, "slot_snapshot", "type_mismatch");
+                return;
             }
             else
             {
@@ -1562,10 +1911,24 @@ namespace EscapeFromDuckovCoopMod;
     public void Server_HandleLootSlotUnplugRequest(RpcContext context, LootSlotUnplugRequestRpc rpc)
     {
         var lm = LootManagerInstance;
-        if (!context.IsServer || lm == null) return;
+        var peer = context.Sender;
+        if (!context.IsServer || peer == null || lm == null) return;
 
         var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
-        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
+        if (inv == null || !LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv))
+        {
+            Server_DenyLoot(peer, "slot_unplug", "no_inv");
+            return;
+        }
+
+        if (!Server_ValidateLootAccess(peer, inv, "slot_unplug", true, rpc.Id.Scene, out var reason) ||
+            !Server_ValidateLootSlot(inv, rpc.ParentSlot, false, out reason) ||
+            string.IsNullOrEmpty(rpc.SlotKey) ||
+            rpc.SlotKey.Length > ServerLootMaxSlotKeyLength)
+        {
+            Server_DenyLoot(peer, "slot_unplug", reason ?? "bad_slot_key");
+            return;
+        }
 
         _serverApplyingLoot = true;
         try

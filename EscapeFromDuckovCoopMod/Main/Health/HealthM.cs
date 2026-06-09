@@ -33,6 +33,13 @@ public class HealthM : MonoBehaviour
     private const float CLIENT_SEND_INTERVAL = 0.05f; // 20Hz
     private const float SERVER_SEND_INTERVAL = 0.05f;
     private const float SERVER_DAMAGE_REQUEST_INTERVAL = 0.05f; // 20Hz per sender->target
+    private const float SERVER_MAX_PLAYER_DAMAGE = 1000000f;
+    private const float SERVER_MAX_DAMAGE_FIELD_ABS = 1000000f;
+    private const float SERVER_DAMAGE_CLOSE_RANGE = 8f;
+    private const float SERVER_DAMAGE_CLOSE_RANGE_SQR = SERVER_DAMAGE_CLOSE_RANGE * SERVER_DAMAGE_CLOSE_RANGE;
+    private const float SERVER_DAMAGE_MAX_RANGE = 180f;
+    private const float SERVER_DAMAGE_MAX_RANGE_SQR = SERVER_DAMAGE_MAX_RANGE * SERVER_DAMAGE_MAX_RANGE;
+    private const int SERVER_MAX_PLAYER_ID_LENGTH = 128;
 
     public static HealthM Instance;
 
@@ -260,6 +267,12 @@ public class HealthM : MonoBehaviour
             return;
         _srvNextDamageRequestBySenderTarget[key] = now + SERVER_DAMAGE_REQUEST_INTERVAL;
 
+        if (!Server_ValidatePlayerDamageRequest(sender, message, out var reason))
+        {
+            Server_LogDamageDeny(sender, message.TargetPlayerId, reason);
+            return;
+        }
+
         var damage = message.Damage.ToDamageInfo(null, null);
         LocalHitKillFx.RememberLastBaseDamage(damage.damageValue);
 
@@ -292,6 +305,212 @@ public class HealthM : MonoBehaviour
 
             CoopTool.SendRpcTo(targetPeer, in forward);
         }
+    }
+
+    private bool Server_ValidatePlayerDamageRequest(NetPeer sender, in PlayerDamageRequestRpc message, out string reason)
+    {
+        reason = null;
+        var service = Service;
+        if (!IsServer || service == null)
+        {
+            reason = "not_server";
+            return false;
+        }
+
+        if (sender == null)
+        {
+            reason = "bad_peer";
+            return false;
+        }
+
+        if (string.IsNullOrEmpty(message.TargetPlayerId) ||
+            message.TargetPlayerId.Length > SERVER_MAX_PLAYER_ID_LENGTH)
+        {
+            reason = "bad_target";
+            return false;
+        }
+
+        var senderId = service.GetPlayerId(sender);
+        if (string.IsNullOrEmpty(senderId))
+        {
+            reason = "unknown_sender";
+            return false;
+        }
+
+        var targetIsHost = service.IsSelfId(message.TargetPlayerId);
+        NetPeer targetPeer = null;
+        if (!targetIsHost && !service.TryGetPeerByPlayerId(message.TargetPlayerId, out targetPeer))
+        {
+            reason = "unknown_target";
+            return false;
+        }
+
+        var samePlayer = string.Equals(senderId, message.TargetPlayerId, StringComparison.OrdinalIgnoreCase);
+        if (!samePlayer && COOPManager.FriendlyFire != null && !COOPManager.FriendlyFire.FriendlyFirePlayersEnabled)
+        {
+            reason = "friendly_fire_disabled";
+            return false;
+        }
+
+        if (Server_TryGetPlayerScene(sender, false, out var senderScene) &&
+            Server_TryGetPlayerScene(targetPeer, targetIsHost, out var targetScene) &&
+            !Spectator.AreSameMap(senderScene, targetScene))
+        {
+            reason = "scene_mismatch";
+            return false;
+        }
+
+        if (!Server_ValidateDamagePayload(message.Damage, out reason))
+            return false;
+
+        if (Server_TryGetPlayerPosition(sender, false, out var senderPos) &&
+            Server_TryGetPlayerPosition(targetPeer, targetIsHost, out var targetPos))
+        {
+            var distanceSqr = (senderPos - targetPos).sqrMagnitude;
+            if (distanceSqr > SERVER_DAMAGE_MAX_RANGE_SQR)
+            {
+                reason = $"too_far:{Mathf.Sqrt(distanceSqr):0.0}m";
+                return false;
+            }
+
+            if (!message.Damage.IsExplosion && distanceSqr > SERVER_DAMAGE_CLOSE_RANGE_SQR)
+            {
+                var weapon = COOPManager.WeaponHandle;
+                if (weapon == null ||
+                    !weapon.Server_HasRecentAttack(sender, message.Damage.WeaponItemId, senderPos, targetPos, false))
+                {
+                    reason = "no_recent_attack";
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private bool Server_TryGetPlayerScene(NetPeer peer, bool isHost, out string sceneId)
+    {
+        sceneId = null;
+        var service = Service;
+
+        if (isHost)
+        {
+            sceneId = service?.localPlayerStatus?.SceneId;
+            if (string.IsNullOrEmpty(sceneId))
+                LocalPlayerManager.Instance?.ComputeIsInGame(out sceneId);
+            return !string.IsNullOrEmpty(sceneId);
+        }
+
+        if (peer == null) return false;
+        if (SceneM._srvPeerScene.TryGetValue(peer, out sceneId) && !string.IsNullOrEmpty(sceneId))
+            return true;
+
+        if (service?.playerStatuses != null &&
+            service.playerStatuses.TryGetValue(peer, out var st) &&
+            st != null &&
+            !string.IsNullOrEmpty(st.SceneId))
+        {
+            sceneId = st.SceneId;
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool Server_TryGetPlayerPosition(NetPeer peer, bool isHost, out Vector3 pos)
+    {
+        pos = default;
+        var service = Service;
+
+        if (isHost)
+        {
+            var main = CharacterMainControl.Main;
+            if (main && IsFinite(main.transform.position))
+            {
+                pos = main.transform.position;
+                return true;
+            }
+
+            if (service?.localPlayerStatus != null && IsFinite(service.localPlayerStatus.Position))
+            {
+                pos = service.localPlayerStatus.Position;
+                return true;
+            }
+
+            return false;
+        }
+
+        if (peer == null) return false;
+
+        if (remoteCharacters != null && remoteCharacters.TryGetValue(peer, out var go) && go &&
+            IsFinite(go.transform.position))
+        {
+            pos = go.transform.position;
+            return true;
+        }
+
+        if (service?.playerStatuses != null &&
+            service.playerStatuses.TryGetValue(peer, out var st) &&
+            st != null &&
+            IsFinite(st.Position))
+        {
+            pos = st.Position;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool Server_ValidateDamagePayload(in DamageForwardPayload damage, out string reason)
+    {
+        reason = null;
+
+        if (!IsFinite(damage.DamageValue) || damage.DamageValue <= 0f ||
+            damage.DamageValue > SERVER_MAX_PLAYER_DAMAGE)
+        {
+            reason = "bad_damage_value";
+            return false;
+        }
+
+        if (!Server_DamageFieldInRange(damage.ArmorPiercing) ||
+            !Server_DamageFieldInRange(damage.CritDamageFactor) ||
+            !Server_DamageFieldInRange(damage.CritRate) ||
+            !Server_DamageFieldInRange(damage.BleedChance))
+        {
+            reason = "bad_damage_field";
+            return false;
+        }
+
+        if (damage.Crit < -1000 || damage.Crit > 1000)
+        {
+            reason = "bad_crit";
+            return false;
+        }
+
+        if (damage.WeaponItemId < 0)
+        {
+            reason = "bad_weapon";
+            return false;
+        }
+
+        if (!IsFinite(damage.HitPoint) || !IsFinite(damage.HitNormal))
+        {
+            reason = "bad_hit_vector";
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool Server_DamageFieldInRange(float value)
+    {
+        return IsFinite(value) && Mathf.Abs(value) <= SERVER_MAX_DAMAGE_FIELD_ABS;
+    }
+
+    private static void Server_LogDamageDeny(NetPeer sender, string targetPlayerId, string reason)
+    {
+        var peerText = sender != null ? sender.EndPoint.ToString() : "null";
+        Debug.LogWarning($"[DAMAGE_AUTH] deny peer={peerText}, target={targetPlayerId}, reason={reason}");
     }
 
     public void Client_HandlePlayerHealthBroadcast(PlayerHealthBroadcastRpc message)
@@ -563,16 +782,19 @@ public class HealthM : MonoBehaviour
         CreateRemoteCharacter.CreateRemoteCharacterForClient(playerId, pos, rot, st.CustomFaceJson).Forget();
     }
 
+    private static bool IsFinite(float value)
+    {
+        return !float.IsNaN(value) && !float.IsInfinity(value);
+    }
+
     private static bool IsFinite(Vector3 value)
     {
-        return !(float.IsNaN(value.x) || float.IsNaN(value.y) || float.IsNaN(value.z) ||
-                 float.IsInfinity(value.x) || float.IsInfinity(value.y) || float.IsInfinity(value.z));
+        return IsFinite(value.x) && IsFinite(value.y) && IsFinite(value.z);
     }
 
     private static bool IsFinite(Quaternion value)
     {
-        return !(float.IsNaN(value.x) || float.IsNaN(value.y) || float.IsNaN(value.z) || float.IsNaN(value.w) ||
-                 float.IsInfinity(value.x) || float.IsInfinity(value.y) || float.IsInfinity(value.z) || float.IsInfinity(value.w));
+        return IsFinite(value.x) && IsFinite(value.y) && IsFinite(value.z) && IsFinite(value.w);
     }
 
     public void ForceRemoteOnDead(CharacterMainControl cmc)

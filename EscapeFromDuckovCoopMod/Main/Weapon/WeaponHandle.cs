@@ -22,8 +22,23 @@ namespace EscapeFromDuckovCoopMod;
 
 public class WeaponHandle
 {
+    private struct ServerRecentAttack
+    {
+        public float Time;
+        public int WeaponTypeId;
+        public Vector3 Origin;
+        public Vector3 Direction;
+        public float Distance;
+        public bool IsMelee;
+    }
+
+    private const float ServerRecentAttackLifetime = 6f;
+    private const float ServerRecentAttackDistancePadding = 12f;
+    private const float ServerRecentMeleeDistance = 7f;
+    private const int ServerRecentAttackMaxPeers = 512;
     private readonly Dictionary<int, float> _distCacheByWeaponType = new();
     private readonly Dictionary<int, float> _explDamageCacheByWeaponType = new();
+    private readonly Dictionary<NetPeer, ServerRecentAttack> _serverRecentAttacks = new();
 
     // 爆炸参数缓存（主机记住每种武器的爆炸半径/伤害）
     private readonly Dictionary<int, float> _explRangeCacheByWeaponType = new();
@@ -240,6 +255,90 @@ public class WeaponHandle
         return (ctx, hasPayload);
     }
 
+    private void Server_RecordRecentAttack(NetPeer sender, int weaponTypeId, Vector3 origin, Vector3 direction,
+        float distance, bool isMelee)
+    {
+        if (!IsServer || sender == null) return;
+        if (!IsFinite(origin)) return;
+
+        if (!IsFinite(direction) || direction.sqrMagnitude < 1e-8f)
+            direction = Vector3.forward;
+        else
+            direction.Normalize();
+
+        _serverRecentAttacks[sender] = new ServerRecentAttack
+        {
+            Time = Time.unscaledTime,
+            WeaponTypeId = weaponTypeId,
+            Origin = origin,
+            Direction = direction,
+            Distance = Mathf.Max(isMelee ? ServerRecentMeleeDistance : 1f, distance),
+            IsMelee = isMelee
+        };
+
+        if (_serverRecentAttacks.Count <= ServerRecentAttackMaxPeers) return;
+
+        var stale = new List<NetPeer>();
+        var now = Time.unscaledTime;
+        foreach (var kv in _serverRecentAttacks)
+            if (now - kv.Value.Time > ServerRecentAttackLifetime)
+                stale.Add(kv.Key);
+
+        foreach (var peer in stale)
+            _serverRecentAttacks.Remove(peer);
+
+        if (_serverRecentAttacks.Count > ServerRecentAttackMaxPeers)
+            _serverRecentAttacks.Clear();
+    }
+
+    public bool Server_HasRecentAttack(NetPeer sender, int weaponItemId, Vector3 attackerPos, Vector3 targetPos,
+        bool isExplosion)
+    {
+        if (!IsServer || sender == null) return false;
+        if (!_serverRecentAttacks.TryGetValue(sender, out var attack)) return false;
+
+        if (Time.unscaledTime - attack.Time > ServerRecentAttackLifetime)
+        {
+            _serverRecentAttacks.Remove(sender);
+            return false;
+        }
+
+        if (!IsFinite(targetPos))
+            return false;
+
+        if (isExplosion)
+            return true;
+
+        var targetFromOrigin = targetPos - attack.Origin;
+        var distanceFromOrigin = targetFromOrigin.magnitude;
+        if (attack.IsMelee)
+            return distanceFromOrigin <= ServerRecentMeleeDistance;
+
+        var maxDistance = Mathf.Max(attack.Distance, 1f) + ServerRecentAttackDistancePadding;
+        if (distanceFromOrigin > maxDistance)
+            return false;
+
+        if (!IsFinite(attackerPos))
+            attackerPos = attack.Origin;
+
+        var targetFromAttacker = targetPos - attackerPos;
+        if (targetFromAttacker.sqrMagnitude <= ServerRecentMeleeDistance * ServerRecentMeleeDistance)
+            return true;
+
+        if (targetFromOrigin.sqrMagnitude < 1e-4f)
+            return true;
+
+        var dir = attack.Direction.sqrMagnitude < 1e-8f ? Vector3.forward : attack.Direction.normalized;
+        var dot = Vector3.Dot(dir, targetFromOrigin.normalized);
+        return dot > 0.15f;
+    }
+
+    private static bool IsFinite(Vector3 value)
+    {
+        return !(float.IsNaN(value.x) || float.IsNaN(value.y) || float.IsNaN(value.z) ||
+                 float.IsInfinity(value.x) || float.IsInfinity(value.y) || float.IsInfinity(value.z));
+    }
+
     private ProjectileContext FillPayloadFallbacks(int weaponTypeId, ProjectileContext ctx)
     {
         if (ctx.explosionRange <= 0f && _explRangeCacheByWeaponType.TryGetValue(weaponTypeId, out var er))
@@ -433,6 +532,9 @@ public class WeaponHandle
         else if (message.Team != 0)
             ctx.team = (Teams)message.Team;
 
+        Server_RecordRecentAttack(sender, message.WeaponTypeId, message.MuzzlePosition, message.Direction,
+            Mathf.Max(message.Distance, ctx.distance), false);
+
         SpawnVisualProjectile(shooterId, message.WeaponTypeId, message.MuzzlePosition, message.Direction.normalized,
             message.Speed, message.Distance, true, ctx, controller, gun, message.AiId);
 
@@ -513,6 +615,9 @@ public class WeaponHandle
                 ? st.EndPoint
                 : sender.EndPoint.ToString()
             : message.PlayerId;
+
+        Server_RecordRecentAttack(sender, 0, message.SnapshotPosition, message.SnapshotDirection,
+            ServerRecentMeleeDistance, true);
 
         var broadcast = new MeleeSwingBroadcastRpc
         {

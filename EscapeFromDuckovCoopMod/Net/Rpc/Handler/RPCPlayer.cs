@@ -147,7 +147,8 @@ namespace EscapeFromDuckovCoopMod
                     st.SceneId = rememberedSceneId;
                 }
 
-                var shouldRepresentRemote = payload.IsInGame && ShouldKeepClientRemote(localInGame, localSceneId, payloadSceneId);
+                var resolvedSceneId = !string.IsNullOrEmpty(st.SceneId) ? st.SceneId : payloadSceneId;
+                var shouldRepresentRemote = payload.IsInGame && ShouldKeepClientRemote(localInGame, localSceneId, resolvedSceneId);
                 if (shouldRepresentRemote)
                     desiredRemoteIds.Add(payload.PlayerId);
 

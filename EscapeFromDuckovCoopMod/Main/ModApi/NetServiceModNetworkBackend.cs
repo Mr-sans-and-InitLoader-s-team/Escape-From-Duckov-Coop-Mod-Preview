@@ -39,7 +39,12 @@ internal sealed class NetServiceModNetworkBackend : IModNetworkBackend, IModNetw
     public void SendReplayRequest(NetPeer target, string channel)
     {
         if (target == null) return;
-        CoopTool.SendRpcTo(target, new ModApiReplayRequestRpc(channel));
+
+        var rpc = new ModApiReplayRequestRpc(channel);
+        if (IsServer)
+            CoopTool.SendRpcTo(target, rpc);
+        else
+            CoopTool.SendRpc(in rpc);
     }
 
     public void SendReplayResponse(NetPeer target, string channel, byte[] payload)

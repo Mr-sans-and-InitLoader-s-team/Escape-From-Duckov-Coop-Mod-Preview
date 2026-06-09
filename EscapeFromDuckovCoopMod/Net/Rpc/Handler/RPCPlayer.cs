@@ -104,11 +104,19 @@ namespace EscapeFromDuckovCoopMod
             if (service == null || context.IsServer)
                 return;
 
+            var desiredRemoteIds = new HashSet<string>(StringComparer.Ordinal);
+            var localSceneId = string.Empty;
+            var localInGame = LocalPlayerManager.Instance != null &&
+                              LocalPlayerManager.Instance.ComputeIsInGame(out localSceneId);
+
             service.clientPlayerStatuses.Clear();
 
             for (var i = 0; i < message.Players.Length; i++)
             {
                 var payload = message.Players[i];
+                if (string.IsNullOrEmpty(payload.PlayerId))
+                    continue;
+
                 if (service.IsSelfId(payload.PlayerId))
                     continue;
 
@@ -127,22 +135,35 @@ namespace EscapeFromDuckovCoopMod
                 st.EquipmentList = payload.Equipment != null ? new List<EquipmentSyncData>(payload.Equipment) : new List<EquipmentSyncData>();
                 st.WeaponList = payload.Weapons != null ? new List<WeaponSyncData>(payload.Weapons) : new List<WeaponSyncData>();
 
-                if (!string.IsNullOrEmpty(payload.SceneId))
+                var payloadSceneId = payload.SceneId ?? string.Empty;
+                if (!string.IsNullOrEmpty(payloadSceneId))
                 {
-                    st.SceneId = payload.SceneId;
-                    SceneNet.Instance._cliLastSceneIdByPlayer[payload.PlayerId] = payload.SceneId;
+                    st.SceneId = payloadSceneId;
+                    SceneNet.Instance._cliLastSceneIdByPlayer[payload.PlayerId] = payloadSceneId;
                 }
+                else if (SceneNet.Instance != null &&
+                         SceneNet.Instance._cliLastSceneIdByPlayer.TryGetValue(payload.PlayerId, out var rememberedSceneId))
+                {
+                    st.SceneId = rememberedSceneId;
+                }
+
+                var shouldRepresentRemote = payload.IsInGame && ShouldKeepClientRemote(localInGame, localSceneId, payloadSceneId);
+                if (shouldRepresentRemote)
+                    desiredRemoteIds.Add(payload.PlayerId);
 
                 if (service.clientRemoteCharacters.TryGetValue(st.EndPoint, out var existing) && existing != null)
                     CustomFace.Client_ApplyFaceIfAvailable(st.EndPoint, existing, st.CustomFaceJson);
 
-                if (payload.IsInGame && (!service.clientRemoteCharacters.TryGetValue(payload.PlayerId, out var remote) || remote == null))
+                if (!shouldRepresentRemote)
+                    continue;
+
+                if (!service.clientRemoteCharacters.TryGetValue(payload.PlayerId, out var remote) || remote == null)
                 {
                     HandleClientSpawnAndLoadoutAsync(service, payload, st).Forget();
                     continue;
                 }
 
-                if (payload.IsInGame && service.clientRemoteCharacters.TryGetValue(payload.PlayerId, out var remoteObj) && remoteObj != null)
+                if (service.clientRemoteCharacters.TryGetValue(payload.PlayerId, out var remoteObj) && remoteObj != null)
                 {
                     if (!IsMountedPlayer(payload.PlayerId))
                     {
@@ -160,12 +181,48 @@ namespace EscapeFromDuckovCoopMod
                     foreach (var w in st.WeaponList) COOPManager.ClientPlayer_Apply.ApplyWeaponUpdate_Client(payload.PlayerId, w.SlotHash, w.ItemId, w.Snapshot).Forget();
                 }
             }
+
+            ReconcileClientRemoteCharacters(service, desiredRemoteIds);
         }
 
         public static void HandleFriendlyFireState(RpcContext context, PlayerFriendlyFireStateRpc message)
         {
             if (context.IsServer) return;
             COOPManager.FriendlyFire?.Client_HandleState(message);
+        }
+
+        private static bool ShouldKeepClientRemote(bool localInGame, string localSceneId, string remoteSceneId)
+        {
+            if (!localInGame || string.IsNullOrEmpty(localSceneId))
+                return true;
+
+            if (string.IsNullOrEmpty(remoteSceneId))
+                return true;
+
+            return string.Equals(localSceneId, remoteSceneId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void ReconcileClientRemoteCharacters(NetService service, HashSet<string> desiredRemoteIds)
+        {
+            if (service?.clientRemoteCharacters == null)
+                return;
+
+            var removeIds = new List<string>();
+            foreach (var kvp in service.clientRemoteCharacters)
+            {
+                if (!desiredRemoteIds.Contains(kvp.Key))
+                    removeIds.Add(kvp.Key);
+            }
+
+            for (var i = 0; i < removeIds.Count; i++)
+            {
+                var id = removeIds[i];
+                if (service.clientRemoteCharacters.TryGetValue(id, out var go) && go != null)
+                    UnityEngine.Object.Destroy(go);
+
+                service.clientRemoteCharacters.Remove(id);
+                Debug.Log($"[PLAYER_SYNC] removed remote proxy '{id}' after status reconciliation");
+            }
         }
 
         private static async UniTask HandleClientSpawnAndLoadoutAsync(NetService service, PlayerStatusPayload payload, PlayerStatus st)

@@ -151,6 +151,14 @@ public static class ModNetworkApi
 
     public static void NotifyPeerDisconnected(NetPeer peer)
     {
+        if (peer != null)
+        {
+            lock (_lock)
+            {
+                _lastSentToPeer.Remove(peer);
+            }
+        }
+
         PeerDisconnected?.Invoke(peer);
     }
 

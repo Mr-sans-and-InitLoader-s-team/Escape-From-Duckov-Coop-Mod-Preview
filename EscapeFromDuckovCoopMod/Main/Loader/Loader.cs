@@ -89,8 +89,9 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         {
             init(c);
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.LogError($"[NET_STATE] Init failed for {typeof(T).Name}: {ex}");
         }
     }
 

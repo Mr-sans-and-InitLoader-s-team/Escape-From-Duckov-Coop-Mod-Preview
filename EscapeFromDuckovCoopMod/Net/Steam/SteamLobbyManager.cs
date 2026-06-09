@@ -1,5 +1,6 @@
 ﻿using Steamworks;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
@@ -53,9 +54,14 @@ namespace EscapeFromDuckovCoopMod
         private const string LobbyHostKey = "host";
         private const string LobbyVersionKey = "version";
         private const string LobbyModIdentifier = "EscapeFromDuckovCoopMod_v1.0";
+        private const float LobbyJoinTimeoutSeconds = 15f;
 
         private CSteamID _currentLobbyId = CSteamID.Nil;
         private bool _isHost;
+        private bool _joinInProgress;
+        private CSteamID _pendingJoinLobbyId = CSteamID.Nil;
+        private Coroutine _joinTimeoutRoutine;
+        private string _lastJoinStatus = string.Empty;
         private SteamLobbyOptions _pendingLobbyOptions = SteamLobbyOptions.CreateDefault();
 
         private readonly Dictionary<CSteamID, LobbyMetadata> _lobbyMetadata = new();
@@ -66,9 +72,12 @@ namespace EscapeFromDuckovCoopMod
 
         public event Action<IReadOnlyList<LobbyInfo>>? LobbyListUpdated;
         public event Action? LobbyJoined;  // 新增：Lobby 加入成功事件
+        public event Action<string, bool> LobbyJoinStatusChanged;
 
         public bool IsInLobby => _currentLobbyId != CSteamID.Nil;
         public bool IsHost => _isHost;
+        public bool JoinInProgress => _joinInProgress;
+        public string LastJoinStatus => _lastJoinStatus;
         public CSteamID CurrentLobbyId => _currentLobbyId;
 
         private CallResult<LobbyCreated_t> _lobbyCreatedCallback = null!;
@@ -107,6 +116,56 @@ namespace EscapeFromDuckovCoopMod
             _lobbyDataUpdateCallback = Callback<LobbyDataUpdate_t>.Create(OnLobbyDataUpdate);
 
             Debug.Log("[SteamLobby] 回调已设置（包括邀请监听和数据更新）");
+        }
+
+        private void BeginJoin(CSteamID lobbyId)
+        {
+            _joinInProgress = true;
+            _pendingJoinLobbyId = lobbyId;
+            SetJoinStatus($"[STEAM_JOIN] joining lobby {lobbyId}", false);
+
+            if (_joinTimeoutRoutine != null)
+                StopCoroutine(_joinTimeoutRoutine);
+
+            _joinTimeoutRoutine = StartCoroutine(JoinTimeoutLoop(lobbyId));
+        }
+
+        private IEnumerator JoinTimeoutLoop(CSteamID lobbyId)
+        {
+            var deadline = Time.unscaledTime + LobbyJoinTimeoutSeconds;
+            while (_joinInProgress && _pendingJoinLobbyId == lobbyId && Time.unscaledTime < deadline)
+                yield return null;
+
+            if (_joinInProgress && _pendingJoinLobbyId == lobbyId)
+            {
+                EndJoin(false, $"[STEAM_JOIN] lobby join timeout after {LobbyJoinTimeoutSeconds:0}s");
+                if (NetService.Instance != null)
+                {
+                    NetService.Instance.status = "Steam lobby join timeout";
+                    NetService.Instance.isConnecting = false;
+                }
+            }
+        }
+
+        private void EndJoin(bool success, string status)
+        {
+            _joinInProgress = false;
+            _pendingJoinLobbyId = CSteamID.Nil;
+
+            if (_joinTimeoutRoutine != null)
+            {
+                StopCoroutine(_joinTimeoutRoutine);
+                _joinTimeoutRoutine = null;
+            }
+
+            SetJoinStatus(status, success);
+        }
+
+        private void SetJoinStatus(string message, bool success)
+        {
+            _lastJoinStatus = message ?? string.Empty;
+            Debug.Log(_lastJoinStatus);
+            LobbyJoinStatusChanged?.Invoke(_lastJoinStatus, success);
         }
 
         public void CreateLobby(SteamLobbyOptions? options = null)
@@ -172,12 +231,14 @@ namespace EscapeFromDuckovCoopMod
             if (!SteamManager.Initialized)
             {
                 error = LobbyJoinError.SteamNotInitialized;
+                SetJoinStatus("[STEAM_JOIN] Steam is not initialized", false);
                 return false;
             }
 
             if (!_lobbyMetadata.TryGetValue(lobbyId, out var meta))
             {
                 error = LobbyJoinError.LobbyMetadataUnavailable;
+                SetJoinStatus("[STEAM_JOIN] lobby metadata unavailable, requesting refresh", false);
                 SteamMatchmaking.RequestLobbyData(lobbyId);
                 return false;
             }
@@ -188,6 +249,7 @@ namespace EscapeFromDuckovCoopMod
                 if (!string.Equals(providedHash, meta.PasswordHash, StringComparison.Ordinal))
                 {
                     error = LobbyJoinError.IncorrectPassword;
+                    SetJoinStatus("[STEAM_JOIN] incorrect lobby password", false);
                     return false;
                 }
             }
@@ -201,10 +263,12 @@ namespace EscapeFromDuckovCoopMod
             if (!SteamManager.Initialized)
             {
                 Debug.LogError("[SteamLobby] Steam未初始化");
+                SetJoinStatus("[STEAM_JOIN] Steam is not initialized", false);
                 return;
             }
 
             Debug.Log($"[SteamLobby] 加入Lobby: {lobbyId}");
+            BeginJoin(lobbyId);
             SteamMatchmaking.JoinLobby(lobbyId);
         }
 
@@ -227,7 +291,20 @@ namespace EscapeFromDuckovCoopMod
                 _currentLobbyId = CSteamID.Nil;
                 _isHost = false;
                 _lobbyMembersCache.Clear();  // 清空成员缓存
+                EndJoin(false, "[STEAM_JOIN] left lobby");
             }
+            else if (_joinInProgress)
+            {
+                EndJoin(false, "[STEAM_JOIN] lobby join cancelled");
+            }
+        }
+
+        public void CancelPendingJoin(string reason)
+        {
+            if (!_joinInProgress)
+                return;
+
+            EndJoin(false, string.IsNullOrEmpty(reason) ? "[STEAM_JOIN] lobby join cancelled" : reason);
         }
 
         public void InviteFriend()
@@ -298,6 +375,7 @@ namespace EscapeFromDuckovCoopMod
             if (bIOFailure || callback.m_eResult != EResult.k_EResultOK)
             {
                 Debug.LogError($"[SteamLobby] 创建Lobby失败: {callback.m_eResult}");
+                SetJoinStatus($"[STEAM_JOIN] create lobby failed: {callback.m_eResult}", false);
                 return;
             }
 
@@ -306,6 +384,7 @@ namespace EscapeFromDuckovCoopMod
 
             Debug.Log($"[SteamLobby] Lobby创建成功: {_currentLobbyId}");
             Debug.Log("[SteamLobby] ✓ 设置为主机模式");
+            SetJoinStatus("[STEAM_JOIN] lobby created", true);
 
             ApplyLobbyMetadata(_pendingLobbyOptions);
         }
@@ -393,7 +472,8 @@ namespace EscapeFromDuckovCoopMod
 
                     if (SteamEndPointMapper.Instance != null)
                     {
-                        var hostEndPoint = SteamEndPointMapper.Instance.RegisterSteamID(hostId, 27015);
+                        var port = NetService.Instance != null ? NetService.Instance.port : 9050;
+                        var hostEndPoint = SteamEndPointMapper.Instance.RegisterSteamID(hostId, port);
                         Debug.Log($"[SteamLobby] 主机映射到: {hostEndPoint}");
                     }
 
@@ -402,11 +482,15 @@ namespace EscapeFromDuckovCoopMod
                 }
 
                 // 触发 Lobby 加入成功事件
+                EndJoin(true, "[STEAM_JOIN] lobby entered");
                 LobbyJoined?.Invoke();
             }
             else
             {
                 Debug.LogError($"[SteamLobby] 加入Lobby失败: {callback.m_EChatRoomEnterResponse}");
+                _currentLobbyId = CSteamID.Nil;
+                _isHost = false;
+                EndJoin(false, $"[STEAM_JOIN] lobby enter failed: {callback.m_EChatRoomEnterResponse}");
             }
         }
 

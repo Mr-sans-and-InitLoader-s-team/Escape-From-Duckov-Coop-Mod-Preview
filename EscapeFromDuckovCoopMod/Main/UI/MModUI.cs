@@ -161,7 +161,7 @@ public class MModUI : MonoBehaviour
     private NetDataWriter writer => Service?.writer;
     private NetPeer connectedPeer => Service?.connectedPeer;
     private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
-    private bool networkStarted => Service != null && Service.networkStarted;
+    private bool networkStarted => Service?.IsActuallyRunning == true;
 
     private List<string> hostList => Service?.hostList ?? _hostList;
     private HashSet<string> hostSet => Service?.hostSet ?? _hostSet;
@@ -339,6 +339,8 @@ public class MModUI : MonoBehaviour
             LobbyManager.LobbyListUpdated += OnLobbyListUpdated;
             LobbyManager.LobbyJoined -= OnLobbyJoined;
             LobbyManager.LobbyJoined += OnLobbyJoined;
+            LobbyManager.LobbyJoinStatusChanged -= OnLobbyJoinStatusChanged;
+            LobbyManager.LobbyJoinStatusChanged += OnLobbyJoinStatusChanged;
             _steamLobbyInfos.Clear();
             _steamLobbyInfos.AddRange(LobbyManager.AvailableLobbies);
         }
@@ -351,6 +353,8 @@ public class MModUI : MonoBehaviour
         if (LobbyManager != null)
         {
             LobbyManager.LobbyListUpdated -= OnLobbyListUpdated;
+            LobbyManager.LobbyJoined -= OnLobbyJoined;
+            LobbyManager.LobbyJoinStatusChanged -= OnLobbyJoinStatusChanged;
         }
     }
 
@@ -365,6 +369,25 @@ public class MModUI : MonoBehaviour
         Debug.Log("[MModUI] Lobby加入成功，强制刷新玩家列表");
         // 清空玩家列表缓存，强制刷新
         _displayedPlayerIds.Clear();
+        SetStatusText("[OK] Steam lobby joined, connecting to host", ModernColors.Success);
+    }
+
+    private void OnLobbyJoinStatusChanged(string message, bool success)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return;
+
+        var color = success ? ModernColors.Success : ModernColors.Info;
+        if (message.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            message.IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            message.IndexOf("incorrect", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            message.IndexOf("unavailable", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            message.IndexOf("not initialized", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            color = ModernColors.Error;
+        }
+
+        SetStatusText(message, color);
     }
 
     internal void ToggleAISyncSettings()
@@ -1248,9 +1271,24 @@ public class MModUI : MonoBehaviour
 
             if (parts.Length == 2 && int.TryParse(parts[1], out var p))
             {
-                if (netManager == null || !netManager.IsRunning || IsServer || !networkStarted)
-                    NetService.Instance.StartNetwork(false);
-                NetService.Instance.ConnectToHost(parts[0], p);
+                var svc = NetService.Instance;
+                if (svc == null)
+                {
+                    SetStatusText("[!] network service not initialized", ModernColors.Error);
+                    return;
+                }
+
+                if (!svc.IsActuallyRunning || IsServer)
+                {
+                    if (!svc.TryStartNetwork(false))
+                    {
+                        SetStatusText("[!] " + svc.status, ModernColors.Error);
+                        return;
+                    }
+                }
+
+                SetStatusText("[*] " + CoopLocalization.Get("ui.status.connecting"), ModernColors.Info);
+                svc.ConnectToHost(parts[0], p);
             }
         }, 120, ModernColors.Primary, 45, 16);
 
@@ -2758,12 +2796,13 @@ public class MModUI : MonoBehaviour
     internal void OnToggleServerMode()
     {
         // 判断当前是否是活跃的服务器
-        bool isActiveServer = IsServer && networkStarted;
+        var svc = NetService.Instance;
+        bool isActiveServer = IsServer && Service?.IsActuallyRunning == true;
 
         if (isActiveServer)
         {
             // 关闭主机 - 完全停止网络
-            NetService.Instance.StopNetwork();
+            svc?.StopNetwork();
 
             SetStatusText("[OK] " + CoopLocalization.Get("ui.server.closed"), ModernColors.Info);
 
@@ -2771,12 +2810,22 @@ public class MModUI : MonoBehaviour
         }
         else
         {
+            if (svc == null)
+            {
+                SetStatusText("[!] network service not initialized", ModernColors.Error);
+                return;
+            }
+
             // 创建主机 - 使用下方连接区域的端口
             if (int.TryParse(manualPort, out int serverPort))
             {
                 // 设置服务器端口
-                NetService.Instance.port = serverPort;
-                NetService.Instance.StartNetwork(true);
+                svc.port = serverPort;
+                if (!svc.TryStartNetwork(true))
+                {
+                    SetStatusText("[!] " + svc.status, ModernColors.Error);
+                    return;
+                }
 
                 SetStatusText("[OK] " + CoopLocalization.Get("ui.server.created", serverPort), ModernColors.Success);
 
@@ -2808,6 +2857,7 @@ public class MModUI : MonoBehaviour
         // 检查客户端是否在关卡内
         if (LocalPlayerManager.Instance == null)
         {
+            Debug.LogWarning("[NET_STATE] connect blocked: LocalPlayerManager is not initialized");
             SetStatusText("[!] " + CoopLocalization.Get("ui.error.gameNotInitialized"), ModernColors.Error);
             return false;
         }
@@ -2816,7 +2866,7 @@ public class MModUI : MonoBehaviour
         if (!isInGame)
         {
             SetStatusText("[!] " + CoopLocalization.Get("ui.error.mustInLevel"), ModernColors.Warning);
-            Debug.LogWarning("无法连接：客户端未在游戏关卡中");
+            Debug.LogWarning("[NET_STATE] connect blocked: local player is not in a level");
             return false;
         }
 
@@ -2840,9 +2890,24 @@ public class MModUI : MonoBehaviour
         if (!CheckCanConnect())
             return;
 
-        if (netManager == null || !netManager.IsRunning || IsServer || !networkStarted)
-            NetService.Instance.StartNetwork(false);
-        NetService.Instance.ConnectToHost(manualIP, p);
+        var svc = NetService.Instance;
+        if (svc == null)
+        {
+            SetStatusText("[!] network service not initialized", ModernColors.Error);
+            return;
+        }
+
+        if (!svc.IsActuallyRunning || IsServer)
+        {
+            if (!svc.TryStartNetwork(false))
+            {
+                SetStatusText("[!] " + svc.status, ModernColors.Error);
+                return;
+            }
+        }
+
+        SetStatusText("[*] " + CoopLocalization.Get("ui.status.connecting"), ModernColors.Info);
+        svc.ConnectToHost(manualIP, p);
         // 状态会由 UpdateConnectionStatus() 自动同步
     }
 
@@ -2909,7 +2974,19 @@ public class MModUI : MonoBehaviour
         {
             // 创建房间
             UpdateLobbyOptionsFromUI();
-            NetService.Instance?.StartNetwork(true);
+            var svc = NetService.Instance;
+            if (svc == null)
+            {
+                SetStatusText("[!] network service not initialized", ModernColors.Error);
+                return;
+            }
+
+            if (!svc.TryStartNetwork(true))
+            {
+                SetStatusText("[!] " + svc.status, ModernColors.Error);
+                return;
+            }
+
             SetStatusText("[*] " + CoopLocalization.Get("ui.steam.lobby.creating"), ModernColors.Info);
         }
     }
@@ -3044,10 +3121,21 @@ public class MModUI : MonoBehaviour
         Debug.Log("[MModUI] 关卡检查通过，准备加入房间");
 
         // 如果网络未启动，先启动客户端模式
-        if (netManager == null || !netManager.IsRunning || IsServer || !networkStarted)
+        var svc = NetService.Instance;
+        if (svc == null)
+        {
+            SetStatusText("[!] network service not initialized", ModernColors.Error);
+            return;
+        }
+
+        if (!svc.IsActuallyRunning || IsServer)
         {
             Debug.Log("[MModUI] 启动客户端网络模式");
-            NetService.Instance?.StartNetwork(false);
+            if (!svc.TryStartNetwork(false))
+            {
+                SetStatusText("[!] " + svc.status, ModernColors.Error);
+                return;
+            }
         }
 
         var password = lobby.RequiresPassword ? _steamJoinPassword : string.Empty;

@@ -96,7 +96,7 @@ public class ModBehaviourF : MonoBehaviour
     public NetDataWriter writer => Service?.writer;
     public NetPeer connectedPeer => Service?.connectedPeer;
     public PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
-    public bool networkStarted => Service != null && Service.networkStarted;
+    public bool networkStarted => Service != null && Service.IsActuallyRunning;
     public string manualIP => Service?.manualIP;
     public List<string> hostList => Service?.hostList;
     public HashSet<string> hostSet => Service?.hostSet;
@@ -465,6 +465,7 @@ public class ModBehaviourF : MonoBehaviour
             SceneNet.Instance.Server_ClearLoadInProgress();
             COOPManager.ItemNet?.Server_RebuildDropRegistryFromScene();
             COOPManager.ItemNet?.Server_BroadcastDropSnapshot();
+            COOPManager.AI?.Server_BroadcastSnapshot(true);
         }
         else
         {
@@ -504,30 +505,31 @@ public class ModBehaviourF : MonoBehaviour
 
     public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
     {
+        Op op = default;
+        var hasOp = false;
+        var totalBytes = 0;
+
+        try
+        {
+        if (reader == null)
+            return;
+
         // 统一：读取 1 字节的操作码（Op）
         if (reader.AvailableBytes <= 0)
         {
-            reader.Recycle();
             return;
         }
 
-        //var serverLoading = IsServer && SceneNet.Instance.IsServerLoadInProgress();
-        //if (serverLoading)
-        //{
-        //    reader.Recycle();
-        //    return;
-        //}
-
-        var totalBytes = reader.AvailableBytes;
+        totalBytes = reader.AvailableBytes;
         var opByte = reader.GetByte();
         var payloadBytes = Math.Max(0, totalBytes - 1);
-        var op = (Op)opByte;
+        op = (Op)opByte;
+        hasOp = true;
         NetDiagnostics.Instance.RecordInbound(op, payloadBytes);
         //  Debug.Log($"[RECV OP] {(byte)op}, avail={reader.AvailableBytes}");
 
         if (RpcRegistry.TryHandle(op, new RpcContext(NetService.Instance, peer), reader))
         {
-            reader.Recycle();
             return;
         }
 
@@ -672,7 +674,17 @@ public class ModBehaviourF : MonoBehaviour
 
         }
 
-        reader.Recycle();
+        }
+        catch (Exception ex)
+        {
+            var peerInfo = peer != null ? peer.EndPoint?.ToString() ?? "unknown" : "null";
+            var opInfo = hasOp ? $"{op}({(byte)op})" : "none";
+            Debug.LogError($"[NET_STATE] receive failed peer={peerInfo}, op={opInfo}, bytes={totalBytes}: {ex}");
+        }
+        finally
+        {
+            reader?.Recycle();
+        }
     }
 
     private void OnSceneLoaded_IndexDestructibles(Scene s, LoadSceneMode m)

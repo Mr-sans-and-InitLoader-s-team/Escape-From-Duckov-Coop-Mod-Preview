@@ -78,7 +78,7 @@ public class SceneNet : MonoBehaviour
     private NetDataWriter writer => Service?.writer;
     private NetPeer connectedPeer => Service?.connectedPeer;
     private PlayerStatus localPlayerStatus => Service?.localPlayerStatus;
-    private bool networkStarted => Service != null && Service.networkStarted;
+    private bool networkStarted => Service?.IsActuallyRunning == true;
     private int port => Service?.port ?? 0;
     private Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
     private Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
@@ -670,6 +670,9 @@ public class SceneNet : MonoBehaviour
         // 4) （可选）主机本地也显示客户端：在主机场景创建“该客户端”的远端克隆
         if (!remoteCharacters.TryGetValue(fromPeer, out var exists) || exists == null)
             CreateRemoteCharacter.CreateRemoteCharacterAsync(fromPeer, pos, rot, faceJson).Forget();
+
+        if (fromPeer != null)
+            COOPManager.AI?.Server_SendSnapshotTo(fromPeer, true);
     }
 
     public void Host_BeginSceneVote_Simple(string targetSceneId, string curtainGuid,

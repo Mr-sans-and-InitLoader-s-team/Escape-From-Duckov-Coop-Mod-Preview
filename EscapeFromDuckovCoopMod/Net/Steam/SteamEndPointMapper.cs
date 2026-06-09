@@ -25,8 +25,11 @@ namespace EscapeFromDuckovCoopMod
             DontDestroyOnLoad(gameObject);
             Debug.Log("[SteamEndPointMapper] 初始化完成");
         }
-        public IPEndPoint RegisterSteamID(CSteamID steamID, int port = 27015)
+        public IPEndPoint RegisterSteamID(CSteamID steamID, int port = 0)
         {
+            if (port <= 0)
+                port = NetService.Instance != null ? NetService.Instance.port : 9050;
+
             if (_steamToEndPoint.TryGetValue(steamID, out IPEndPoint existingEndPoint))
             {
                 Debug.Log($"[SteamEndPointMapper] Steam ID {steamID} 已注册为 {existingEndPoint}");

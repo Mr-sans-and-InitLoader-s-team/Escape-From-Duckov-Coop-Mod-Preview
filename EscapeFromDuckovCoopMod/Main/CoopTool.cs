@@ -140,7 +140,7 @@ public static class CoopTool
         where T : struct, IRpcMessage
     {
         var service = Service;
-        if (service == null) return;
+        if (service == null || !service.IsActuallyRunning) return;
 
         var descriptor = RpcRegistry.GetDescriptor<T>();
         var writer = RpcWriterPool.Rent();
@@ -157,7 +157,7 @@ public static class CoopTool
                     return;
 
                 var manager = service.netManager;
-                if (manager == null) return;
+                if (manager == null || !manager.IsRunning) return;
 
                 var peers = manager.ConnectedPeerList;
                 for (var i = 0; i < peers.Count; i++)
@@ -190,7 +190,7 @@ public static class CoopTool
         where T : struct, IRpcMessage
     {
         var service = Service;
-        if (service == null || target == null || !service.IsServer) return;
+        if (service == null || target == null || !service.IsServer || !service.IsActuallyRunning) return;
 
         var descriptor = RpcRegistry.GetDescriptor<T>();
         if (descriptor.Direction == RpcDirection.ClientToServer) return;
@@ -217,7 +217,7 @@ public static class CoopTool
         if (service == null) return;
 
         var manager = service.netManager;
-        if (manager == null || !manager.IsRunning) return;
+        if (manager == null || !manager.IsRunning || !service.IsActuallyRunning) return;
 
         var writer = service.writer;
         writer.Reset();

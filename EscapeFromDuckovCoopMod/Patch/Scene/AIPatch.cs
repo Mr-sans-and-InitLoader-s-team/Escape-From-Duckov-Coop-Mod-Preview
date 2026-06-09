@@ -25,22 +25,32 @@ using static Unity.Burst.Intrinsics.X86.Avx;
 
 namespace EscapeFromDuckovCoopMod;
 
+internal static class AIPatchNetworkGate
+{
+    public static bool AllowOriginalAiSpawn()
+    {
+        var svc = NetService.Instance;
+        if (svc == null || !svc.IsActuallyRunning)
+            return true;
+
+        var core = MultiSceneCore.Instance;
+        var sceneInfo = core?.SceneInfo;
+        if (sceneInfo == null)
+            return true;
+
+        if (sceneInfo.ID == "Base")
+            return true;
+
+        return svc.IsServer;
+    }
+}
+
 [HarmonyPatch(typeof(CharacterSpawnerRoot), "StartSpawn")]
 public static class Patch_CharacterSpawnerRoot_StartSpawn
 {
     public static bool Prefix(CharacterSpawnerRoot __instance)
     {
-        var svc = NetService.Instance;
-
-        if(MultiSceneCore.Instance.SceneInfo.ID == "Base" && svc.networkStarted)
-            return true;
-
-        if(!svc.networkStarted)
-           return true;
-        
-        if (svc != null && !svc.IsServer)
-            return false;   
-        return true;
+        return AIPatchNetworkGate.AllowOriginalAiSpawn();
     }
 }
 
@@ -49,16 +59,7 @@ public static class Patch_CharacterSpawnerGroup_StartSpawn
 {
     public static bool Prefix()
     {
-        var svc = NetService.Instance;
-        if (MultiSceneCore.Instance.SceneInfo.ID == "Base" && svc.networkStarted)
-            return true;
-
-        if (!svc.networkStarted)
-            return true;
-
-        if (svc != null && !svc.IsServer)
-            return false;
-        return true;
+        return AIPatchNetworkGate.AllowOriginalAiSpawn();
     }
 }
 
@@ -67,16 +68,7 @@ public static class Patch_CharacterSpawnerGroupSelector_StartSpawn
 {
     public static bool Prefix()
     {
-        var svc = NetService.Instance;
-        if (MultiSceneCore.Instance.SceneInfo.ID == "Base" && svc.networkStarted)
-            return true;
-
-        if (!svc.networkStarted)
-            return true;
-
-        if (svc != null && !svc.IsServer)
-            return false;
-        return true;
+        return AIPatchNetworkGate.AllowOriginalAiSpawn();
     }
 }
 
@@ -86,7 +78,8 @@ public static class Patch_AICharacterController_Init
     public static void Postfix(AICharacterController __instance)
     {
         if (__instance == null) return;
-        if (!NetService.Instance.IsServer) { return; }
+        var svc = NetService.Instance;
+        if (svc == null || !svc.IsServer || !svc.IsActuallyRunning) return;
         DelayedRegister(__instance).Forget();
     }
 
@@ -94,49 +87,50 @@ public static class Patch_AICharacterController_Init
     {
         if (ai == null) return;
 
-     
-
-        // 等待 1 秒钟，确保 AI 完全初始化然后就可以注册到 COOPManager 里通过数据库同步了~~
         var token = ai.GetCancellationTokenOnDestroy();
-        try
+
+        for (var attempt = 1; attempt <= 4; attempt++)
         {
-            await UniTask.Delay(800, cancellationToken: token);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-        var modelRoot = ai.CharacterMainControl.characterModel;
-        if (modelRoot != null && modelRoot.name.Contains("0_CharacterModel_Custom_Enemy_Invisable"))
-            ai.CharacterMainControl.Health.showHealthBar = false;
-        //if (MultiSceneCore.Instance.SceneInfo.ID == "Base" && !ModBehaviourF.Instance.IsServer && ai.hideIfFoundEnemy == null)
-        //{
-        //    GameObject.Destroy(ai.CharacterMainControl.gameObject);
-        //    return;
-        //}
+            try
+            {
+                await UniTask.Delay(attempt == 1 ? 800 : 400, cancellationToken: token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
 
-        var svc = NetService.Instance;
-        if (svc == null || !svc.IsServer) return;
-        if (ai == null) return;
+            var svc = NetService.Instance;
+            if (svc == null || !svc.IsServer || !svc.IsActuallyRunning) return;
+            if (ai == null) return;
 
-        DifficultyManager.ApplyToAI(ai);
-
-        COOPManager.AI?.Server_RegisterCharacter(ai);
-
-        try
-        {
             var cmc = ai.CharacterMainControl;
-            if (cmc)
+            if (cmc == null || cmc.Health == null)
+                continue;
+
+            var modelRoot = cmc.characterModel;
+            if (modelRoot != null && modelRoot.name.Contains("0_CharacterModel_Custom_Enemy_Invisable"))
+                cmc.Health.showHealthBar = false;
+
+            DifficultyManager.ApplyToAI(ai);
+
+            COOPManager.AI?.Server_RegisterCharacter(ai);
+
+            try
             {
                 var id = 0;
                 if (CoopSyncDatabase.AI.TryGet(ai, out var entry) && entry != null)
                     id = entry.Id;
                 ModApiEvents.RaiseAiSpawned(id, cmc);
             }
+            catch
+            {
+            }
+
+            return;
         }
-        catch
-        {
-        }
+
+        Debug.LogWarning("[AI_SYNC] AI registration skipped after retries because controller was not ready");
     }
 }
 

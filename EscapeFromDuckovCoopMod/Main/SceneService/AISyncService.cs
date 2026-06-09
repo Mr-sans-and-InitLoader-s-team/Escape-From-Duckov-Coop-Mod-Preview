@@ -511,7 +511,7 @@ public sealed class AISyncService
 
     public void Server_Update(float deltaTime)
     {
-        if (!IsServer || Service == null || !Service.networkStarted) return;
+        if (!IsServer || Service == null || !Service.IsActuallyRunning) return;
         if (CheckAndHandleSyncBlock()) return;
 
         if (_serverPendingBuffs.Count > 0)
@@ -639,6 +639,7 @@ public sealed class AISyncService
 
         try
         {
+            Server_RescanActiveControllers();
             _snapshotBuffer.Clear();
             var hasRadius = message.HasRadius;
             var center = message.Center;
@@ -671,6 +672,66 @@ public sealed class AISyncService
         finally
         {
             _snapshotBuffer.Clear();
+        }
+    }
+
+    public void Server_SendSnapshotTo(NetPeer peer, bool reset)
+    {
+        if (!IsServer || peer == null) return;
+        if (CheckAndHandleSyncBlock()) return;
+
+        var originalReset = reset;
+        var entryCount = 0;
+        try
+        {
+            Server_RescanActiveControllers();
+            _snapshotBuffer.Clear();
+
+            foreach (var entry in CoopSyncDatabase.AI.Entries)
+            {
+                if (entry == null) continue;
+                entryCount++;
+                _snapshotBuffer.Add(BuildSnapshotEntry(entry));
+
+                if (_snapshotBuffer.Count >= SnapshotChunkSize)
+                {
+                    SendSnapshotChunk(peer, _snapshotBuffer, reset);
+                    reset = false;
+                    _snapshotBuffer.Clear();
+                }
+            }
+
+            if (_snapshotBuffer.Count > 0)
+                SendSnapshotChunk(peer, _snapshotBuffer, reset);
+
+            Debug.Log($"[AI_SYNC] sent snapshot to {peer.EndPoint}, reset={originalReset}, entries={entryCount}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[AI_SYNC] failed to send snapshot to {peer.EndPoint}: {ex}");
+        }
+        finally
+        {
+            _snapshotBuffer.Clear();
+        }
+    }
+
+    public void Server_BroadcastSnapshot(bool reset)
+    {
+        if (!IsServer) return;
+        if (CheckAndHandleSyncBlock()) return;
+
+        try
+        {
+            Server_RescanActiveControllers();
+            var sent = Server_BroadcastSnapshotToAll(reset);
+            _serverPendingSnapshotReset |= !sent && reset;
+            Debug.Log($"[AI_SYNC] broadcast snapshot requested, reset={reset}, sent={sent}");
+        }
+        catch (Exception ex)
+        {
+            _serverPendingSnapshotReset |= reset;
+            Debug.LogWarning($"[AI_SYNC] failed to broadcast snapshot: {ex}");
         }
     }
 
@@ -719,7 +780,7 @@ public sealed class AISyncService
 
     public void Client_RequestSnapshotIfNeeded()
     {
-        if (IsServer || Service == null || !Service.networkStarted) return;
+        if (IsServer || Service == null || !Service.IsActuallyRunning) return;
         if (CheckAndHandleSyncBlock()) return;
 
         var sceneId = SceneNet.Instance?._sceneReadySidSent;
@@ -746,7 +807,7 @@ public sealed class AISyncService
 
     private void Client_SendSnapshotRequest(bool forceFull)
     {
-        if (IsServer || Service == null || !Service.networkStarted) return;
+        if (IsServer || Service == null || !Service.IsActuallyRunning) return;
         if (CheckAndHandleSyncBlock()) return;
 
         var request = new AISnapshotRequestRpc
@@ -881,7 +942,7 @@ public sealed class AISyncService
 
     public void Client_Update(float deltaTime)
     {
-        if (IsServer || Service == null || !Service.networkStarted) return;
+        if (IsServer || Service == null || !Service.IsActuallyRunning) return;
         if (CheckAndHandleSyncBlock()) return;
 
         Client_RequestSnapshotIfNeeded();
@@ -1413,7 +1474,7 @@ public sealed class AISyncService
 
     private void Client_TryScheduleSnapshotRecovery(bool forceFull)
     {
-        if (IsServer || Service == null || !Service.networkStarted)
+        if (IsServer || Service == null || !Service.IsActuallyRunning)
             return;
 
         var now = Time.unscaledTime;
@@ -3044,7 +3105,7 @@ public sealed class AISyncService
 
     public void Client_ReportAiBuff(int id, int weaponTypeId, int buffId)
     {
-        if (IsServer || Service == null || !Service.networkStarted) return;
+        if (IsServer || Service == null || !Service.IsActuallyRunning) return;
         if (id == 0 || buffId == 0) return;
 
         var rpc = new AIBuffReportRpc
@@ -3059,7 +3120,7 @@ public sealed class AISyncService
 
     public void Client_ReportAiHealth(int id, Health health, DamageInfo? damage)
     {
-        if (IsServer || Service == null || !Service.networkStarted || health == null) return;
+        if (IsServer || Service == null || !Service.IsActuallyRunning || health == null) return;
 
         var (max, cur, bodyArmor, headArmor) = ReadHealthSafe(health);
         if (max <= 0f)

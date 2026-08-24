@@ -1,181 +1,181 @@
-# 🦆 逃离鸭科夫联机模组先遣版
+<div align="center">
 
-[![License](https://img.shields.io/badge/License-Modified%20AGPL--3.0-blue.svg)](LICENSE.txt)
-[![Steam Workshop](https://img.shields.io/badge/Steam-Workshop-blue.svg)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
+# 🦆 逃离鸭科夫联机模组 · 先遣版
 
-**[English](README_EN.md)** | 简体中文
+**让《逃离鸭科夫》的单人冒险变成可以和朋友一起探索、战斗与撤离的合作体验。**
 
----
+[![Version](https://img.shields.io/badge/Version-1.3.5-2ea44f?style=flat-square)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
+[![Steam Workshop](https://img.shields.io/badge/Steam-创意工坊-1b2838?style=flat-square&logo=steam)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
+[![Stars](https://img.shields.io/github/stars/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/stargazers)
+[![Forks](https://img.shields.io/github/forks/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/network/members)
+[![Issues](https://img.shields.io/github/issues/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/issues)
+[![Last Commit](https://img.shields.io/github/last-commit/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/commits/master)
+[![License](https://img.shields.io/badge/License-Modified%20AGPL--3.0-blue?style=flat-square)](LICENSE.txt)
 
-## 📖 简介
+**[Steam 创意工坊](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)** · **[更新记录](CHANGELOG.md)** · **[问题反馈](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/issues)**
 
-**Escape From Duckov Coop Mod Preview** 是一个为游戏《逃离鸭科夫》(Escape From Duckov) 开发的联机合作模组。
+[English](README_EN.md) | **简体中文**
 
-该项目的目标是让玩家能够在原本的单人游戏中实现稳定的局域网/联机合作游戏体验，包括：
+</div>
 
-- 🎮 多人游戏同步
-- 🤖 AI 行为同步
-- 📦 战利品共享
-- 👻 死亡观战模式
-- ⚔️ 完整的战斗同步
-- 🌐 局域网/在线联机支持
+> [!IMPORTANT]
+> 本项目仍处于先遣预览阶段。参与联机的玩家应安装相同版本；更新或测试前建议备份重要存档。
 
----
+## 📖 项目简介
 
-## 🎯 使用方法
+**Escape From Duckov Coop Mod Preview** 是为《逃离鸭科夫》（Escape From Duckov）开发的联机合作模组。项目专注于同步玩家、AI、战斗、场景交互与战利品等核心游戏状态，让原本的单人流程能够与朋友共同体验。
 
-### 普通玩家
+| 项目 | 当前信息 |
+| --- | --- |
+| 模组版本 | **v1.3.5** |
+| 开发阶段 | **先遣预览版** |
+| 发布渠道 | [Steam 创意工坊](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282) |
+| 创意工坊 ID | `3591341282` |
+| 联机方式 | 局域网 / 在线联机 |
+| 构建目标 | .NET Standard 2.1 |
 
-**无需手动安装或构建本项目。**
+## ✨ 功能概览
 
-直接通过 Steam 创意工坊订阅即可使用：
+| 模块 | 已支持内容 |
+| --- | --- |
+| 👥 玩家同步 | 位置、动作、外观、装备、血量与玩家名称 |
+| 🤖 AI 同步 | 敌人生成、移动、状态、受伤、死亡与血条 |
+| ⚔️ 战斗同步 | 枪械、近战、投掷物、伤害与属性效果 |
+| 📦 战利品同步 | 掉落物、战利品箱、拾取与场景容器 |
+| 🗺️ 场景同步 | 门、可破坏物、付费交互、抽奖装置与挑战触发器 |
+| 🚙 载具同步 | 载具状态、乘坐、控制权与加油状态 |
+| 🎮 联机流程 | 房间版本校验、地图切换投票、重连与死亡观战 |
+| 🖥️ 联机界面 | 房间管理、同步设置、状态提示与主题界面 |
 
-👉 **[Steam 创意工坊链接](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)**
+## 🚀 快速开始
 
-订阅后，启动游戏并启用该模组，即可体验联机功能。
+普通玩家无需下载源码或手动编译：
 
-### 开发者
+1. 在 [Steam 创意工坊](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282) 订阅模组。
+2. 启动游戏，并在模组管理界面中启用本模组。
+3. 确认所有参与联机的玩家使用相同版本。
+4. 由一名玩家创建联机房间，其他玩家加入后即可开始游戏。
 
-如果你想从源码构建或参与开发，请参阅 [编译指南](#-编译指南)。
-
----
+需要自行构建或参与开发时，请继续阅读下方的编译指南。
 
 ## 🛠️ 编译指南
 
 ### 前置要求
 
 - Visual Studio 2019 或更高版本
-- .NET Framework 4.8
-- 游戏《逃离鸭科夫》已安装
+- 支持 .NET Standard 2.1 的 .NET SDK
+- 已安装《逃离鸭科夫》
 
-### 步骤 1：配置环境变量
+### 1. 配置游戏路径
 
-在首次编译前，你需要设置游戏路径环境变量。
+首次编译前，需要设置游戏根目录环境变量 `DUCKOV_GAME_DIRECTORY`。
 
-#### 方法一：使用自动配置脚本（推荐）
+#### 自动配置（推荐）
 
-1. 找到项目根目录下的 `SetEnvVars_Permanent.bat` 文件
-2. 双击运行该脚本
-3. 按提示输入你的游戏文件夹路径
+1. 双击项目根目录中的 `SetEnvVars_Permanent.bat`。
+2. 按提示输入游戏文件夹的完整路径，例如：
 
-   **示例路径**：
-   ```
+   ```text
    C:\Steam\steamapps\common\Escape from Duckov
    ```
 
-4. 脚本会自动设置环境变量 `DUCKOV_GAME_DIRECTORY`
-5. **重要**：完全关闭 Visual Studio 后重新打开，以加载新的环境变量
+3. 脚本会写入当前用户的永久环境变量。
+4. 完全关闭并重新打开 Visual Studio 或命令行，使变量生效。
 
-#### 方法二：手动配置环境变量
+#### 手动配置
 
-1. 右键点击"此电脑" → "属性" → "高级系统设置" → "环境变量"
-2. 在"用户变量"区域点击"新建"
-3. 变量名：`DUCKOV_GAME_DIRECTORY`
-4. 变量值：你的游戏 Managed 文件夹完整路径
-5. 点击"确定"保存
+在 Windows 的“环境变量”设置中新增用户变量：
 
-### 步骤 2：准备依赖文件
+```text
+变量名：DUCKOV_GAME_DIRECTORY
+变量值：游戏根目录的完整路径
+```
 
-确保 `Shared` 文件夹中包含以下 DLL 文件：
+### 2. 准备依赖
+
+确认 `Shared` 文件夹中包含以下依赖：
 
 - `0Harmony.dll`
 - `LiteNetLib.dll`
 
-### 步骤 3：编译项目
+游戏自身的程序集会根据 `DUCKOV_GAME_DIRECTORY` 自动从 `Duckov_Data\Managed` 目录引用。
 
-1. 打开 `EscapeFromDuckovCoopMod.sln` 解决方案
-2. 选择 `Release` 配置
-3. 右键点击解决方案 → "生成解决方案"
+### 3. 编译项目
 
-编译成功后，输出文件位于 `EscapeFromDuckovCoopMod/bin/Release/` 目录。
+1. 打开 `EscapeFromDuckovCoopMod.sln`。
+2. 选择 `Release` 配置。
+3. 生成解决方案。
+
+编译输出位于 `EscapeFromDuckovCoopMod/bin/Release/`。
 
 ### 常见问题
 
-**Q: 编译时提示找不到引用的 DLL？**
+<details>
+<summary><strong>编译时提示找不到游戏 DLL</strong></summary>
 
-A: 确保你已正确设置 `DUCKOV_GAME_DIRECTORY` 环境变量，并且已重启 Visual Studio。
+确认 `DUCKOV_GAME_DIRECTORY` 指向游戏根目录，而不是 `Duckov_Data` 或 `Managed` 子目录；设置后需要重新打开 Visual Studio。
 
-**Q: 环境变量设置后仍然无效？**
+</details>
 
-A:
+<details>
+<summary><strong>如何确认环境变量已经生效</strong></summary>
 
-1. 在命令行输入 `echo %DUCKOV_GAME_DIRECTORY%` 验证环境变量是否设置成功
-2. 确保完全关闭 Visual Studio（包括后台进程）后重新打开
+在新的命令提示符窗口中执行：
 
-**Q: 路径中包含空格或特殊字符怎么办？**
+```bat
+echo %DUCKOV_GAME_DIRECTORY%
+```
 
-A: 脚本已支持包含空格和括号的路径，例如 `Program Files (x86)`。直接输入完整路径即可。
+</details>
 
----
+<details>
+<summary><strong>游戏路径中包含空格或括号</strong></summary>
 
-## 🎯 功能特性
+配置脚本支持包含空格和括号的路径，例如 `Program Files (x86)`，直接输入完整路径即可。
 
-### 核心功能
+</details>
 
-- ✅ 玩家位置、动作、装备同步
-- ✅ AI 敌人状态同步
-- ✅ 战利品箱同步
-- ✅ 门、可破坏物体同步
-- ✅ 投掷物（手雷等）同步
-- ✅ 伤害计算与同步
-- ✅ 死亡观战模式
+## 🤝 参与与反馈
 
-### 网络特性
+欢迎通过 [Issues](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/issues) 报告问题，或在 [Discussions](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/discussions) 中交流建议。
 
-- 🌐 支持局域网联机
-- 🌐 支持互联网联机
-- ⚡ 优化的网络性能
-- 🔄 自动重连机制
+提交问题时，建议附上以下信息：
 
----
+- 模组版本与游戏版本
+- 主机或客户端身份
+- 问题复现步骤
+- 相关日志、截图或视频
 
 ## 💡 致谢
 
-特别感谢以下开发者对本项目的支持与贡献：
+特别感谢以下开发者和测试者对项目的支持：
 
-- **Neko17** - 核心开发
-- **Prototype-alpha** - 功能开发与优化
-- **所有参与 Debug 和测试的朋友们**
+- **Neko17** — 核心开发
+- **Prototype-alpha** — 功能开发与优化
+- **所有参与调试与联机测试的朋友们**
 
-感谢以下开源项目：
+本项目使用了以下开源项目：
 
-- [HarmonyLib](https://github.com/pardeike/Harmony) - 运行时代码修改框架
-- [LiteNetLib](https://github.com/RevenantX/LiteNetLib) - UDP 网络库
-
----
+- [HarmonyLib](https://github.com/pardeike/Harmony) — 运行时代码修改框架
+- [LiteNetLib](https://github.com/RevenantX/LiteNetLib) — UDP 网络库
 
 ## 📄 许可证
 
-本项目使用基于 **AGPL-3.0 修改的协议**发布。
+本项目使用基于 **AGPL-3.0 修改的协议**发布。使用或分发衍生作品前，请完整阅读许可证文件：
 
-使用本项目的任何衍生作品必须遵守以下条款：
+- [LICENSE.txt](LICENSE.txt) — 完整许可证文本
+- [LICENSE_RESTRICTIONS.txt](LICENSE_RESTRICTIONS.txt) — 额外限制说明
 
-- ❌ **禁止商业用途**
-- ❌ **禁止私有服务器闭源使用**
-- ✅ **必须署名原作者**
+主要要求包括：
 
-详情请参阅：
-
-- [LICENSE.txt](LICENSE.txt) - 完整许可证文本
-- [LICENSE_RESTRICTIONS.txt](LICENSE_RESTRICTIONS.txt) - 额外限制说明
+- ❌ 禁止商业用途
+- ❌ 禁止私有服务器闭源使用
+- ✅ 必须署名原作者
 
 ---
 
-## 📞 联系与反馈
+<div align="center">
 
-欢迎在 [Issues](../../issues) 或 [Discussions](../../discussions) 中提出建议与问题。
+**如果这个项目对你有帮助，欢迎点亮一个 ⭐ Star。**
 
-本项目仍处于预览阶段，期待社区的参与与反馈！
-
----
-
-## 🗺️ 项目路线图
-
-- ✅ 更多游戏机制同步
-- ✅ 性能优化
-- [ ] 更好的错误处理
-- [ ] 完善的文档
-
----
-
-**⭐ 如果这个项目对你有帮助，请给我们一个 Star！**
+</div>

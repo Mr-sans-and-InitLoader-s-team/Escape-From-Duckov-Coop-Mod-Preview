@@ -90,7 +90,8 @@ public sealed class AISyncTracker : MonoBehaviour
             SafeGetMax(_health),
             SafeGetCurrent(_health),
             SafeGetBodyArmor(_health),
-            SafeGetHeadArmor(_health));
+            SafeGetHeadArmor(_health),
+            info);
     }
 
     private static float SafeGetMax(Health health)

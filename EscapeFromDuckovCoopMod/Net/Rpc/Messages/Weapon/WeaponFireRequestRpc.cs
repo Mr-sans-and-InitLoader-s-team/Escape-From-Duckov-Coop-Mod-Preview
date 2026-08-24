@@ -3,7 +3,7 @@ using LiteNetLib.Utils;
 
 namespace EscapeFromDuckovCoopMod;
 
-[Rpc(Op.FIRE_REQUEST, DeliveryMethod.ReliableOrdered, RpcDirection.ClientToServer)]
+[Rpc(Op.FIRE_REQUEST, DeliveryMethod.Unreliable, RpcDirection.ClientToServer)]
 public struct WeaponFireRequestRpc : IRpcMessage
 {
     public string ShooterId;

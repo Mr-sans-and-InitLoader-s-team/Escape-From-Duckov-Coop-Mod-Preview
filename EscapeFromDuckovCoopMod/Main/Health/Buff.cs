@@ -23,6 +23,8 @@ namespace EscapeFromDuckovCoopMod;
 
 public class Buff_
 {
+    [System.ThreadStatic] internal static bool ApplyingNetworkBuff;
+
     private NetService Service => NetService.Instance;
 
 
@@ -32,12 +34,63 @@ public class Buff_
     {
         if (sender == null || message.BuffId == 0) return;
 
+        if (!string.IsNullOrEmpty(message.TargetPlayerId))
+        {
+            Server_ApplyRequestedPlayerBuff(
+                sender,
+                message.TargetPlayerId,
+                message.WeaponTypeId,
+                message.BuffId).Forget();
+            return;
+        }
+
         var service = Service;
         var playerId = service?.GetPlayerId(sender);
         if (string.IsNullOrEmpty(playerId)) return;
 
         ApplyBuffOnServerProxy(playerId, message.WeaponTypeId, message.BuffId);
         BroadcastBuff(playerId, message.WeaponTypeId, message.BuffId, sender);
+    }
+
+    private async UniTaskVoid Server_ApplyRequestedPlayerBuff(
+        NetPeer sender,
+        string targetPlayerId,
+        int weaponTypeId,
+        int buffId)
+    {
+        var service = Service;
+        if (service == null || string.IsNullOrEmpty(targetPlayerId)) return;
+
+        CharacterMainControl target = null;
+        if (service.IsSelfId(targetPlayerId))
+        {
+            target = CharacterMainControl.Main;
+        }
+        else if (service.TryGetPeerByPlayerId(targetPlayerId, out var targetPeer) &&
+                 targetPeer != null &&
+                 service.remoteCharacters.TryGetValue(targetPeer, out var targetObject) &&
+                 targetObject)
+        {
+            target = targetObject.GetComponent<CharacterMainControl>() ??
+                     targetObject.GetComponentInChildren<CharacterMainControl>(true);
+        }
+
+        if (!target) return;
+
+        var buff = await COOPManager.ResolveBuffAsync(weaponTypeId, buffId);
+        if (buff == null || !target) return;
+
+        try
+        {
+            ApplyingNetworkBuff = true;
+            target.AddBuff(buff, null, weaponTypeId);
+        }
+        finally
+        {
+            ApplyingNetworkBuff = false;
+        }
+
+        BroadcastBuff(targetPlayerId, weaponTypeId, buffId, sender);
     }
 
     public void Server_BroadcastHostBuff(int weaponTypeId, int buffId)
@@ -78,17 +131,61 @@ public class Buff_
             COOPManager.ResolveBuffAsync(weaponTypeId, buffId)
                 .ContinueWith(buff =>
                 {
-                    if (buff != null && cmc) cmc.AddBuff(buff, null, weaponTypeId);
+                    if (buff == null || !cmc) return;
+                    try
+                    {
+                        ApplyingNetworkBuff = true;
+                        cmc.AddBuff(buff, null, weaponTypeId);
+                    }
+                    finally
+                    {
+                        ApplyingNetworkBuff = false;
+                    }
                 })
                 .Forget();
             return;
         }
     }
 
+    public void Server_BroadcastRemotePlayerBuff(CharacterMainControl target, int weaponTypeId, int buffId)
+    {
+        if (!target || buffId == 0) return;
+
+        var peer = CoopTool.TryGetPeerForCharacter(target);
+        var playerId = Service?.GetPlayerId(peer);
+        if (string.IsNullOrEmpty(playerId)) return;
+
+        BroadcastBuff(playerId, weaponTypeId, buffId, null);
+    }
+
     public void Client_HandleBuffBroadcast(PlayerBuffBroadcastRpc message)
     {
         if (string.IsNullOrEmpty(message.PlayerId)) return;
+
+        if (Service != null && Service.IsSelfId(message.PlayerId))
+        {
+            ApplyBuffToLocalPlayer(message.WeaponTypeId, message.BuffId).Forget();
+            return;
+        }
+
         ApplyBuffProxy_Client(message.PlayerId, message.WeaponTypeId, message.BuffId).Forget();
+    }
+
+    private static async UniTaskVoid ApplyBuffToLocalPlayer(int weaponTypeId, int buffId)
+    {
+        var buff = await COOPManager.ResolveBuffAsync(weaponTypeId, buffId);
+        var main = CharacterMainControl.Main;
+        if (buff == null || !main) return;
+
+        try
+        {
+            ApplyingNetworkBuff = true;
+            main.AddBuff(buff, null, weaponTypeId);
+        }
+        finally
+        {
+            ApplyingNetworkBuff = false;
+        }
     }
 
     public async UniTask ApplyBuffProxy_Client(string playerId, int weaponTypeId, int buffId)

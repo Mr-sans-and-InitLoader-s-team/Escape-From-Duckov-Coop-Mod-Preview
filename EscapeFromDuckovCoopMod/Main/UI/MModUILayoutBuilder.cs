@@ -39,13 +39,12 @@ public class MModUILayoutBuilder
     /// </summary>
     public void BuildMainPanel(Transform canvasTransform)
     {
-        // 主面板容器 - 0.8倍缩放 (1400*0.8=1120, 980*0.8=784)
-        _components.MainPanel = _ui.CreateModernPanel("MainPanel", canvasTransform, new Vector2(1010, 784), new Vector2(260, 90));
+        _components.MainPanel = _ui.CreateModernPanel("MainPanel", canvasTransform, new Vector2(1160, 760), new Vector2(-1, 0));
         _ui.MakeDraggable(_components.MainPanel);
 
         var mainLayout = _components.MainPanel.AddComponent<VerticalLayoutGroup>();
-        mainLayout.padding = new RectOffset(0, 0, 0, 0);
-        mainLayout.spacing = 0;
+        mainLayout.padding = new RectOffset(18, 18, 18, 18);
+        mainLayout.spacing = 14;
         mainLayout.childForceExpandHeight = false;
         mainLayout.childControlHeight = false;
 
@@ -82,6 +81,7 @@ public class MModUILayoutBuilder
         indicatorLayout.preferredWidth = 12;
         indicatorLayout.preferredHeight = 12;
         _components.ModeIndicator = indicatorObj.AddComponent<Image>();
+        MModUI.StylePillImage(_components.ModeIndicator, MModUI.ModernColors.Success);
         _components.ModeIndicator.color = MModUI.ModernColors.Success;
 
         _components.ModeText = _ui.CreateText("ModeText", titleBar.transform,
@@ -102,8 +102,8 @@ public class MModUILayoutBuilder
         var contentArea = new GameObject("ContentArea");
         contentArea.transform.SetParent(parent, false);
         var contentLayout = contentArea.AddComponent<HorizontalLayoutGroup>();
-        contentLayout.padding = new RectOffset(20, 20, 15, 15);
-        contentLayout.spacing = 20;
+        contentLayout.padding = new RectOffset(0, 0, 0, 0);
+        contentLayout.spacing = 18;
         contentLayout.childForceExpandWidth = false;
         contentLayout.childForceExpandHeight = true;
         contentLayout.childControlWidth = true;
@@ -130,8 +130,9 @@ public class MModUILayoutBuilder
         leftListLayout.childControlHeight = true;
 
         var leftListLayoutElement = leftListContainer.AddComponent<LayoutElement>();
-        leftListLayoutElement.preferredWidth = 520;  // 650 * 0.8 = 520
-        leftListLayoutElement.minHeight = 480;  // 600 * 0.8 = 480
+        leftListLayoutElement.preferredWidth = 680;
+        leftListLayoutElement.minHeight = 480;
+        leftListLayoutElement.flexibleHeight = 1;
 
         // Direct模式：局域网服务器列表
         BuildDirectServerListArea(leftListContainer.transform);
@@ -149,7 +150,7 @@ public class MModUILayoutBuilder
         _components.DirectServerListArea.transform.SetParent(parent, false);
         var directListLayout = _components.DirectServerListArea.AddComponent<VerticalLayoutGroup>();
         directListLayout.padding = new RectOffset(0, 0, 0, 0);
-        directListLayout.spacing = 12;
+        directListLayout.spacing = 14;
         directListLayout.childForceExpandHeight = false;
         directListLayout.childControlHeight = true;
         var directListLayoutElement = _components.DirectServerListArea.AddComponent<LayoutElement>();
@@ -159,8 +160,8 @@ public class MModUILayoutBuilder
         // 局域网服务器列表标题
         var lanHeader = _ui.CreateModernCard(_components.DirectServerListArea.transform, "LANHeader");
         var lanHeaderLayout = lanHeader.GetComponent<LayoutElement>();
-        lanHeaderLayout.preferredHeight = 60;
-        lanHeaderLayout.minHeight = 60;
+        lanHeaderLayout.preferredHeight = 62;
+        lanHeaderLayout.minHeight = 62;
         lanHeaderLayout.flexibleHeight = 0;
 
         var lanHeaderGroup = _ui.CreateHorizontalGroup(lanHeader.transform, "HeaderGroup");
@@ -180,7 +181,7 @@ public class MModUILayoutBuilder
         }, 120, MModUI.ModernColors.Primary, 38, 15);
 
         // 局域网服务器列表滚动视图
-        var lanScrollView = _ui.CreateModernScrollView("LANServerListScroll", _components.DirectServerListArea.transform, 535);  // 550 * 0.8 = 440
+        var lanScrollView = _ui.CreateModernScrollView("LANServerListScroll", _components.DirectServerListArea.transform, 475);
         var lanScrollLayout = lanScrollView.GetComponent<LayoutElement>();
         lanScrollLayout.flexibleHeight = 1;
         _components.HostListContent = lanScrollView.transform.Find("Viewport/Content");
@@ -235,11 +236,11 @@ public class MModUILayoutBuilder
         rightLayout.childControlWidth = true;
 
         var rightLayoutElement = rightPanel.AddComponent<LayoutElement>();
-        rightLayoutElement.preferredWidth = 320;  // 400 * 0.8 = 320
+        rightLayoutElement.preferredWidth = 400;
         rightLayoutElement.flexibleHeight = 1;
 
         // 创建滚动视图
-        var scrollView = _ui.CreateModernScrollView("RightPanelScroll", rightPanel.transform, 660);
+        var scrollView = _ui.CreateModernScrollView("RightPanelScroll", rightPanel.transform, 626);
         var scrollLayout = scrollView.GetComponent<LayoutElement>();
         scrollLayout.flexibleHeight = 1;
         scrollLayout.flexibleWidth = 1;
@@ -276,8 +277,8 @@ public class MModUILayoutBuilder
     {
         var transportCard = _ui.CreateModernCard(parent, "TransportModeCard");
         var transportCardLayout = transportCard.GetComponent<LayoutElement>();
-        transportCardLayout.preferredHeight = 95;  // 95 * 0.8 = 76
-        transportCardLayout.minHeight = 95;
+        transportCardLayout.preferredHeight = 132;
+        transportCardLayout.minHeight = 132;
 
         _ui.CreateSectionHeader(transportCard.transform, CoopLocalization.Get("ui.transport.label"));
 
@@ -285,6 +286,9 @@ public class MModUILayoutBuilder
         var transportRowLayout = transportButtonsRow.GetComponent<HorizontalLayoutGroup>();
         transportRowLayout.spacing = 10;
         transportRowLayout.padding = new RectOffset(0, 0, 0, 0);
+        var transportButtonsLayout = transportButtonsRow.GetComponent<LayoutElement>();
+        transportButtonsLayout.preferredHeight = 44;
+        transportButtonsLayout.minHeight = 44;
 
         var directBtn = _ui.CreateModernButton("DirectMode", transportButtonsRow.transform, CoopLocalization.Get("ui.transport.mode.direct"),
             () => _ui.OnTransportModeChanged(NetworkTransportMode.Direct),
@@ -356,8 +360,8 @@ public class MModUILayoutBuilder
         // 手动连接卡片
         var connectCard = _ui.CreateModernCard(_components.DirectModePanel.transform, "ConnectCard");
         var connectCardLayout = connectCard.GetComponent<LayoutElement>();
-        connectCardLayout.preferredHeight = 220;  // 220 * 0.8 = 176
-        connectCardLayout.minHeight = 220;
+        connectCardLayout.preferredHeight = 306;
+        connectCardLayout.minHeight = 306;
 
         _ui.CreateSectionHeader(connectCard.transform, CoopLocalization.Get("ui.manualConnect.title"));
         _components.IpInputField = _ui.CreateModernInputField("IPInput", connectCard.transform, CoopLocalization.Get("ui.manualConnect.ip"), _ui.manualIP);
@@ -376,7 +380,12 @@ public class MModUILayoutBuilder
 
         _ui.CreateModernButton("ManualConnect", connectCard.transform, CoopLocalization.Get("ui.manualConnect.button"), _ui.OnManualConnect, -1, MModUI.ModernColors.Primary, 45, 17);
 
-        _ui.CreateText("ConnectHint", connectCard.transform, CoopLocalization.Get("ui.manualConnect.hint"), 12, MModUI.ModernColors.TextTertiary, TextAlignmentOptions.Center);
+        var hintText = _ui.CreateText("ConnectHint", connectCard.transform, CoopLocalization.Get("ui.manualConnect.hint"), 12, MModUI.ModernColors.TextTertiary, TextAlignmentOptions.Center);
+        hintText.enableWordWrapping = false;
+        var hintLayout = hintText.gameObject.GetComponent<LayoutElement>();
+        hintLayout.minHeight = 24;
+        hintLayout.preferredHeight = 24;
+        hintLayout.flexibleHeight = 0;
     }
 
     /// <summary>
@@ -395,7 +404,6 @@ public class MModUILayoutBuilder
 
         _ui.CreateSteamControlPanel(_components.SteamModePanel.transform);
     }
-
     /// <summary>
     /// 创建快捷操作卡片
     /// </summary>

@@ -118,6 +118,7 @@ public class Weather
         SendWeatherState(context.Sender, true);
         SendLootSnapshot(context.Sender);
         SendDoorSnapshot(context.Sender);
+        LevelDataBoolNet.Server_SendCostTakerSnapshot(context.Sender);
         SendDestructibleSnapshot(context.Sender);
         SendExplosiveBarrelSnapshot(context.Sender);
     }

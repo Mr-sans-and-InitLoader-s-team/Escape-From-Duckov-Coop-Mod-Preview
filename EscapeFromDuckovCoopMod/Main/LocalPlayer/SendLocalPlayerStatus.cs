@@ -36,6 +36,7 @@ public class SendLocalPlayerStatus : MonoBehaviour
     private double _lastSentTime;
     private int _lastPlayerStatusSignature;
     private bool _hasLastPlayerStatusSignature;
+    private float _nextVehiclePositionLogTime;
 
     public void Init()
     {
@@ -52,11 +53,18 @@ public class SendLocalPlayerStatus : MonoBehaviour
 
         var localEquipment = LocalPlayerManager.Instance.GetLocalEquipment();
         var localWeapons = LocalPlayerManager.Instance.GetLocalWeapons();
+        var localSteamName = Service.ResolveLocalSteamName();
+        localPlayerStatus.SteamName = localSteamName;
+        if (!string.IsNullOrEmpty(localSteamName))
+            localPlayerStatus.PlayerName = localSteamName;
+        localPlayerStatus.EquipmentList = localEquipment;
+        localPlayerStatus.WeaponList = localWeapons;
 
         statuses.Add(new PlayerStatusPayload
         {
             PlayerId = localPlayerStatus.EndPoint,
             PlayerName = localPlayerStatus.PlayerName,
+            SteamName = localPlayerStatus.SteamName,
             Latency = 0,
             IsInGame = localPlayerStatus.IsInGame,
             Position = localPlayerStatus.Position,
@@ -79,6 +87,7 @@ public class SendLocalPlayerStatus : MonoBehaviour
             {
                 PlayerId = st.EndPoint,
                 PlayerName = st.PlayerName,
+                SteamName = st.SteamName,
                 Latency = st.Latency,
                 IsInGame = st.IsInGame,
                 Position = st.Position,
@@ -122,6 +131,7 @@ public class SendLocalPlayerStatus : MonoBehaviour
         var pos = tr.position;
         var fwd = mr ? mr.forward : tr.forward;
         if (fwd.sqrMagnitude < 1e-12f) fwd = Vector3.forward;
+        var vehicleId = ResolveLocalVehicleId(source, main);
 
         var now = Time.unscaledTimeAsDouble;
         var vel = Vector3.zero;
@@ -140,15 +150,21 @@ public class SendLocalPlayerStatus : MonoBehaviour
             Position = pos,
             Forward = fwd,
             Velocity = vel,
-            Timestamp = now
+            Timestamp = now,
+            VehicleId = vehicleId
         };
 
+        LogVehiclePositionSend(vehicleId, source, pos);
         CoopTool.SendRpc(in rpc);
     }
 
     public void SendEquipmentUpdate(EquipmentSyncData equipmentData)
     {
         if (localPlayerStatus == null || !networkStarted) return;
+
+        if (localPlayerStatus.EquipmentList == null)
+            localPlayerStatus.EquipmentList = new List<EquipmentSyncData>();
+        UpsertEquipment(localPlayerStatus.EquipmentList, equipmentData.SlotHash, equipmentData.ItemId ?? string.Empty);
 
         var rpc = new EquipmentUpdateRpc
         {
@@ -164,6 +180,10 @@ public class SendLocalPlayerStatus : MonoBehaviour
     public void SendWeaponUpdate(WeaponSyncData weaponSyncData)
     {
         if (localPlayerStatus == null || !networkStarted) return;
+
+        if (localPlayerStatus.WeaponList == null)
+            localPlayerStatus.WeaponList = new List<WeaponSyncData>();
+        UpsertWeapon(localPlayerStatus.WeaponList, weaponSyncData.SlotHash, weaponSyncData.ItemId ?? string.Empty, weaponSyncData.Snapshot);
 
         var rpc = new WeaponUpdateRpc
         {
@@ -221,6 +241,32 @@ public class SendLocalPlayerStatus : MonoBehaviour
         return mainControl;
     }
 
+    private static int ResolveLocalVehicleId(CharacterMainControl source, CharacterMainControl mainControl)
+    {
+        if (source != null && source.isVehicle)
+        {
+            var vehicleId = SendLocalVehicleStatus.ResolveVehicleId(source);
+            if (vehicleId != 0)
+                return vehicleId;
+        }
+
+        if (mainControl == null || mainControl.ridingVehicleType <= 0)
+            return 0;
+
+        return SendLocalVehicleStatus.FindNearestVehicleId(mainControl.transform.position, 12f);
+    }
+
+    private void LogVehiclePositionSend(int vehicleId, CharacterMainControl source, Vector3 position)
+    {
+        if (vehicleId == 0 || Time.unscaledTime < _nextVehiclePositionLogTime)
+            return;
+
+        _nextVehiclePositionLogTime = Time.unscaledTime + 3f;
+        CoopPerfLog.AppendEvent(
+            "vehicle-pos-send",
+            $"role={(IsServer ? "server" : "client")} vehicle={vehicleId} source={(source ? source.name : "null")} pos={position.x:0.0},{position.y:0.0},{position.z:0.0}");
+    }
+
     private static Animator ResolveLocalAnimator(CharacterMainControl mainControl)
     {
         if (mainControl == null)
@@ -255,6 +301,7 @@ public class SendLocalPlayerStatus : MonoBehaviour
             var st = statuses[i];
             hash.Add(st.PlayerId ?? string.Empty);
             hash.Add(st.PlayerName ?? string.Empty);
+            hash.Add(st.SteamName ?? string.Empty);
             hash.Add(st.Latency);
             hash.Add(st.IsInGame);
             hash.Add(st.Position);
@@ -292,5 +339,30 @@ public class SendLocalPlayerStatus : MonoBehaviour
         }
 
         return hash.ToHashCode();
+    }
+
+    private static void UpsertEquipment(List<EquipmentSyncData> equipment, int slotHash, string itemId)
+    {
+        for (var i = 0; i < equipment.Count; i++)
+        {
+            if (equipment[i].SlotHash != slotHash) continue;
+            equipment[i].ItemId = itemId;
+            return;
+        }
+
+        equipment.Add(new EquipmentSyncData { SlotHash = slotHash, ItemId = itemId });
+    }
+
+    private static void UpsertWeapon(List<WeaponSyncData> weapons, int slotHash, string itemId, ItemSnapshot snapshot)
+    {
+        for (var i = 0; i < weapons.Count; i++)
+        {
+            if (weapons[i].SlotHash != slotHash) continue;
+            weapons[i].ItemId = itemId;
+            weapons[i].Snapshot = snapshot;
+            return;
+        }
+
+        weapons.Add(new WeaponSyncData { SlotHash = slotHash, ItemId = itemId, Snapshot = snapshot });
     }
 }

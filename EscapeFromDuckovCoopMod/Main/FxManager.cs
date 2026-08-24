@@ -91,8 +91,12 @@ public static class MeleeFx
 
 public static class FxManager
 {
+    private const int MaxWorldMuzzleFxPerFrame = 24;
+
     private static readonly Dictionary<ItemAgent_Gun, GameObject> _muzzleFxByGun = new();
     private static readonly Dictionary<ItemAgent_Gun, ParticleSystem> _shellPsByGun = new();
+    private static int _worldMuzzleFxFrame = -1;
+    private static int _worldMuzzleFxCount;
 
     // 给我一个默认的开火FX，用于弓没有配置 muzzleFxPfb 时兜底（在 Inspector 里拖一个合适的特效）Lol
     public static GameObject defaultMuzzleFx;
@@ -190,22 +194,14 @@ public static class FxManager
                 if (cacheKey != null && gun) LocalPlayerManager.Instance._gunCacheByShooter[cacheKey] = (gun, muzzleTf);
             }
 
-            // 4) 没有 muzzle 就用兜底挂点（只负责火光，不做抛壳/回座力）
-            GameObject tmp = null;
             if (!muzzleTf)
             {
-                tmp = new GameObject("TempMuzzleFX");
-                tmp.transform.position = muzzlePos;
-                tmp.transform.rotation = Quaternion.LookRotation(finalDir, Vector3.up);
-                muzzleTf = tmp.transform;
+                Client_PlayWorldShotFx(weaponType, muzzlePos, finalDir);
+                return;
             }
 
-            // 5) 真正播放（包含火光 + 抛壳 + 回座力；gun==null 时内部仅火光）
             Client_PlayLocalShotFx(gun, muzzleTf, weaponType);
 
-            if (tmp) GameObject.Destroy(tmp, 0.2f);
-
-            // 6) 非主机端本地顺带触发一次攻击动画（和你原逻辑一致）
             if (!IsServer && shooterGo)
             {
                 var anim = shooterGo.GetComponentInChildren<CharacterAnimationControl_MagicBlend>(true);
@@ -216,6 +212,18 @@ public static class FxManager
         {
             // 保底，避免任何异常打断网络流
         }
+    }
+
+    private static bool TryConsumeWorldMuzzleFxBudget()
+    {
+        var frame = Time.frameCount;
+        if (_worldMuzzleFxFrame != frame)
+        {
+            _worldMuzzleFxFrame = frame;
+            _worldMuzzleFxCount = 0;
+        }
+
+        return _worldMuzzleFxCount++ < MaxWorldMuzzleFxPerFrame;
     }
 
     public static void Client_PlayAiDeathFxAndSfx(CharacterMainControl cmc)
@@ -360,6 +368,29 @@ public static class FxManager
 
             GameObject.Destroy(tempFx, 0.5f);
         }
+    }
+
+    public static void Client_PlayWorldShotFx(int weaponType, Vector3 position, Vector3 direction)
+    {
+        if (!TryConsumeWorldMuzzleFxBudget()) return;
+
+        GameObject pfb = null;
+        LocalPlayerManager.Instance?._muzzleFxCacheByWeaponType.TryGetValue(weaponType, out pfb);
+        if (!pfb) pfb = defaultMuzzleFx;
+        if (!pfb) return;
+
+        var dir = direction.sqrMagnitude < 1e-8f ? Vector3.forward : direction.normalized;
+        var tempFx = GameObject.Instantiate(pfb, position, Quaternion.LookRotation(dir, Vector3.up));
+        var ps = tempFx.GetComponent<ParticleSystem>();
+        if (ps)
+            ps.Play(true);
+        else
+        {
+            tempFx.SetActive(false);
+            tempFx.SetActive(true);
+        }
+
+        GameObject.Destroy(tempFx, 0.5f);
     }
 
     public static void TryStartVisualRecoil_NoAlloc(ItemAgent_Gun gun)

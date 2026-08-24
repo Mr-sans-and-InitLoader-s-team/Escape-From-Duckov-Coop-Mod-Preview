@@ -8,6 +8,7 @@ public struct PlayerStatusPayload
 {
     public string PlayerId;
     public string PlayerName;
+    public string SteamName;
     public int Latency;
     public bool IsInGame;
     public Vector3 Position;
@@ -21,6 +22,7 @@ public struct PlayerStatusPayload
     {
         writer.Put(PlayerId ?? string.Empty);
         writer.Put(PlayerName ?? string.Empty);
+        writer.Put(SteamName ?? string.Empty);
         writer.Put(Latency);
         writer.Put(IsInGame);
         writer.PutVector3(Position);
@@ -50,6 +52,7 @@ public struct PlayerStatusPayload
     {
         PlayerId = reader.GetString();
         PlayerName = reader.GetString();
+        SteamName = reader.GetString();
         Latency = reader.GetInt();
         IsInGame = reader.GetBool();
         Position = reader.GetVector3();

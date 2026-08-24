@@ -78,6 +78,7 @@ internal static class RandomContainerQualityPatch
     [HarmonyPatch(nameof(RandomContainer<int>.GetRandom), typeof(float))]
     private static bool Prefix(RandomContainer<int> __instance, float lowPercent, ref int __result)
     {
+        if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         if (!LootSettingsRuntime.ShouldApplyTuning || __instance.entries.Count < 1) return true;
 
         var total = 0f;

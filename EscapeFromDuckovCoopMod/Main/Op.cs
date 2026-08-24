@@ -82,6 +82,11 @@ public enum Op : byte
     CHAT_SEND = 185,
     CHAT_MESSAGE = 186,
     VEHICLE_TRANSFORM_SYNC = 187,
+    VEHICLE_CONTROL_REQUEST = 188,
+    VEHICLE_CONTROL_DECISION = 189,
+    VEHICLE_AUTHORITY_STATE = 190,
+    VEHICLE_ITEM_STATE = 191,
+    LOTTERY_BOX_STATE = 192,
 
     AI_HEALTH_REPORT = 174,
     AI_HEALTH_BROADCAST = 175,
@@ -105,6 +110,8 @@ public enum Op : byte
     MELEE_ATTACK_SWING = 243, // 主机 -> 客户端：某玩家开始挥砍（远端播动作/挥空FX）
     DISCOVER_REQUEST = 240,
     DISCOVER_RESPONSE = 241,
+    INTERACTABLE_FINISH_REQUEST = 237,
+    AI_SPAWNER_TRIGGER_REQUEST = 238,
     ENV_CLOCK_STATE = 230, // 主机 -> 客户端：广播时间推进
     ENV_WEATHER_STATE = 231, // 主机 -> 客户端：广播天气设定
     ENV_LOOT_CHUNK = 232, // 主机 -> 客户端：下发一段战利品显隐快照

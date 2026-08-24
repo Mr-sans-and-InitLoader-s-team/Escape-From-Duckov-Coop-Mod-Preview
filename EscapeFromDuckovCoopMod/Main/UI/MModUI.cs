@@ -82,75 +82,68 @@ public class MModUI : MonoBehaviour
     private int _steamLobbyMaxPlayers = 2;
     private string _steamJoinPassword = string.Empty;
 
-
     // 投票面板状态缓存
     private bool _lastVoteActive = false;
     private string _lastVoteSceneId = "";
     private bool _lastLocalReady = false;
     private readonly HashSet<string> _lastVoteParticipants = new();
     private float _lastVoteUpdateTime = 0f;
+    private Coroutine _votePanelAnimation;
+    private bool _votePanelVisible;
+    private const float VotePanelWidth = 380f;
+    private const float VotePanelMinHeight = 252f;
+    private const float VotePanelMaxHeight = 430f;
+    private const float VotePlayerRowHeight = 30f;
+    private const float VotePlayerRowSpacing = 8f;
+    private static readonly Vector2 VotePanelShownPosition = new Vector2(0f, -24f);
 
-    // 现代化UI颜色方案 - 深色模式
     public static class ModernColors
     {
-        // 🌈 主题主色（中国红主调）
-        public static readonly Color Primary = new Color(0.80f, 0.13f, 0.18f, 1f);      // #CC2230 中国红
-        public static readonly Color PrimaryHover = new Color(0.88f, 0.18f, 0.24f, 1f); // #E02E3D
-        public static readonly Color PrimaryActive = new Color(0.68f, 0.09f, 0.14f, 1f); // #AD1624
-
-        // ✨ 按钮文字色
-        public static readonly Color PrimaryText = new Color(1f, 1f, 1f, 0.95f);        // 亮白文字 #FFFFFF
-
-        // 🧱 背景层次（更柔和的深灰）
-        public static readonly Color BgDark = new Color(0.23f, 0.23f, 0.23f, 1f);       // #3A3A3A
-        public static readonly Color BgMedium = new Color(0.27f, 0.27f, 0.27f, 1f);     // #454545
-        public static readonly Color BgLight = new Color(0.32f, 0.32f, 0.32f, 1f);      // #525252
-
-        // ✍️ 文字色（白底下改为深色）
-        public static readonly Color TextPrimary = new Color(1f, 1f, 1f, 0.96f);   // 主文字
-        public static readonly Color TextSecondary = new Color(1f, 1f, 1f, 0.86f); // 次文字
-        public static readonly Color TextTertiary = new Color(1f, 1f, 1f, 0.72f);  // 辅助文字
-
-        // ⚡ 状态色（保留灰调）
-        public static readonly Color Success = new Color(0.45f, 0.75f, 0.50f, 1f);      // #73BF80
-        public static readonly Color Warning = new Color(0.90f, 0.75f, 0.35f, 1f);      // #E6BF59
-        public static readonly Color Error = new Color(0.85f, 0.45f, 0.40f, 1f);        // #D86E66
-        public static readonly Color Info = new Color(0.55f, 0.65f, 0.80f, 1f);         // #8CA6CC
-
-        // 🔲 输入框
-        public static readonly Color InputBg = new Color(0.33f, 0.33f, 0.33f, 1f);      // #555555
-        public static readonly Color InputBorder = new Color(0.42f, 0.42f, 0.42f, 1f);  // #6B6B6B
-        public static readonly Color InputFocus = PrimaryHover;
-
-        // ─ 分隔线
-        public static readonly Color Divider = new Color(1f, 1f, 1f, 0.24f);      // 半透明白色分隔线
-
-        // 🌫️ 玻璃拟态
-        public static readonly Color GlassBg = new Color(0.80f, 0.13f, 0.18f, 0.75f);            // 半透明中国红
-
-        // 🕳️ 阴影（柔和不死黑）
-        public static readonly Color Shadow = new Color(0f, 0f, 0f, 0.25f);             // 轻暗阴影
-
-
-
-
-
-
+        public static Color Primary => MModUITheme.Primary;
+        public static Color PrimaryHover => MModUITheme.PrimaryHover;
+        public static Color PrimaryActive => MModUITheme.PrimaryActive;
+        public static Color PrimaryText => MModUITheme.PrimaryText;
+        public static Color BgDark => MModUITheme.BgDark;
+        public static Color BgMedium => MModUITheme.BgMedium;
+        public static Color BgLight => MModUITheme.BgLight;
+        public static Color TextPrimary => MModUITheme.TextPrimary;
+        public static Color TextSecondary => MModUITheme.TextSecondary;
+        public static Color TextTertiary => MModUITheme.TextTertiary;
+        public static Color Success => MModUITheme.Success;
+        public static Color Warning => MModUITheme.Warning;
+        public static Color Error => MModUITheme.Error;
+        public static Color Info => MModUITheme.Info;
+        public static Color InputBg => MModUITheme.InputBg;
+        public static Color InputBorder => MModUITheme.InputBorder;
+        public static Color InputFocus => MModUITheme.PrimaryHover;
+        public static Color Divider => MModUITheme.Divider;
+        public static Color GlassBg => MModUITheme.GlassBg;
+        public static Color Shadow => MModUITheme.Shadow;
     }
 
     public static class GlassTheme
     {
-        public static readonly Color PanelBg = new Color(0.80f, 0.13f, 0.18f, 0.96f);
-        public static readonly Color CardBg = new Color(0.73f, 0.10f, 0.15f, 0.95f);
-        public static readonly Color ButtonBg = new Color(0.96f, 0.82f, 0.18f, 0.98f);
-        public static readonly Color ButtonHover = new Color(1f, 0.88f, 0.30f, 1f);
-        public static readonly Color ButtonActive = new Color(0.88f, 0.72f, 0.10f, 1f);
-        public static readonly Color InputBg = new Color(0.66f, 0.08f, 0.13f, 0.96f);
-        public static readonly Color Accent = new Color(0.80f, 0.13f, 0.18f, 1f);
-        public static readonly Color Text = new Color(1f, 1f, 1f, 0.96f);
-        public static readonly Color TextSecondary = new Color(1f, 1f, 1f, 0.86f);
-        public static readonly Color Divider = new Color(1f, 1f, 1f, 0.14f);
+        public static Color PanelBg => MModUITheme.PanelBg;
+        public static Color CardBg => MModUITheme.CardBg;
+        public static Color ButtonBg => MModUITheme.ButtonBg;
+        public static Color ButtonHover => MModUITheme.ButtonHover;
+        public static Color ButtonActive => MModUITheme.ButtonActive;
+        public static Color ButtonText => MModUITheme.ButtonText;
+        public static Color InputBg => MModUITheme.GlassInputBg;
+        public static Color Accent => MModUITheme.Accent;
+        public static Color Text => MModUITheme.GlassText;
+        public static Color TextSecondary => MModUITheme.GlassTextSecondary;
+        public static Color Divider => MModUITheme.GlassDivider;
+        public static Color ViewportBg => MModUITheme.ViewportBg;
     }
+
+    private static Sprite _roundedPanelSprite;
+    private static Sprite _roundedCardSprite;
+    private static Sprite _roundedControlSprite;
+    private static Sprite _roundedPillSprite;
+    private static Sprite _roundedScrollbarSprite;
+    private static Sprite _roundedCloseGlyphSprite;
+    private static Sprite _roundedToggleSprite;
 
 
 
@@ -268,6 +261,7 @@ public class MModUI : MonoBehaviour
 
         // 更新Steam Lobby列表
         UpdateSteamLobbyList();
+
     }
 
     // 面板动画
@@ -301,6 +295,111 @@ public class MModUI : MonoBehaviour
             }
             panel.SetActive(false);
         }
+    }
+
+    private void SetVotePanelVisible(bool visible)
+    {
+        if (_components?.VotePanel == null)
+            return;
+
+        if (_votePanelVisible == visible &&
+            (_components.VotePanel.activeSelf || !visible))
+        {
+            return;
+        }
+
+        _votePanelVisible = visible;
+        if (_votePanelAnimation != null)
+        {
+            StopCoroutine(_votePanelAnimation);
+            _votePanelAnimation = null;
+        }
+
+        _votePanelAnimation = StartCoroutine(AnimateVotePanel(visible));
+    }
+
+    private IEnumerator AnimateVotePanel(bool show)
+    {
+        var panel = _components?.VotePanel;
+        if (panel == null)
+            yield break;
+
+        var rect = panel.GetComponent<RectTransform>();
+        var canvasGroup = panel.GetComponent<CanvasGroup>() ?? panel.AddComponent<CanvasGroup>();
+        if (rect == null)
+            yield break;
+
+        if (show)
+            panel.SetActive(true);
+
+        var startPos = rect.anchoredPosition;
+        var targetPos = show ? VotePanelShownPosition : GetVotePanelHiddenPosition(rect.sizeDelta.y);
+        var startAlpha = canvasGroup.alpha;
+        var targetAlpha = show ? 1f : 0f;
+        var startScale = rect.localScale;
+        var targetScale = show ? Vector3.one : Vector3.one * 0.96f;
+        var duration = show ? 0.42f : 0.26f;
+        var time = 0f;
+
+        while (time < duration)
+        {
+            time += Time.unscaledDeltaTime;
+            var t = Mathf.Clamp01(time / duration);
+            var eased = show ? VoteEaseOutBack(t) : VoteEaseInCubic(t);
+            var alphaT = show ? VoteEaseOutCubic(t) : t;
+
+            rect.anchoredPosition = Vector2.LerpUnclamped(startPos, targetPos, eased);
+            canvasGroup.alpha = Mathf.Lerp(startAlpha, targetAlpha, alphaT);
+
+            var bounce = show ? Mathf.Sin(t * Mathf.PI) * 0.018f : 0f;
+            rect.localScale = Vector3.LerpUnclamped(startScale, targetScale, Mathf.Clamp01(eased)) * (1f + bounce);
+            yield return null;
+        }
+
+        rect.anchoredPosition = targetPos;
+        rect.localScale = targetScale;
+        canvasGroup.alpha = targetAlpha;
+        if (!show)
+            panel.SetActive(false);
+
+        _votePanelAnimation = null;
+    }
+
+    private static float VoteEaseOutCubic(float t)
+    {
+        t = 1f - Mathf.Clamp01(t);
+        return 1f - t * t * t;
+    }
+
+    private static float VoteEaseInCubic(float t)
+    {
+        t = Mathf.Clamp01(t);
+        return t * t * t;
+    }
+
+    private static float VoteEaseOutBack(float t)
+    {
+        t = Mathf.Clamp01(t);
+        const float c1 = 1.35f;
+        var c3 = c1 + 1f;
+        return 1f + c3 * Mathf.Pow(t - 1f, 3f) + c1 * Mathf.Pow(t - 1f, 2f);
+    }
+
+    private static Vector2 GetVotePanelHiddenPosition(float panelHeight)
+    {
+        return new Vector2(0f, panelHeight + 34f);
+    }
+
+    private static float CalculateVotePlayerListHeight(int playerCount)
+    {
+        playerCount = Mathf.Max(1, playerCount);
+        var fullHeight = 16f + playerCount * VotePlayerRowHeight + Mathf.Max(0, playerCount - 1) * VotePlayerRowSpacing;
+        return Mathf.Clamp(fullHeight, 48f, 172f);
+    }
+
+    private static float CalculateVotePanelHeight(int playerCount)
+    {
+        return Mathf.Clamp(202f + CalculateVotePlayerListHeight(playerCount), VotePanelMinHeight, VotePanelMaxHeight);
     }
 
     public void Init()
@@ -344,6 +443,49 @@ public class MModUI : MonoBehaviour
         }
 
         CreateUI();
+    }
+
+    internal void RefreshTheme()
+    {
+        if (_canvas == null)
+            return;
+
+        var mainVisible = showUI;
+        var playerStatusVisible = showPlayerStatusWindow;
+        var chatVisible = _chatVisible;
+
+        if (_chatAutoHideRoutine != null)
+        {
+            StopCoroutine(_chatAutoHideRoutine);
+            _chatAutoHideRoutine = null;
+        }
+
+        Destroy(_canvas.gameObject);
+        _components = new MModUIComponents();
+        _layoutBuilder = new MModUILayoutBuilder(this, _components);
+        _hostEntries.Clear();
+        _playerEntries.Clear();
+        _displayedPlayerIds.Clear();
+        _displayedSteamLobbies.Clear();
+
+        CreateUI();
+
+        if (_components.MainPanel != null)
+            _components.MainPanel.SetActive(mainVisible);
+        if (_components.PlayerStatusPanel != null)
+            _components.PlayerStatusPanel.SetActive(playerStatusVisible);
+        if (_components.ChatPanel != null)
+            _components.ChatPanel.SetActive(chatVisible);
+
+        foreach (var message in _chatHistory)
+            AppendChatEntry(message.sender, message.content);
+
+        UpdateModeDisplay();
+        UpdateConnectionStatus();
+        UpdateTransportModePanels();
+        UpdateHostList();
+        UpdatePlayerList();
+        UpdateSteamLobbyList();
     }
 
     private void OnDestroy()
@@ -492,7 +634,7 @@ public class MModUI : MonoBehaviour
                     fontSize = tipFontSize,
                     fontStyle = FontStyle.Bold
                 };
-                tipStyle.normal.textColor = Color.red;
+                tipStyle.normal.textColor = ModernColors.Error;
 
                 Vector2 tipSize = tipStyle.CalcSize(new GUIContent(_tipText));
 
@@ -539,6 +681,9 @@ public class MModUI : MonoBehaviour
             Destroy(_components.TopDecorationImage.gameObject);
             _components.TopDecorationImage = null;
         }
+
+        if (!MModUITheme.ShouldShowNewYearDecorations)
+            return;
 
         var leftSprite = LoadDecorationSprite("Assets/NewYear1");
         var rightSprite = LoadDecorationSprite("Assets/NewYear2");
@@ -607,6 +752,9 @@ public class MModUI : MonoBehaviour
     private static Sprite LoadDecorationSprite(string relativePathWithoutExtension)
     {
         var candidates = new[] { ".png", ".jpg", ".jpeg", ".webp" };
+        var embeddedSprite = LoadEmbeddedDecorationSprite(relativePathWithoutExtension, candidates);
+        if (embeddedSprite != null)
+            return embeddedSprite;
 
         // 以当前 DLL 所在目录为根目录（不是游戏根目录）
         var assemblyPath = typeof(MModUI).Assembly.Location;
@@ -654,6 +802,45 @@ public class MModUI : MonoBehaviour
         return null;
     }
 
+    private static Sprite LoadEmbeddedDecorationSprite(string relativePathWithoutExtension, string[] candidates)
+    {
+        var assetName = relativePathWithoutExtension
+            .Replace('\\', '/')
+            .Split('/')
+            .LastOrDefault();
+        if (string.IsNullOrWhiteSpace(assetName))
+            return null;
+
+        var assembly = typeof(MModUI).Assembly;
+        foreach (var ext in candidates)
+        {
+            var resourceName = $"EscapeFromDuckovCoopMod.Assets.{assetName}{ext}";
+            try
+            {
+                using var stream = assembly.GetManifestResourceStream(resourceName);
+                if (stream == null)
+                    continue;
+
+                using var memory = new System.IO.MemoryStream();
+                stream.CopyTo(memory);
+                var bytes = memory.ToArray();
+                var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                if (!ImageConversion.LoadImage(texture, bytes))
+                    continue;
+
+                texture.wrapMode = TextureWrapMode.Clamp;
+                texture.filterMode = FilterMode.Bilinear;
+                return Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height), new Vector2(0.5f, 0.5f), 100f);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[MModUI] 加载内置装饰图失败 {resourceName}: {ex.Message}");
+            }
+        }
+
+        return null;
+    }
+
     private void InitializeBlurSource()
     {
         // 在主相机上添加模糊源组件
@@ -685,7 +872,7 @@ public class MModUI : MonoBehaviour
         // 使用布局构建器创建主面板
         _layoutBuilder.BuildMainPanel(_canvas.transform);
 
-        // 左右新年装饰图
+        // Seasonal decorations are only created on Chinese New Year's Eve / New Year.
         CreateSideDecorations();
 
         // 根据当前传输模式显示对应面板
@@ -728,12 +915,23 @@ public class MModUI : MonoBehaviour
 
     private void CreateVotePanel()
     {
-        _components.VotePanel = CreateModernPanel("VotePanel", _canvas.transform, new Vector2(420, 320), new Vector2(-1, 0), TextAnchor.MiddleLeft);
+        _components.VotePanel = CreateModernPanel("VotePanel", _canvas.transform, new Vector2(VotePanelWidth, VotePanelMinHeight), new Vector2(-1, 0), TextAnchor.UpperCenter);
+        if (_components.VotePanel.TryGetComponent<RectTransform>(out var rect))
+        {
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = GetVotePanelHiddenPosition(VotePanelMinHeight);
+            rect.localScale = Vector3.one * 0.96f;
+        }
+
+        var canvasGroup = _components.VotePanel.GetComponent<CanvasGroup>() ?? _components.VotePanel.AddComponent<CanvasGroup>();
+        canvasGroup.alpha = 0f;
         _components.VotePanel.SetActive(false);
 
         var layout = _components.VotePanel.AddComponent<VerticalLayoutGroup>();
-        layout.padding = new RectOffset(20, 20, 20, 20);
-        layout.spacing = 12;
+        layout.padding = new RectOffset(12, 12, 10, 12);
+        layout.spacing = 6;
         layout.childAlignment = TextAnchor.UpperLeft;
         layout.childForceExpandWidth = true;
         layout.childForceExpandHeight = false;
@@ -947,7 +1145,7 @@ public class MModUI : MonoBehaviour
         {
             if (isSteamMode)
             {
-                // Steam模式下隐藏此按钮，因为Steam有自己的创建/离开按钮
+                // Steam模式下隐藏此按钮，因为有独立的控制按钮
                 _components.ModeToggleButton.gameObject.SetActive(false);
             }
             else
@@ -959,12 +1157,8 @@ public class MModUI : MonoBehaviour
                 var image = _components.ModeToggleButton.GetComponent<Image>();
                 if (image != null)
                 {
-                    var colors = _components.ModeToggleButton.colors;
-                    var baseColor = GlassTheme.ButtonBg;
-                    colors.normalColor = baseColor;
-                    colors.highlightedColor = GlassTheme.ButtonHover;
-                    colors.pressedColor = GlassTheme.ButtonActive;
-                    _components.ModeToggleButton.colors = colors;
+                    var baseColor = isActiveServer ? ModernColors.Error : ModernColors.Success;
+                    ApplyButtonColors(_components.ModeToggleButton, baseColor);
                 }
             }
         }
@@ -1026,11 +1220,7 @@ public class MModUI : MonoBehaviour
             var buttonImage = _components.SteamCreateLeaveButton.GetComponent<Image>();
             if (buttonImage != null)
             {
-                var colors = _components.SteamCreateLeaveButton.colors;
-                colors.normalColor = GlassTheme.ButtonBg;
-                colors.highlightedColor = GlassTheme.ButtonHover;
-                colors.pressedColor = GlassTheme.ButtonActive;
-                _components.SteamCreateLeaveButton.colors = colors;
+                ApplyButtonColors(_components.SteamCreateLeaveButton, lobbyActive ? ModernColors.Error : ModernColors.Success);
             }
         }
     }
@@ -1184,7 +1374,7 @@ public class MModUI : MonoBehaviour
         entryLayout.childAlignment = TextAnchor.MiddleLeft;  // 垂直居中对齐
 
         var bg = entry.AddComponent<Image>();
-        bg.color = GlassTheme.CardBg;
+        StyleCardImage(bg, GlassTheme.CardBg);
 
         var entryLayoutElement = entry.AddComponent<LayoutElement>();
         entryLayoutElement.preferredHeight = 75;  // 增加高度：60 -> 75
@@ -1196,8 +1386,8 @@ public class MModUI : MonoBehaviour
         button.transition = Selectable.Transition.ColorTint;
         var colors = button.colors;
         colors.normalColor = GlassTheme.CardBg;
-        colors.highlightedColor = GlassTheme.ButtonHover;
-        colors.pressedColor = GlassTheme.ButtonActive;
+        colors.highlightedColor = new Color(ModernColors.Primary.r, ModernColors.Primary.g, ModernColors.Primary.b, MModUITheme.UseLunarNewYearTheme ? 0.34f : 0.14f);
+        colors.pressedColor = new Color(ModernColors.Primary.r, ModernColors.Primary.g, ModernColors.Primary.b, MModUITheme.UseLunarNewYearTheme ? 0.48f : 0.20f);
         button.colors = colors;
         button.targetGraphic = bg;
 
@@ -1478,31 +1668,24 @@ public class MModUI : MonoBehaviour
     {
         if (SceneNet.Instance == null)
         {
-            if (_components?.VotePanel != null && _components.VotePanel.activeSelf)
-            {
-                StartCoroutine(AnimatePanel(_components.VotePanel, false));
-                _lastVoteActive = false;
-            }
+            SetVotePanelVisible(false);
+            _lastVoteActive = false;
             return;
         }
 
         bool active = SceneNet.Instance.sceneVoteActive;
+        SetVotePanelVisible(active);
 
-        // 检查是否需要显示/隐藏面板
-        if (_components?.VotePanel != null && _components.VotePanel.activeSelf != active)
+        if (!active)
         {
-            if (active)
-                StartCoroutine(AnimatePanel(_components.VotePanel, true));
-            else
-                StartCoroutine(AnimatePanel(_components.VotePanel, false));
-            _lastVoteActive = active;
+            _lastVoteActive = false;
+            return;
         }
-
-        if (!active) return;
 
         // 检查是否需要重建UI（只有状态改变时才重建）
         bool needsRebuild = false;
         string rebuildReason = "";
+        var currentParticipants = new HashSet<string>(SceneNet.Instance.sceneParticipantIds);
 
         if (_lastVoteActive != active)
         {
@@ -1522,7 +1705,6 @@ public class MModUI : MonoBehaviour
         else
         {
             // 检查参与者列表是否改变
-            var currentParticipants = new HashSet<string>(SceneNet.Instance.sceneParticipantIds);
             if (!_lastVoteParticipants.SetEquals(currentParticipants))
             {
                 needsRebuild = true;
@@ -1545,6 +1727,8 @@ public class MModUI : MonoBehaviour
 
         //Debug.Log($"[MModUI] 重建投票面板: {rebuildReason}");
 
+        RebuildVotePanelContent();
+
         // 更新缓存
         _lastVoteActive = active;
         _lastVoteSceneId = SceneNet.Instance.sceneTargetId;
@@ -1552,6 +1736,13 @@ public class MModUI : MonoBehaviour
         _lastVoteParticipants.Clear();
         foreach (var pid in SceneNet.Instance.sceneParticipantIds)
             _lastVoteParticipants.Add(pid);
+        _lastVoteUpdateTime = Time.time;
+    }
+
+    private void RebuildVotePanelContent()
+    {
+        if (_components?.VotePanel == null || SceneNet.Instance == null)
+            return;
 
         // 清空并重建投票面板内容（删除所有子对象）
         var childCount = _components.VotePanel.transform.childCount;
@@ -1561,104 +1752,210 @@ public class MModUI : MonoBehaviour
         }
 
         var sceneName = SceneInfoCollection.GetSceneInfo(SceneNet.Instance.sceneTargetId).DisplayName;
+        var readyCount = 0;
+        foreach (var pid in SceneNet.Instance.sceneParticipantIds)
+        {
+            if (SceneNet.Instance.sceneReady.TryGetValue(pid, out var ready) && ready)
+                readyCount++;
+        }
+
+        var totalCount = Mathf.Max(1, SceneNet.Instance.sceneParticipantIds.Count);
+        var listHeight = CalculateVotePlayerListHeight(totalCount);
+        var panelHeight = CalculateVotePanelHeight(totalCount);
+        if (_components.VotePanel.TryGetComponent<RectTransform>(out var panelRect))
+        {
+            panelRect.sizeDelta = new Vector2(VotePanelWidth, panelHeight);
+            if (!_votePanelVisible && !_components.VotePanel.activeSelf)
+            {
+                panelRect.anchoredPosition = GetVotePanelHiddenPosition(panelHeight);
+            }
+        }
 
         // 标题
-        var titleText = CreateText("VoteTitle", _components.VotePanel.transform, CoopLocalization.Get("ui.vote.title"), 22, ModernColors.TextPrimary, TextAlignmentOptions.Left, FontStyles.Bold);
-        var titleLayout = titleText.gameObject.GetComponent<LayoutElement>();
-        titleLayout.flexibleWidth = 0;
-        titleLayout.preferredWidth = -1;
+        var header = CreateHorizontalGroup(_components.VotePanel.transform, "VoteHeader");
+        var headerLayout = header.GetComponent<HorizontalLayoutGroup>();
+        headerLayout.spacing = 7;
+        headerLayout.childAlignment = TextAnchor.MiddleLeft;
+        var headerSizer = header.GetComponent<LayoutElement>();
+        headerSizer.preferredHeight = 26f;
+        headerSizer.minHeight = 26f;
+        headerSizer.flexibleHeight = 0f;
 
-        var sceneText = CreateText("SceneName", _components.VotePanel.transform, sceneName, 18, ModernColors.Primary, TextAlignmentOptions.Left, FontStyles.Bold);
-        var sceneLayout = sceneText.gameObject.GetComponent<LayoutElement>();
-        sceneLayout.flexibleWidth = 0;
-        sceneLayout.preferredWidth = -1;
+        CreateVoteIndicator(header.transform, SceneNet.Instance.localReady ? ModernColors.Success : ModernColors.Warning, 8f);
+
+        var titleText = CreateText("VoteTitle", header.transform, CoopLocalization.Get("ui.vote.title"), 16, ModernColors.TextPrimary, TextAlignmentOptions.Left, FontStyles.Bold);
+        titleText.enableWordWrapping = false;
+        titleText.overflowMode = TextOverflowModes.Ellipsis;
+
+        var countText = CreateText("VoteCount", header.transform, $"{readyCount}/{totalCount}", 13, SceneNet.Instance.localReady ? ModernColors.Success : ModernColors.Warning, TextAlignmentOptions.Right, FontStyles.Bold);
+        countText.enableWordWrapping = false;
+        var countLayout = countText.gameObject.GetComponent<LayoutElement>();
+        countLayout.preferredWidth = 48f;
+        countLayout.flexibleWidth = 0f;
 
         CreateDivider(_components.VotePanel.transform);
 
+        var sceneCard = CreateModernCard(_components.VotePanel.transform, "VoteSceneCard");
+        var sceneCardLayout = sceneCard.GetComponent<LayoutElement>();
+        sceneCardLayout.preferredHeight = 50f;
+        sceneCardLayout.minHeight = 50f;
+        sceneCardLayout.flexibleHeight = 0f;
+        var sceneCardGroup = sceneCard.GetComponent<VerticalLayoutGroup>();
+        sceneCardGroup.padding = new RectOffset(12, 12, 8, 8);
+        sceneCardGroup.spacing = 2f;
+
+        var sceneLabel = CreateText("SceneLabel", sceneCard.transform, CoopLocalization.Get("ui.vote.mapVote", sceneName), 10, ModernColors.TextSecondary, TextAlignmentOptions.Left, FontStyles.Bold);
+        sceneLabel.enableWordWrapping = false;
+        sceneLabel.overflowMode = TextOverflowModes.Ellipsis;
+        var sceneText = CreateText("SceneName", sceneCard.transform, sceneName, 15, ModernColors.Primary, TextAlignmentOptions.Left, FontStyles.Bold);
+        sceneText.enableWordWrapping = false;
+        sceneText.overflowMode = TextOverflowModes.Ellipsis;
+
+        var middleRow = CreateHorizontalGroup(_components.VotePanel.transform, "VoteMiddleRow");
+        var middleLayout = middleRow.GetComponent<HorizontalLayoutGroup>();
+        middleLayout.spacing = 7;
+        middleLayout.childAlignment = TextAnchor.UpperLeft;
+        middleLayout.childForceExpandWidth = true;
+        var middleSizer = middleRow.GetComponent<LayoutElement>();
+        middleSizer.preferredHeight = 54f;
+        middleSizer.minHeight = 54f;
+        middleSizer.flexibleHeight = 0f;
+
         // 准备状态卡片
         var readySection = CreateModernCard(_components.VotePanel.transform, "ReadySection");
+        readySection.transform.SetParent(middleRow.transform, false);
         var readyLayout = readySection.GetComponent<LayoutElement>();
         if (readyLayout != null)
         {
-            readyLayout.flexibleWidth = 0;
-            readyLayout.minWidth = -1;
+            readyLayout.preferredHeight = 54f;
+            readyLayout.minHeight = 54f;
+            readyLayout.flexibleWidth = 1;
+            readyLayout.flexibleHeight = 0;
         }
+        var readyGroup = readySection.GetComponent<VerticalLayoutGroup>();
+        readyGroup.padding = new RectOffset(12, 12, 7, 7);
+        readyGroup.spacing = 2f;
 
-        var readyText = CreateText("ReadyStatus", readySection.transform,
-            SceneNet.Instance.localReady ? "[OK] " + CoopLocalization.Get("ui.vote.ready") : "[  ] " + CoopLocalization.Get("ui.vote.notReady"), 16,
-            SceneNet.Instance.localReady ? ModernColors.Success : ModernColors.Warning);
-        CreateText("ReadyHint", readySection.transform, CoopLocalization.Get("ui.vote.pressKey", readyKey, ""), 13, ModernColors.TextTertiary);
+        var readyText = CreateText(
+            "ReadyStatus",
+            readySection.transform,
+            SceneNet.Instance.localReady ? CoopLocalization.Get("ui.vote.ready") : CoopLocalization.Get("ui.vote.notReady"),
+            14,
+            SceneNet.Instance.localReady ? ModernColors.Success : ModernColors.Warning,
+            TextAlignmentOptions.Left,
+            FontStyles.Bold);
+        readyText.enableWordWrapping = false;
+        var hint = CreateText("ReadyHint", readySection.transform, CoopLocalization.Get("ui.vote.pressKey", readyKey, SceneNet.Instance.localReady ? CoopLocalization.Get("ui.vote.ready") : CoopLocalization.Get("ui.vote.notReady")), 10, ModernColors.TextTertiary);
+        hint.enableWordWrapping = false;
+        hint.overflowMode = TextOverflowModes.Ellipsis;
 
         // 取消投票按钮（只有房主才能看到）
         if (IsServer)
         {
-            CreateDivider(_components.VotePanel.transform);
-            var cancelButton = CreateModernButton("CancelVote", _components.VotePanel.transform,
+            var cancelButton = CreateModernButton("CancelVote", middleRow.transform,
                 CoopLocalization.Get("ui.vote.cancel", "取消投票"),
-                OnCancelVote, -1, ModernColors.Error, 40, 14);
+                OnCancelVote, 92, ModernColors.Error, 54, 11);
         }
 
         // 玩家列表标题
-        var listTitle = CreateText("PlayerListTitle", _components.VotePanel.transform, CoopLocalization.Get("ui.vote.playerReadyStatus"), 16, ModernColors.TextSecondary);
+        var listTitle = CreateText("PlayerListTitle", _components.VotePanel.transform, CoopLocalization.Get("ui.vote.playerReadyStatus"), 11, ModernColors.TextSecondary);
         var listTitleLayout = listTitle.gameObject.GetComponent<LayoutElement>();
         listTitleLayout.flexibleWidth = 0;
         listTitleLayout.preferredWidth = -1;
+
+        var scroll = CreateModernScrollView("VotePlayers", _components.VotePanel.transform, listHeight);
+        var content = scroll.transform.Find("Viewport/Content") ?? scroll.transform;
 
         // 玩家列表
         foreach (var pid in SceneNet.Instance.sceneParticipantIds)
         {
             SceneNet.Instance.sceneReady.TryGetValue(pid, out var ready);
-            var playerRow = CreateModernListItem(_components.VotePanel.transform, $"Player_{pid}");
+            var playerRow = CreateModernListItem(content, $"Player_{pid}");
+            var rowLayout = playerRow.GetComponent<HorizontalLayoutGroup>();
+            rowLayout.spacing = 6;
+            rowLayout.padding = new RectOffset(8, 8, 5, 5);
+            var rowSize = playerRow.GetComponent<LayoutElement>();
+            rowSize.preferredHeight = 30f;
+            rowSize.minHeight = 30f;
 
-            var statusIcon = CreateText("Status", playerRow.transform, ready ? CoopLocalization.Get("ui.vote.readyIcon") : CoopLocalization.Get("ui.vote.notReadyIcon"), 16,
-                ready ? ModernColors.Success : ModernColors.TextTertiary);
-            var statusLayout = statusIcon.gameObject.GetComponent<LayoutElement>();
-            statusLayout.flexibleWidth = 0;
-            statusLayout.preferredWidth = 60;
-
-            // 获取玩家显示名称和ID
-            string displayName = GetMaskedEndpoint(pid);
-            string displayId = "*****"; // Always mask the endpoint display in the vote UI
-            if (StreamerMode)
-            {
-                displayId = "*****";
-            }
-            else
-            {
-                displayId = pid;
-            }
-            var service = NetService.Instance;
-            if (service != null)
-            {
-                if (service.localPlayerStatus != null && service.localPlayerStatus.EndPoint == pid)
-                {
-                    displayName = service.localPlayerStatus.PlayerName ?? pid;
-                }
-                else if (service.clientPlayerStatuses != null && service.clientPlayerStatuses.TryGetValue(pid, out var clientStatus))
-                {
-                    displayName = clientStatus.PlayerName ?? pid;
-                }
-                else if (service.playerStatuses != null)
-                {
-                    foreach (var kv in service.playerStatuses)
-                    {
-                        var st = kv.Value;
-                        if (st != null && st.EndPoint == pid)
-                        {
-                            displayName = st.PlayerName ?? pid;
-                            break;
-                        }
-                    }
-                }
-            }
+            CreateVoteIndicator(playerRow.transform, ready ? ModernColors.Success : ModernColors.TextTertiary, 8f);
 
             // 显示名称和ID
-            var nameText = CreateText("Name", playerRow.transform, displayName, 14, ModernColors.TextPrimary);
+            var displayName = ResolveVotePlayerDisplayName(pid);
+            var displayId = StreamerMode ? "*****" : pid;
+            var nameText = CreateText("Name", playerRow.transform, displayName, 11, ModernColors.TextPrimary);
             var nameLayout = nameText.gameObject.GetComponent<LayoutElement>();
             nameLayout.flexibleWidth = 1;
+            nameText.enableWordWrapping = false;
+            nameText.overflowMode = TextOverflowModes.Ellipsis;
 
-            CreateText("ID", playerRow.transform, displayId, 12, ModernColors.TextSecondary);
+            var idText = CreateText("ID", playerRow.transform, displayId, 9, ModernColors.TextSecondary, TextAlignmentOptions.Right);
+            idText.enableWordWrapping = false;
+            idText.overflowMode = TextOverflowModes.Ellipsis;
+            var idLayout = idText.gameObject.GetComponent<LayoutElement>();
+            idLayout.preferredWidth = 92f;
+            idLayout.flexibleWidth = 0f;
+
+            var readyLabel = CreateText("ReadyText", playerRow.transform, ready ? CoopLocalization.Get("ui.vote.ready") : CoopLocalization.Get("ui.vote.notReady"), 10, ready ? ModernColors.Success : ModernColors.TextTertiary, TextAlignmentOptions.Right, FontStyles.Bold);
+            readyLabel.enableWordWrapping = false;
+            readyLabel.overflowMode = TextOverflowModes.Ellipsis;
+            var readyLabelLayout = readyLabel.gameObject.GetComponent<LayoutElement>();
+            readyLabelLayout.preferredWidth = 48f;
+            readyLabelLayout.flexibleWidth = 0f;
         }
+    }
+
+    private string ResolveVotePlayerDisplayName(string pid)
+    {
+        string displayName = GetMaskedEndpoint(pid);
+        var service = NetService.Instance;
+        if (service == null)
+            return displayName;
+
+        if (service.localPlayerStatus != null && service.localPlayerStatus.EndPoint == pid)
+        {
+            return string.IsNullOrEmpty(service.localPlayerStatus.PlayerName)
+                ? pid
+                : service.localPlayerStatus.PlayerName;
+        }
+
+        if (service.clientPlayerStatuses != null && service.clientPlayerStatuses.TryGetValue(pid, out var clientStatus))
+        {
+            return string.IsNullOrEmpty(clientStatus.PlayerName) ? pid : clientStatus.PlayerName;
+        }
+
+        if (service.playerStatuses != null)
+        {
+            foreach (var kv in service.playerStatuses)
+            {
+                var st = kv.Value;
+                if (st != null && st.EndPoint == pid)
+                    return string.IsNullOrEmpty(st.PlayerName) ? pid : st.PlayerName;
+            }
+        }
+
+        return displayName;
+    }
+
+    private void CreateVoteIndicator(Transform parent, Color color, float size = 8f)
+    {
+        var dot = new GameObject("VoteIndicator");
+        dot.transform.SetParent(parent, false);
+
+        var layout = dot.AddComponent<LayoutElement>();
+        layout.minWidth = size;
+        layout.preferredWidth = size;
+        layout.minHeight = size;
+        layout.preferredHeight = size;
+        layout.flexibleWidth = 0f;
+        layout.flexibleHeight = 0f;
+
+        var rect = dot.GetComponent<RectTransform>();
+        rect.sizeDelta = new Vector2(size, size);
+
+        var image = dot.AddComponent<Image>();
+        StyleToggleBoxImage(image, color);
+        AddControlChrome(dot, new Color(color.r, color.g, color.b, 0.22f), new Color(0f, 0f, 0f, 0.10f), new Vector2(0f, -1f));
     }
 
     /// <summary>
@@ -1897,19 +2194,16 @@ public class MModUI : MonoBehaviour
         rect.sizeDelta = size;
         SetAnchor(rect, anchorPos, pivot);
 
-        // 白底主题下禁用全局毛玻璃，避免灰蒙蒙遮罩感
         var image = panel.AddComponent<Image>();
-        image.color = GlassTheme.PanelBg;
+        StylePanelImage(image, GlassTheme.PanelBg);
 
-        // 添加柔和阴影
         var shadow = panel.AddComponent<Shadow>();
         shadow.effectColor = MModUI.ModernColors.Shadow;
-        shadow.effectDistance = new Vector2(0, -4);
+        shadow.effectDistance = new Vector2(0, -10);
 
-        // 添加浅描边
         var outline = panel.AddComponent<Outline>();
-        outline.effectColor = new Color(1f, 1f, 1f, 0.08f);
-        outline.effectDistance = new Vector2(1, -1);
+        outline.effectColor = GlassTheme.Divider;
+        outline.effectDistance = new Vector2(1.5f, -1.5f);
 
         // 用于淡入淡出动画
         panel.AddComponent<CanvasGroup>();
@@ -1960,30 +2254,323 @@ public class MModUI : MonoBehaviour
         return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
     }
 
+    private static Sprite RoundedPanelSprite => _roundedPanelSprite ??= CreateRoundedRectSprite(96, 24, 24);
+    private static Sprite RoundedCardSprite => _roundedCardSprite ??= CreateRoundedRectSprite(72, 18, 18);
+    private static Sprite RoundedControlSprite => _roundedControlSprite ??= CreateRoundedRectSprite(56, 14, 14);
+    private static Sprite RoundedPillSprite => _roundedPillSprite ??= CreateRoundedRectSprite(56, 28, 24);
+    private static Sprite RoundedScrollbarSprite => _roundedScrollbarSprite ??= CreateVerticalCapsuleSprite(16, 64, 8, new Vector4(4, 8, 4, 8));
+    private static Sprite RoundedCloseGlyphSprite => _roundedCloseGlyphSprite ??= CreateVerticalCapsuleSprite(32, 8, 4, new Vector4(4, 4, 4, 4));
+    private static Sprite RoundedToggleSprite => _roundedToggleSprite ??= CreateRoundedRectSprite(44, 8, 8);
+
+    private static void StylePanelImage(Image image, Color color)
+    {
+        StyleRoundedImage(image, color, RoundedPanelSprite);
+    }
+
+    private static void StyleCardImage(Image image, Color color)
+    {
+        StyleRoundedImage(image, color, RoundedCardSprite);
+    }
+
+    internal static void StyleControlImage(Image image, Color color)
+    {
+        StyleRoundedImage(image, color, RoundedControlSprite);
+    }
+
+    internal static void StyleToggleBoxImage(Image image, Color color)
+    {
+        StyleRoundedImage(image, color, RoundedToggleSprite);
+    }
+
+    internal static void StylePillImage(Image image, Color color)
+    {
+        StyleRoundedImage(image, color, RoundedPillSprite);
+    }
+
+    internal static void AddControlChrome(GameObject target, Color? borderColor = null, Color? shadowColor = null, Vector2? shadowDistance = null)
+    {
+        if (target == null)
+            return;
+
+        var outline = target.GetComponent<Outline>() ?? target.AddComponent<Outline>();
+        outline.effectColor = borderColor ?? ModernColors.InputBorder;
+        outline.effectDistance = new Vector2(1.1f, -1.1f);
+        outline.useGraphicAlpha = true;
+
+        Shadow shadow = null;
+        foreach (var effect in target.GetComponents<Shadow>())
+        {
+            if (effect.GetType() == typeof(Shadow))
+            {
+                shadow = effect;
+                break;
+            }
+        }
+
+        shadow ??= target.AddComponent<Shadow>();
+        shadow.effectColor = shadowColor ?? ModernColors.Shadow;
+        shadow.effectDistance = shadowDistance ?? new Vector2(0f, -3f);
+        shadow.useGraphicAlpha = true;
+    }
+
+    internal static void ConfigureCloseButton(Button button, Image background, Transform glyphParent, float size, Color? glyphColor = null)
+    {
+        var normal = WithAlpha(ModernColors.Error, MModUITheme.IsDarkTheme ? 0.20f : 0.12f);
+        var highlighted = WithAlpha(ModernColors.Error, MModUITheme.IsDarkTheme ? 0.34f : 0.22f);
+        var pressed = WithAlpha(ModernColors.Error, MModUITheme.IsDarkTheme ? 0.48f : 0.32f);
+        var disabled = WithAlpha(ModernColors.Error, 0.08f);
+        var resolvedGlyphColor = glyphColor ?? ModernColors.Error;
+        var useThemedChrome = false;
+        var borderColor = WithAlpha(ModernColors.Error, 0.24f);
+        var shadowColor = WithAlpha(ModernColors.Shadow, 0.10f);
+
+        if (MModUITheme.UseLunarNewYearTheme)
+        {
+            normal = new Color(1f, 0.82f, 0.20f, 0.90f);
+            highlighted = new Color(1f, 0.91f, 0.36f, 1f);
+            pressed = new Color(0.88f, 0.62f, 0.08f, 1f);
+            disabled = new Color(0.72f, 0.46f, 0.08f, 0.32f);
+            resolvedGlyphColor = new Color(0.72f, 0.06f, 0.10f, 0.98f);
+            borderColor = new Color(1f, 0.96f, 0.58f, 0.58f);
+            shadowColor = new Color(0.38f, 0.02f, 0.03f, 0.24f);
+            useThemedChrome = true;
+        }
+        else if (MModUITheme.IsSummerTheme)
+        {
+            normal = new Color(1f, 1f, 1f, 0.78f);
+            highlighted = new Color(1f, 0.93f, 0.36f, 0.92f);
+            pressed = new Color(0.92f, 0.78f, 0.14f, 0.96f);
+            disabled = new Color(1f, 1f, 1f, 0.30f);
+            resolvedGlyphColor = new Color(0.02f, 0.48f, 0.78f, 0.98f);
+            borderColor = new Color(1f, 0.84f, 0.22f, 0.52f);
+            shadowColor = new Color(0.02f, 0.30f, 0.48f, 0.14f);
+            useThemedChrome = true;
+        }
+
+        if (background != null)
+        {
+            StylePillImage(background, normal);
+            background.raycastTarget = true;
+        }
+
+        if (button != null)
+        {
+            button.targetGraphic = background;
+            button.transition = Selectable.Transition.ColorTint;
+
+            var colors = button.colors;
+            colors.normalColor = normal;
+            colors.highlightedColor = highlighted;
+            colors.pressedColor = pressed;
+            colors.selectedColor = highlighted;
+            colors.disabledColor = disabled;
+            colors.colorMultiplier = 1.08f;
+            colors.fadeDuration = 0.06f;
+            button.colors = colors;
+        }
+
+        if (useThemedChrome && glyphParent != null)
+            AddControlChrome(glyphParent.gameObject, borderColor, shadowColor, new Vector2(0f, -2f));
+
+        CreateCloseGlyph(glyphParent, resolvedGlyphColor, size);
+
+        if (glyphParent != null && glyphParent.GetComponent<ButtonHoverAnimator>() == null)
+            glyphParent.gameObject.AddComponent<ButtonHoverAnimator>();
+    }
+
+    private static bool IsCloseIconButton(string name, string icon)
+    {
+        return (!string.IsNullOrEmpty(name) && name.IndexOf("Close", StringComparison.OrdinalIgnoreCase) >= 0)
+               || string.Equals(icon, "x", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static Color WithAlpha(Color color, float alpha)
+    {
+        color.a = alpha;
+        return color;
+    }
+
+    private static void CreateCloseGlyph(Transform parent, Color color, float buttonSize)
+    {
+        if (parent == null)
+            return;
+
+        var usesBrightTheme = MModUITheme.UseLunarNewYearTheme || MModUITheme.IsSummerTheme;
+        var glyphSize = Mathf.Max(usesBrightTheme ? 13f : 12f, buttonSize * (usesBrightTheme ? 0.46f : 0.42f));
+        var strokeHeight = Mathf.Max(usesBrightTheme ? 2.8f : 2.4f, buttonSize * (usesBrightTheme ? 0.09f : 0.075f));
+        CreateCloseGlyphStroke(parent, "CloseStrokeA", color, glyphSize, strokeHeight, 45f);
+        CreateCloseGlyphStroke(parent, "CloseStrokeB", color, glyphSize, strokeHeight, -45f);
+    }
+
+    private static void CreateCloseGlyphStroke(Transform parent, string name, Color color, float width, float height, float rotation)
+    {
+        var stroke = new GameObject(name);
+        stroke.transform.SetParent(parent, false);
+
+        var image = stroke.AddComponent<Image>();
+        StyleRoundedImage(image, color, RoundedCloseGlyphSprite);
+        image.raycastTarget = false;
+
+        var rect = stroke.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.5f, 0.5f);
+        rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.sizeDelta = new Vector2(width, height);
+        rect.anchoredPosition = Vector2.zero;
+        rect.localRotation = Quaternion.Euler(0f, 0f, rotation);
+    }
+
+    internal static Scrollbar ConfigureVerticalScrollbar(GameObject scrollbarObj, Color trackColor, Color handleColor)
+    {
+        if (scrollbarObj.GetComponent<RectTransform>() == null)
+            scrollbarObj.AddComponent<RectTransform>();
+
+        var trackImage = scrollbarObj.GetComponent<Image>();
+        if (trackImage == null)
+            trackImage = scrollbarObj.AddComponent<Image>();
+        StyleRoundedImage(trackImage, trackColor, RoundedScrollbarSprite);
+        trackImage.raycastTarget = true;
+
+        var slidingArea = new GameObject("Sliding Area");
+        slidingArea.transform.SetParent(scrollbarObj.transform, false);
+        var slidingRect = slidingArea.AddComponent<RectTransform>();
+        slidingRect.anchorMin = Vector2.zero;
+        slidingRect.anchorMax = Vector2.one;
+        slidingRect.offsetMin = new Vector2(1f, 3f);
+        slidingRect.offsetMax = new Vector2(-1f, -3f);
+
+        var handle = new GameObject("Handle");
+        handle.transform.SetParent(slidingArea.transform, false);
+        var handleRect = handle.AddComponent<RectTransform>();
+        handleRect.anchorMin = Vector2.zero;
+        handleRect.anchorMax = Vector2.one;
+        handleRect.offsetMin = Vector2.zero;
+        handleRect.offsetMax = Vector2.zero;
+
+        var handleImage = handle.AddComponent<Image>();
+        StyleRoundedImage(handleImage, handleColor, RoundedScrollbarSprite);
+        handleImage.raycastTarget = true;
+
+        var scrollbar = scrollbarObj.GetComponent<Scrollbar>();
+        if (scrollbar == null)
+            scrollbar = scrollbarObj.AddComponent<Scrollbar>();
+        scrollbar.direction = Scrollbar.Direction.BottomToTop;
+        scrollbar.targetGraphic = handleImage;
+        scrollbar.handleRect = handleRect;
+
+        var colors = scrollbar.colors;
+        colors.normalColor = handleColor;
+        colors.highlightedColor = BlendColor(AdjustColor(handleColor, 1.08f), ModernColors.PrimaryHover, 0.18f);
+        colors.pressedColor = BlendColor(AdjustColor(handleColor, 0.78f), ModernColors.PrimaryActive, 0.22f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.disabledColor = new Color(handleColor.r, handleColor.g, handleColor.b, 0.25f);
+        colors.fadeDuration = 0.06f;
+        scrollbar.colors = colors;
+
+        return scrollbar;
+    }
+
+    private static void StyleRoundedImage(Image image, Color color, Sprite sprite)
+    {
+        if (image == null)
+            return;
+
+        image.sprite = sprite;
+        image.type = Image.Type.Sliced;
+        image.color = color;
+    }
+
+    private static Sprite CreateRoundedRectSprite(int size, int radius, int border)
+    {
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        var half = size * 0.5f;
+        var inner = half - radius - 0.5f;
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                var px = Mathf.Abs(x + 0.5f - half);
+                var py = Mathf.Abs(y + 0.5f - half);
+                var dx = Mathf.Max(px - inner, 0f);
+                var dy = Mathf.Max(py - inner, 0f);
+                var dist = Mathf.Sqrt(dx * dx + dy * dy);
+                var alpha = Mathf.Clamp01(radius + 0.5f - dist);
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+            }
+        }
+
+        tex.Apply();
+        tex.wrapMode = TextureWrapMode.Clamp;
+        tex.filterMode = FilterMode.Bilinear;
+
+        return Sprite.Create(
+            tex,
+            new Rect(0, 0, size, size),
+            new Vector2(0.5f, 0.5f),
+            100f,
+            0,
+            SpriteMeshType.FullRect,
+            new Vector4(border, border, border, border));
+    }
+
+    private static Sprite CreateVerticalCapsuleSprite(int width, int height, int radius, Vector4 border)
+    {
+        var tex = new Texture2D(width, height, TextureFormat.RGBA32, false);
+        var halfWidth = width * 0.5f;
+        var halfHeight = height * 0.5f;
+        var innerX = halfWidth - radius - 0.5f;
+        var innerY = halfHeight - radius - 0.5f;
+
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                var px = Mathf.Abs(x + 0.5f - halfWidth);
+                var py = Mathf.Abs(y + 0.5f - halfHeight);
+                var dx = Mathf.Max(px - innerX, 0f);
+                var dy = Mathf.Max(py - innerY, 0f);
+                var dist = Mathf.Sqrt(dx * dx + dy * dy);
+                var alpha = Mathf.Clamp01(radius + 0.5f - dist);
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+            }
+        }
+
+        tex.Apply();
+        tex.wrapMode = TextureWrapMode.Clamp;
+        tex.filterMode = FilterMode.Bilinear;
+
+        return Sprite.Create(
+            tex,
+            new Rect(0, 0, width, height),
+            new Vector2(0.5f, 0.5f),
+            100f,
+            0,
+            SpriteMeshType.FullRect,
+            border);
+    }
+
     internal GameObject CreateTitleBar(Transform parent)
     {
         var titleBar = CreateHorizontalGroup(parent, "TitleBar");
         var layout = titleBar.GetComponent<HorizontalLayoutGroup>();
-        layout.padding = new RectOffset(20, 20, 15, 15);
-        layout.spacing = 12;
+        layout.padding = new RectOffset(22, 18, 12, 12);
+        layout.spacing = 14;
 
-        // --- 背景改成毛玻璃风格 ---
         var bg = titleBar.AddComponent<Image>();
-        bg.color = GlassTheme.CardBg;
+        StyleCardImage(bg, new Color(GlassTheme.CardBg.r, GlassTheme.CardBg.g, GlassTheme.CardBg.b, MModUITheme.UseLunarNewYearTheme ? GlassTheme.CardBg.a : 0.42f));
 
-        // 轻描边 + 柔光阴影
         var outline = titleBar.AddComponent<Outline>();
         outline.effectColor = GlassTheme.Divider;
-        outline.effectDistance = new Vector2(1, -1);
+        outline.effectDistance = new Vector2(1.2f, -1.2f);
 
         var shadow = titleBar.AddComponent<Shadow>();
-        shadow.effectColor = new Color(0, 0, 0, 0.25f);
-        shadow.effectDistance = new Vector2(0, -2);
+        shadow.effectColor = ModernColors.Shadow;
+        shadow.effectDistance = new Vector2(0, -5);
 
         var layoutElement = titleBar.GetComponent<LayoutElement>();
         layoutElement.flexibleWidth = 1;
-        layoutElement.preferredHeight = 60;
-        layoutElement.minHeight = 60;
+        layoutElement.preferredHeight = 58;
+        layoutElement.minHeight = 58;
         layoutElement.flexibleHeight = 0;  // 不占据额外垂直空间
 
         return titleBar;
@@ -2004,11 +2591,10 @@ public class MModUI : MonoBehaviour
         layout.childControlHeight = true;
 
         var image = content.AddComponent<Image>();
-        image.color = GlassTheme.CardBg;
+        StyleCardImage(image, GlassTheme.CardBg);
 
-        // 内部柔和描边
         var outline = content.AddComponent<Outline>();
-        outline.effectColor = new Color(1f, 1f, 1f, 0.06f);
+        outline.effectColor = GlassTheme.Divider;
         outline.effectDistance = new Vector2(1, -1);
 
         var layoutElement = content.AddComponent<LayoutElement>();
@@ -2025,21 +2611,21 @@ public class MModUI : MonoBehaviour
         card.transform.SetParent(parent, false);
 
         var layout = card.AddComponent<VerticalLayoutGroup>();
-        layout.padding = new RectOffset(15, 15, 12, 12);
-        layout.spacing = 8;
+        layout.padding = new RectOffset(16, 16, 14, 14);
+        layout.spacing = 10;
         layout.childForceExpandHeight = false;
         layout.childControlHeight = true;
 
         var image = card.AddComponent<Image>();
-        image.color = GlassTheme.CardBg;
+        StyleCardImage(image, GlassTheme.CardBg);
 
         var outline = card.AddComponent<Outline>();
         outline.effectColor = GlassTheme.Divider;
         outline.effectDistance = new Vector2(1, -1);
 
         var shadow = card.AddComponent<Shadow>();
-        shadow.effectColor = new Color(0f, 0f, 0f, 0.25f);
-        shadow.effectDistance = new Vector2(0, -3);
+        shadow.effectColor = ModernColors.Shadow;
+        shadow.effectDistance = new Vector2(0, -6);
 
         var layoutElement = card.AddComponent<LayoutElement>();
         layoutElement.flexibleWidth = 1;
@@ -2059,7 +2645,7 @@ public class MModUI : MonoBehaviour
         layout.childAlignment = TextAnchor.MiddleLeft;
 
         var image = item.AddComponent<Image>();
-        image.color = GlassTheme.CardBg;
+        StyleCardImage(image, GlassTheme.CardBg);
 
         var layoutElem = item.AddComponent<LayoutElement>();
         layoutElem.preferredHeight = 44;
@@ -2118,15 +2704,15 @@ public class MModUI : MonoBehaviour
         layout.childAlignment = TextAnchor.MiddleLeft;
 
         var bg = bar.AddComponent<Image>();
-        bg.color = GlassTheme.CardBg;
+        StyleCardImage(bg, GlassTheme.CardBg);
 
         var outline = bar.AddComponent<Outline>();
         outline.effectColor = GlassTheme.Divider;
         outline.effectDistance = new Vector2(1, -1);
 
         var shadow = bar.AddComponent<Shadow>();
-        shadow.effectColor = new Color(0, 0, 0, 0.25f);
-        shadow.effectDistance = new Vector2(0, -2);
+        shadow.effectColor = ModernColors.Shadow;
+        shadow.effectDistance = new Vector2(0, -5);
 
         var layoutElement = bar.AddComponent<LayoutElement>();
         layoutElement.flexibleWidth = 1;
@@ -2148,15 +2734,15 @@ public class MModUI : MonoBehaviour
         layout.childForceExpandHeight = false;
 
         var bg = bar.AddComponent<Image>();
-        bg.color = GlassTheme.CardBg;
+        StyleCardImage(bg, GlassTheme.CardBg);
 
         var outline = bar.AddComponent<Outline>();
         outline.effectColor = GlassTheme.Divider;
         outline.effectDistance = new Vector2(1, -1);
 
         var shadow = bar.AddComponent<Shadow>();
-        shadow.effectColor = new Color(0, 0, 0, 0.3f);
-        shadow.effectDistance = new Vector2(0, -3);
+        shadow.effectColor = ModernColors.Shadow;
+        shadow.effectDistance = new Vector2(0, -5);
 
         var layoutElement = bar.GetComponent<LayoutElement>();
         layoutElement.preferredHeight = 48;
@@ -2176,7 +2762,7 @@ public class MModUI : MonoBehaviour
         layout.childAlignment = TextAnchor.MiddleCenter;
 
         var bg = bar.AddComponent<Image>();
-        bg.color = GlassTheme.CardBg;
+        StyleCardImage(bg, GlassTheme.CardBg);
 
         var outline = bar.AddComponent<Outline>();
         outline.effectColor = GlassTheme.Divider;
@@ -2201,7 +2787,7 @@ public class MModUI : MonoBehaviour
         layoutElement.preferredWidth = 50;
 
         var bg = badge.AddComponent<Image>();
-        bg.color = new Color(color.r, color.g, color.b, 0.2f);
+        StylePillImage(bg, new Color(color.r, color.g, color.b, MModUITheme.UseLunarNewYearTheme ? 0.20f : 0.13f));
 
         var badgeText = CreateText("Text", badge.transform, text, 11, color, TextAlignmentOptions.Center, FontStyles.Bold);
 
@@ -2299,21 +2885,14 @@ public class MModUI : MonoBehaviour
         if (width > 0) layout.preferredWidth = width;
         else layout.flexibleWidth = 1;
 
-        var baseColor = GlassTheme.ButtonBg;
+        var baseColor = color ?? GlassTheme.ButtonBg;
         var image = btnObj.AddComponent<Image>();
-        image.color = baseColor;
+        StyleControlImage(image, baseColor);
+        AddControlChrome(btnObj, GlassTheme.Divider, ModernColors.Shadow, new Vector2(0f, -3f));
 
         var button = btnObj.AddComponent<Button>();
         button.onClick.AddListener(onClick);
         button.targetGraphic = image;
-
-        var colors = button.colors;
-        colors.normalColor = baseColor;
-        colors.highlightedColor = GlassTheme.ButtonHover;
-        colors.pressedColor = GlassTheme.ButtonActive;
-        colors.disabledColor = new Color(0.2f, 0.2f, 0.2f, 0.4f);
-        colors.fadeDuration = 0.15f;
-        button.colors = colors;
 
         var textObj = new GameObject("Text");
         textObj.transform.SetParent(btnObj.transform, false);
@@ -2321,7 +2900,7 @@ public class MModUI : MonoBehaviour
         tmp.text = text;
         tmp.fontSize = fontSize;
         tmp.alignment = TextAlignmentOptions.Center;
-        tmp.color = new Color(0.28f, 0.16f, 0.02f, 0.98f);
+        tmp.color = GetReadableButtonTextColor(baseColor);
         tmp.fontStyle = FontStyles.Bold;
 
         var rect = tmp.GetComponent<RectTransform>();
@@ -2329,7 +2908,63 @@ public class MModUI : MonoBehaviour
         rect.anchorMax = Vector2.one;
         rect.sizeDelta = Vector2.zero;
 
+        ApplyButtonColors(button, baseColor);
+        btnObj.AddComponent<ButtonHoverAnimator>();
         return button;
+    }
+
+    private static void ApplyButtonColors(Button button, Color baseColor)
+    {
+        if (button == null)
+            return;
+
+        var image = button.GetComponent<Image>();
+        if (image != null)
+            StyleControlImage(image, baseColor);
+
+        var colors = button.colors;
+        colors.normalColor = baseColor;
+        colors.highlightedColor = MModUITheme.UseLunarNewYearTheme
+            ? AdjustColor(baseColor, 1.18f)
+            : BlendColor(AdjustColor(baseColor, 1.06f), ModernColors.PrimaryHover, 0.28f);
+        colors.pressedColor = MModUITheme.UseLunarNewYearTheme
+            ? AdjustColor(baseColor, 0.66f)
+            : BlendColor(AdjustColor(baseColor, 0.72f), ModernColors.PrimaryActive, 0.44f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.disabledColor = new Color(0.18f, 0.20f, 0.24f, 0.45f);
+        colors.colorMultiplier = 1.06f;
+        colors.fadeDuration = 0.06f;
+        button.colors = colors;
+
+        var label = button.GetComponentInChildren<TextMeshProUGUI>();
+        if (label != null)
+            label.color = GetReadableButtonTextColor(baseColor);
+    }
+
+    private static Color AdjustColor(Color color, float factor)
+    {
+        return new Color(
+            Mathf.Clamp01(color.r * factor),
+            Mathf.Clamp01(color.g * factor),
+            Mathf.Clamp01(color.b * factor),
+            color.a);
+    }
+
+    private static Color BlendColor(Color a, Color b, float t)
+    {
+        return new Color(
+            Mathf.Lerp(a.r, b.r, t),
+            Mathf.Lerp(a.g, b.g, t),
+            Mathf.Lerp(a.b, b.b, t),
+            Mathf.Max(a.a, b.a * 0.75f));
+    }
+
+    private static Color GetReadableButtonTextColor(Color background)
+    {
+        var luminance = 0.2126f * background.r + 0.7152f * background.g + 0.0722f * background.b;
+        return luminance > 0.58f
+            ? new Color(0.08f, 0.09f, 0.11f, 0.98f)
+            : GlassTheme.ButtonText;
     }
 
 
@@ -2342,20 +2977,22 @@ public class MModUI : MonoBehaviour
         layoutElement.preferredWidth = size;
         layoutElement.preferredHeight = size;
 
-        var btnColor = GlassTheme.ButtonBg;
+        var btnColor = color ?? GlassTheme.ButtonBg;
+        var isCloseButton = IsCloseIconButton(name, icon);
         var image = btnObj.AddComponent<Image>();
-        image.color = new Color(0, 0, 0, 0); // 透明背景
+        if (!isCloseButton)
+            StylePillImage(image, new Color(1f, 1f, 1f, MModUITheme.UseLunarNewYearTheme ? 0f : 0.24f));
 
         var button = btnObj.AddComponent<Button>();
         button.targetGraphic = image;
         button.onClick.AddListener(onClick);
 
-        var colors = button.colors;
-        colors.normalColor = new Color(1, 1, 1, 0);
-        colors.highlightedColor = new Color(1, 1, 1, 0.1f);
-        colors.pressedColor = new Color(1, 1, 1, 0.2f);
-        colors.disabledColor = new Color(1, 1, 1, 0);
-        button.colors = colors;
+        if (isCloseButton)
+        {
+            AddControlChrome(btnObj, WithAlpha(ModernColors.Error, 0.24f), WithAlpha(ModernColors.Shadow, 0.10f), new Vector2(0f, -2f));
+            ConfigureCloseButton(button, image, btnObj.transform, size, btnColor);
+            return button;
+        }
 
         var textObj = new GameObject("Text");
         textObj.transform.SetParent(btnObj.transform, false);
@@ -2372,6 +3009,13 @@ public class MModUI : MonoBehaviour
         textRect.anchorMax = Vector2.one;
         textRect.sizeDelta = Vector2.zero;
 
+        var colors = button.colors;
+        colors.normalColor = new Color(1, 1, 1, 0);
+        colors.highlightedColor = new Color(1, 1, 1, 0.1f);
+        colors.pressedColor = new Color(1, 1, 1, 0.2f);
+        colors.disabledColor = new Color(1, 1, 1, 0);
+        button.colors = colors;
+
         return button;
     }
 
@@ -2381,18 +3025,19 @@ public class MModUI : MonoBehaviour
         toggleObj.transform.SetParent(parent, false);
 
         var layout = toggleObj.AddComponent<LayoutElement>();
-        layout.preferredWidth = 28;
+        layout.preferredWidth = 24;
         layout.preferredHeight = 24;
 
         var backgroundObj = new GameObject("Background");
         backgroundObj.transform.SetParent(toggleObj.transform, false);
         var bgImage = backgroundObj.AddComponent<Image>();
-        bgImage.color = GlassTheme.ButtonBg;
-        bgImage.sprite = CreateEmbeddedNoiseSprite();
+        StyleToggleBoxImage(bgImage, GlassTheme.InputBg);
+        AddControlChrome(backgroundObj, ModernColors.InputBorder, ModernColors.Shadow, new Vector2(0f, -2f));
 
         var checkmarkObj = new GameObject("Checkmark");
         checkmarkObj.transform.SetParent(backgroundObj.transform, false);
         var checkImage = checkmarkObj.AddComponent<Image>();
+        StyleToggleBoxImage(checkImage, ModernColors.Primary);
         checkImage.color = ModernColors.Primary;
 
         var toggle = toggleObj.AddComponent<Toggle>();
@@ -2406,8 +3051,8 @@ public class MModUI : MonoBehaviour
         bgRect.sizeDelta = Vector2.zero;
 
         var checkRect = checkmarkObj.GetComponent<RectTransform>();
-        checkRect.anchorMin = new Vector2(0.2f, 0.2f);
-        checkRect.anchorMax = new Vector2(0.8f, 0.8f);
+        checkRect.anchorMin = new Vector2(0.25f, 0.25f);
+        checkRect.anchorMax = new Vector2(0.75f, 0.75f);
         checkRect.sizeDelta = Vector2.zero;
 
         var colors = toggle.colors;
@@ -2431,7 +3076,8 @@ public class MModUI : MonoBehaviour
         layout.minHeight = 35;
 
         var image = inputObj.AddComponent<Image>();
-        image.color = GlassTheme.InputBg;
+        StyleControlImage(image, GlassTheme.InputBg);
+        AddControlChrome(inputObj, ModernColors.InputBorder, ModernColors.Shadow, new Vector2(0f, -2f));
 
         var input = inputObj.AddComponent<TMP_InputField>();
 
@@ -2440,15 +3086,23 @@ public class MModUI : MonoBehaviour
         var rect = textArea.AddComponent<RectTransform>();
         rect.anchorMin = Vector2.zero;
         rect.anchorMax = Vector2.one;
-        rect.offsetMin = new Vector2(12, 8);
-        rect.offsetMax = new Vector2(-12, -8);
+        rect.offsetMin = new Vector2(12, 5);
+        rect.offsetMax = new Vector2(-12, -5);
+        textArea.AddComponent<RectMask2D>();
 
         var textObj = new GameObject("Text");
         textObj.transform.SetParent(textArea.transform, false);
         var tmpText = textObj.AddComponent<TextMeshProUGUI>();
         tmpText.color = GlassTheme.Text;
         tmpText.fontSize = 15;
-        tmpText.alignment = TextAlignmentOptions.Left;
+        tmpText.alignment = TextAlignmentOptions.MidlineLeft;
+        tmpText.enableWordWrapping = false;
+        tmpText.overflowMode = TextOverflowModes.Ellipsis;
+        var textRect = tmpText.GetComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
 
         var placeholderObj = new GameObject("Placeholder");
         placeholderObj.transform.SetParent(textArea.transform, false);
@@ -2457,11 +3111,20 @@ public class MModUI : MonoBehaviour
         placeholderText.color = GlassTheme.TextSecondary;
         placeholderText.fontSize = 15;
         placeholderText.fontStyle = FontStyles.Italic;
+        placeholderText.alignment = TextAlignmentOptions.MidlineLeft;
+        placeholderText.enableWordWrapping = false;
+        placeholderText.overflowMode = TextOverflowModes.Ellipsis;
+        var placeholderRect = placeholderText.GetComponent<RectTransform>();
+        placeholderRect.anchorMin = Vector2.zero;
+        placeholderRect.anchorMax = Vector2.one;
+        placeholderRect.offsetMin = Vector2.zero;
+        placeholderRect.offsetMax = Vector2.zero;
 
         input.textViewport = rect;
         input.textComponent = tmpText;
         input.placeholder = placeholderText;
         input.text = defaultValue;
+        input.lineType = TMP_InputField.LineType.SingleLine;
 
         return input;
     }
@@ -2480,7 +3143,7 @@ public class MModUI : MonoBehaviour
 
         // === 背景：伪毛玻璃 ===
         var scrollImage = scrollObj.AddComponent<Image>();
-        scrollImage.color = GlassTheme.CardBg;
+        StyleCardImage(scrollImage, GlassTheme.CardBg);
 
         // 柔光边缘
         var outline = scrollObj.AddComponent<Outline>();
@@ -2505,7 +3168,7 @@ public class MModUI : MonoBehaviour
         viewportRect.offsetMax = new Vector2(-5, -5);
 
         var viewportImage = viewportObj.AddComponent<Image>();
-        viewportImage.color = new Color(0.70f, 0.09f, 0.14f, 0.98f);
+        StyleCardImage(viewportImage, GlassTheme.ViewportBg);
 
         var viewportMask = viewportObj.AddComponent<Mask>();
         viewportMask.showMaskGraphic = false;
@@ -2540,14 +3203,12 @@ public class MModUI : MonoBehaviour
         scrollbarRect.anchorMin = new Vector2(1, 0);
         scrollbarRect.anchorMax = new Vector2(1, 1);
         scrollbarRect.pivot = new Vector2(1, 0.5f);
-        scrollbarRect.sizeDelta = new Vector2(8, 0);
+        scrollbarRect.sizeDelta = new Vector2(10, 0);
 
-        var scrollbarImage = scrollbarObj.AddComponent<Image>();
-        scrollbarImage.color = new Color(1f, 1f, 1f, 0.05f); // 轻微透白
-
-        var scrollbar = scrollbarObj.AddComponent<Scrollbar>();
-        scrollbar.direction = Scrollbar.Direction.BottomToTop;
-        scrollbar.targetGraphic = scrollbarImage;
+        var scrollbar = ConfigureVerticalScrollbar(
+            scrollbarObj,
+            new Color(1f, 1f, 1f, MModUITheme.IsDarkTheme ? 0.06f : 0.18f),
+            new Color(ModernColors.Primary.r, ModernColors.Primary.g, ModernColors.Primary.b, 0.74f));
 
         scroll.verticalScrollbar = scrollbar;
         scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
@@ -2601,7 +3262,7 @@ public class MModUI : MonoBehaviour
         }, 120, ModernColors.Primary, 38, 15);
 
         // Steam房间列表滚动视图
-        var lobbyScroll = CreateModernScrollView("SteamLobbyScroll", parent, 445);
+        var lobbyScroll = CreateModernScrollView("SteamLobbyScroll", parent, 400);
         var scrollLayout = lobbyScroll.GetComponent<LayoutElement>();
         scrollLayout.flexibleHeight = 1;
         components.SteamLobbyListContent = lobbyScroll.transform.Find("Viewport/Content");
@@ -2609,8 +3270,8 @@ public class MModUI : MonoBehaviour
         // 加入密码输入区域
         var passCard = CreateModernCard(parent, "JoinPassCard");
         var passCardLayout = passCard.GetComponent<LayoutElement>();
-        passCardLayout.preferredHeight = 80;
-        passCardLayout.minHeight = 80;
+        passCardLayout.preferredHeight = 70;
+        passCardLayout.minHeight = 70;
 
         var passRow = CreateHorizontalGroup(passCard.transform, "JoinPassRow");
         CreateText("JoinPassLabel", passRow.transform, CoopLocalization.Get("ui.steam.joinPassword"), 14, GlassTheme.TextSecondary).gameObject.GetComponent<LayoutElement>().preferredWidth = 80;
@@ -2725,10 +3386,12 @@ public class MModUI : MonoBehaviour
         }
 
         // 更新左侧列表区域
-        if (_components?.DirectServerListArea != null && _components?.SteamServerListArea != null)
+        if (_components != null)
         {
-            _components.DirectServerListArea.SetActive(TransportMode == NetworkTransportMode.Direct);
-            _components.SteamServerListArea.SetActive(TransportMode == NetworkTransportMode.SteamP2P);
+            if (_components.DirectServerListArea != null)
+                _components.DirectServerListArea.SetActive(TransportMode == NetworkTransportMode.Direct);
+            if (_components.SteamServerListArea != null)
+                _components.SteamServerListArea.SetActive(TransportMode == NetworkTransportMode.SteamP2P);
         }
     }
 
@@ -3117,41 +3780,71 @@ public class ButtonHoverAnimator : MonoBehaviour, IPointerEnterHandler, IPointer
     private Vector3 _originalScale;
     private Coroutine _scaleCoroutine;
     private bool _isPressed;
+    private Shadow _shadow;
+    private Vector2 _shadowDefault;
+    private Vector2 _shadowHover;
+    private Vector2 _shadowPressed;
 
     private void Awake()
     {
         _rectTransform = GetComponent<RectTransform>();
         _originalScale = _rectTransform.localScale;
+
+        foreach (var effect in GetComponents<Shadow>())
+        {
+            if (effect.GetType() == typeof(Shadow))
+            {
+                _shadow = effect;
+                break;
+            }
+        }
+
+        if (_shadow != null)
+        {
+            _shadowDefault = _shadow.effectDistance;
+            _shadowHover = _shadowDefault + new Vector2(0f, -1.5f);
+            _shadowPressed = new Vector2(_shadowDefault.x * 0.35f, _shadowDefault.y * 0.35f);
+        }
     }
 
     public void OnPointerEnter(PointerEventData eventData)
     {
         if (!_isPressed)
         {
+            SetShadow(_shadowHover);
             if (_scaleCoroutine != null) StopCoroutine(_scaleCoroutine);
-            _scaleCoroutine = StartCoroutine(ScaleToWithEasing(Vector3.one * 1.05f, 0.2f, EaseOutBack));
+            _scaleCoroutine = StartCoroutine(ScaleToWithEasing(_originalScale * 1.025f, 0.12f, EaseOutCubic));
         }
     }
 
     public void OnPointerExit(PointerEventData eventData)
     {
         _isPressed = false;
+        SetShadow(_shadowDefault);
         if (_scaleCoroutine != null) StopCoroutine(_scaleCoroutine);
-        _scaleCoroutine = StartCoroutine(ScaleToWithEasing(_originalScale, 0.2f, EaseOutCubic));
+        _scaleCoroutine = StartCoroutine(ScaleToWithEasing(_originalScale, 0.11f, EaseOutCubic));
     }
 
     public void OnPointerDown(PointerEventData eventData)
     {
         _isPressed = true;
+        SetShadow(_shadowPressed);
         if (_scaleCoroutine != null) StopCoroutine(_scaleCoroutine);
-        _scaleCoroutine = StartCoroutine(ScaleToWithEasing(Vector3.one * 0.95f, 0.1f, EaseOutCubic));
+        _scaleCoroutine = StartCoroutine(ScaleToWithEasing(_originalScale * 0.94f, 0.055f, EaseOutCubic));
     }
 
     public void OnPointerUp(PointerEventData eventData)
     {
         _isPressed = false;
+        SetShadow(_shadowHover);
         if (_scaleCoroutine != null) StopCoroutine(_scaleCoroutine);
-        _scaleCoroutine = StartCoroutine(ScaleToWithEasing(Vector3.one * 1.05f, 0.15f, EaseOutBack));
+        _scaleCoroutine = StartCoroutine(ScaleToWithEasing(_originalScale * 1.025f, 0.10f, EaseOutBack));
+    }
+
+    private void SetShadow(Vector2 distance)
+    {
+        if (_shadow != null)
+            _shadow.effectDistance = distance;
     }
 
     private IEnumerator ScaleToWithEasing(Vector3 targetScale, float duration, System.Func<float, float> easingFunction)

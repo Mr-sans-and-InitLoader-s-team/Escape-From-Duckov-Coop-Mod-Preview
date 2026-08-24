@@ -125,10 +125,11 @@ public class ClientPlayerApply
 
         var key = $"{playerId}:{slotHash}";
         var want = itemId ?? string.Empty;
-        if (_lastWeaponAppliedByPlayer.TryGetValue(key, out var last) && last == want) return;
-        if (_lastWeaponAppliedTimeByPlayer.TryGetValue(key, out var ts))
-            if (Time.time - ts < WeaponApplyDebounce && last == want)
-                return;
+        if (_lastWeaponAppliedByPlayer.TryGetValue(key, out var last) &&
+            last == want &&
+            _lastWeaponAppliedTimeByPlayer.TryGetValue(key, out var ts) &&
+            Time.time - ts < WeaponApplyDebounce)
+            return;
         _lastWeaponAppliedByPlayer[key] = want;
         _lastWeaponAppliedTimeByPlayer[key] = Time.time;
 

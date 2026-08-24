@@ -1,282 +1,1188 @@
 {
   "translations": [
-    { "key": "ui.window.title", "value": "联机Mod控制面板" },
-    { "key": "ui.window.playerStatus", "value": "玩家状态" },
-    { "key": "ui.mode.current", "value": "当前模式" },
-    { "key": "ui.mode.server", "value": "服务器" },
-    { "key": "ui.mode.client", "value": "客户端" },
-    { "key": "ui.mode.switchTo", "value": "切换到{0}模式" },
-    { "key": "ui.hostList.title", "value": "局域网主机列表" },
-    { "key": "ui.hostList.empty", "value": "（等待广播回应，暂无主机）" },
-    { "key": "ui.hostList.connect", "value": "连接" },
-    { "key": "ui.manualConnect.title", "value": "手动输入 IP 和端口连接:" },
-    { "key": "ui.manualConnect.ip", "value": "IP:" },
-    { "key": "ui.manualConnect.port", "value": "端口:" },
-    { "key": "ui.manualConnect.button", "value": "手动连接" },
-    { "key": "ui.manualConnect.portError", "value": "端口格式错误" },
-    { "key": "ui.status.label", "value": "状态:" },
-    { "key": "ui.status.notConnected", "value": "未连接" },
-    { "key": "ui.status.connecting", "value": "连接中..." },
-    { "key": "ui.status.connected", "value": "已连接" },
-    { "key": "ui.server.listenPort", "value": "服务器监听端口:" },
-    { "key": "ui.server.connections", "value": "当前连接数:" },
-    { "key": "ui.playerStatus.toggle", "value": "显示玩家状态窗口 (切换键: {0})" },
-    { "key": "ui.playerStatus.id", "value": "ID:" },
-    { "key": "ui.playerStatus.name", "value": "名称:" },
-    { "key": "ui.playerStatus.latency", "value": "延迟:" },
-    { "key": "ui.playerStatus.inGame", "value": "游戏中:" },
-    { "key": "ui.playerStatus.yes", "value": "是" },
-    { "key": "ui.playerStatus.no", "value": "否" },
-    { "key": "ui.debug.printLootBoxes", "value": "[Debug] 打印出该地图的所有lootbox" },
-    { "key": "ui.vote.mapVote", "value": "地图投票 / 准备  [{0}]" },
-    { "key": "ui.vote.pressKey", "value": "按 {0} 切换准备（当前：{1}）" },
-    { "key": "ui.vote.ready", "value": "已准备" },
-    { "key": "ui.vote.notReady", "value": "未准备" },
-    { "key": "ui.vote.playerReadyStatus", "value": "玩家准备状态：" },
-    { "key": "ui.vote.readyIcon", "value": "就绪" },
-    { "key": "ui.vote.notReadyIcon", "value": "未就绪" },
-    { "key": "ui.vote.cancel", "value": "取消投票" },
-    { "key": "ui.vote.title", "value": "地图投票" },
-    { "key": "ui.spectator.mode", "value": "观战模式：左键 ▶ 下一个 | 右键 ◀ 上一个 | 按 F8 直接进入结算（防卡死）" },
-    { "key": "scene.waitingForHost", "value": "[Coop] 等待主机完成加载… (如迟迟没有进入等待100秒后自动进入)" },
-    { "key": "scene.hostReady", "value": "主机已完成，正在进入…" },
-    { "key": "net.connectionSuccess", "value": "连接成功: {0}" },
-    { "key": "net.connectedTo", "value": "已连接到 {0}" },
-    { "key": "net.disconnected", "value": "断开连接: {0}, 原因: {1}" },
-    { "key": "net.connectionLost", "value": "连接断开" },
-    { "key": "net.networkError", "value": "网络错误: {0} 来自 {1}" },
-    { "key": "net.hostDiscovered", "value": "发现主机: {0}" },
-    { "key": "net.serverStarted", "value": "服务器启动，监听端口 {0}" },
-    { "key": "net.serverStartFailed", "value": "服务器启动失败，请检查端口是否被占用" },
-    { "key": "net.clientStarted", "value": "客户端启动" },
-    { "key": "net.clientStartFailed", "value": "客户端启动失败" },
-    { "key": "net.networkStarted", "value": "网络已启动" },
-    { "key": "net.networkStopped", "value": "网络已停止" },
-    { "key": "net.ipEmpty", "value": "IP为空" },
-    { "key": "net.invalidPort", "value": "端口不合法" },
-    { "key": "net.serverModeCannotConnect", "value": "服务器模式不能主动连接其他主机" },
-    { "key": "net.alreadyConnecting", "value": "正在连接中." },
-    { "key": "net.clientNetworkStartFailed", "value": "启动客户端网络失败：{0}" },
-    { "key": "net.clientNetworkStartFailedStatus", "value": "客户端网络启动失败" },
-    { "key": "net.clientNotStarted", "value": "客户端未启动" },
-    { "key": "net.connectingTo", "value": "连接中: {0}:{1}" },
-    { "key": "net.connectionFailedLog", "value": "连接到主机失败: {0}" },
-    { "key": "net.connectionFailed", "value": "连接失败" },
-    { "key": "net.clientVersionMismatch", "value": "客户端版本不匹配（客户端: {0}，主机: {1}），已拒绝连接" },
-    { "key": "net.clientVersionUnknown", "value": "客户端未知版本，拒绝连接" },
-    
-    { "key": "ui.status.online", "value": "在线" },
-    { "key": "ui.error", "value": "错误" },
-    { "key": "ui.server.management", "value": "服务器管理" },
-    { "key": "ui.server.info", "value": "服务器信息" },
-    { "key": "ui.server.port", "value": "端口" },
-    { "key": "ui.server.create", "value": "创建主机" },
-    { "key": "ui.server.close", "value": "关闭主机" },
-    { "key": "ui.server.closed", "value": "主机已关闭" },
-    { "key": "ui.server.created", "value": "主机创建成功，监听端口 {0}" },
-    { "key": "ui.server.hint.waiting", "value": "服务器模式：等待玩家连接" },
-    { "key": "ui.server.hint.willUsePort", "value": "直连客户端：将使用端口 {0} 创建服务器" },
-    { "key": "ui.client.hint.browse", "value": "客户端模式：浏览并连接服务器" },
-    { "key": "ui.error.serverNotInGame", "value": "服务端不在关卡内，已断开连接" },
-    { "key": "ui.error.gameNotInitialized", "value": "游戏未初始化" },
-    { "key": "ui.error.mustInLevel", "value": "必须先进入关卡才能连接" },
-    { "key": "ui.hostList.lanServer", "value": "局域网服务器 - {0}" },
-    { "key": "ui.hostList.serverDetails", "value": "端口: {0}  |  玩家: 0/4  |  延迟: <50ms" },
-    { "key": "ui.playerStatus.local", "value": "本地" },
-    { "key": "ui.playerStatus.inGameStatus", "value": "游戏中" },
-    { "key": "ui.playerStatus.idle", "value": "待机" },
-    { "key": "ui.vote.title", "value": "地图投票" },
-    { "key": "ui.steam.lobbyList", "value": "Steam房间列表" },
-    { "key": "ui.steam.client.connected", "value": "Steam客户端：已连接到房间" },
-    { "key": "ui.steam.hint.createOrJoin", "value": "Steam P2P模式：创建或加入房间" },
-    { "key": "ui.steam.joinPassword", "value": "房间密码" },
-    { "key": "ui.steam.joinPasswordPlaceholder", "value": "如果房间需要密码" },
-    { "key": "ui.steam.lobbyNamePlaceholder", "value": "我的房间" },
-    { "key": "ui.steam.lobbyPasswordPlaceholder", "value": "留空为公开" },
-    { "key": "ui.steam.visibility", "value": "可见性" },
-    { "key": "ui.steam.maxPlayers.label", "value": "最大人数" },
-    { "key": "ui.steam.lobby.left", "value": "已离开房间" },
-    { "key": "ui.steam.lobby.creating", "value": "正在创建Steam房间..." },
-    { "key": "ui.steam.playerCount", "value": "玩家: {0}/{1}" },
-    { "key": "ui.steam.notInitialized", "value": "Steam未初始化" },
-    { "key": "ui.steam.refresh", "value": "刷新列表" },
-    { "key": "ui.steam.lobbiesEmpty", "value": "未找到可用房间，点击刷新列表" },
-    { "key": "ui.steam.lobbiesEmptyFiltered", "value": "没有符合搜索条件的房间" },
-    { "key": "ui.steam.searchPlaceholder", "value": "搜索房间名或房主" },
-    { "key": "ui.steam.joinButton", "value": "加入房间" },
-    { "key": "ui.steam.createHost", "value": "创建房间" },
-    { "key": "ui.steam.leaveLobby", "value": "离开房间" },
-    { "key": "ui.steam.lobbySettings", "value": "Steam房间设置" },
-    { "key": "ui.steam.lobbyName", "value": "房间名" },
-    { "key": "ui.steam.lobbyPassword", "value": "密码" },
-    { "key": "ui.steam.visibility.public", "value": "公开" },
-    { "key": "ui.steam.visibility.friends", "value": "仅好友" },
-    { "key": "ui.steam.maxPlayers", "value": "最大玩家数: {0}" },
-    { "key": "ui.steam.currentLobby", "value": "当前房间: {0}  玩家: {1}/{2}" },
-    { "key": "ui.steam.server.waiting", "value": "Steam主机：房间已创建" },
-    { "key": "ui.steam.tab.create", "value": "创建房间" },
-    { "key": "ui.steam.tab.browse", "value": "浏览房间" },
-    { "key": "ui.steam.error.notInitialized", "value": "Steam未初始化" },
-    { "key": "ui.steam.error.metadata", "value": "房间信息不可用" },
-    { "key": "ui.steam.error.password", "value": "密码错误" },
-    { "key": "ui.steam.error.generic", "value": "加入房间失败" },
-    { "key": "ui.transport.label", "value": "传输模式" },
-    { "key": "ui.transport.mode.direct", "value": "直连模式" },
-    { "key": "ui.transport.mode.steam", "value": "Steam P2P" },
-    { "key": "ui.manualConnect.hint", "value": "提示：必须在关卡内才能连接" },
-    { "key": "ui.actions.quickActions", "value": "快捷操作" },
-    { "key": "ui.actions.settings", "value": "联机设置" },
-    { "key": "ui.actions.lootSettings", "value": "掉落调节" },
-    { "key": "ui.debug.lootBoxCount", "value": "已输出 {0} 个战利品箱" },
-    { "key": "ui.difficulty.title", "value": "难度" },
-    { "key": "ui.difficulty.hint", "value": "主机可以调整 AI 的反应速度和战斗强度。" },
-    { "key": "ui.difficulty.current", "value": "当前：{0}" },
-    { "key": "ui.difficulty.easy", "value": "简单" },
-    { "key": "ui.difficulty.normal", "value": "普通" },
-    { "key": "ui.difficulty.hard", "value": "困难" },
-    { "key": "ui.difficulty.veryHard", "value": "极难" },
-    { "key": "ui.difficulty.impossible", "value": "不可能" },
-    { "key": "ui.difficulty.custom", "value": "自定义" },
-    { "key": "ui.difficulty.section.title", "value": "AI 难度" },
-    { "key": "ui.difficulty.section.subtitle", "value": "选择一个预设或自己调节。" },
-    { "key": "ui.difficulty.section.hint", "value": "预设只能查看，切换到自定义后可以拖动滑块并保存。" },
-    { "key": "ui.difficulty.value.on", "value": "开" },
-    { "key": "ui.difficulty.value.off", "value": "关" },
-    { "key": "ui.difficulty.patrolTurnSpeed", "value": "巡逻转向速度" },
-    { "key": "ui.difficulty.combatTurnSpeed", "value": "战斗转向速度" },
-    { "key": "ui.difficulty.baseReactionTime", "value": "基础反应时间" },
-    { "key": "ui.difficulty.scatterRunning", "value": "目标奔跑散布" },
-    { "key": "ui.difficulty.scatterOffScreen", "value": "屏幕外散布" },
-    { "key": "ui.difficulty.nightReaction", "value": "夜晚反应倍率" },
-    { "key": "ui.difficulty.hearing", "value": "听觉能力" },
-    { "key": "ui.difficulty.traceTarget", "value": "声音锁定概率" },
-    { "key": "ui.difficulty.shootDelay", "value": "开火前延迟倍率" },
-    { "key": "ui.difficulty.shootTime", "value": "连射持续倍率" },
-    { "key": "ui.difficulty.shootInterval", "value": "射击间隔倍率" },
-    { "key": "ui.difficulty.combatMoveTime", "value": "战斗移动时间倍率" },
-    { "key": "ui.difficulty.sightAngle", "value": "视角倍率" },
-    { "key": "ui.difficulty.sightDistance", "value": "视距倍率" },
-    { "key": "ui.difficulty.canDash", "value": "允许冲刺" },
-    { "key": "ui.difficulty.dashCooldown", "value": "冲刺冷却倍率" },
-    { "key": "ui.difficulty.moveSpeed", "value": "移动速度倍率" },
-    { "key": "ui.difficulty.bulletSpeed", "value": "子弹速度倍率" },
-    { "key": "ui.difficulty.gunDistance", "value": "射程倍率" },
-    { "key": "ui.difficulty.damage", "value": "伤害倍率" },
-    { "key": "ui.difficulty.healthMultiplier", "value": "AI血量倍率（上限2.5倍，额外玩家按难度叠加）" },
-    { "key": "ui.hint.toggleUI", "value": "{0} 显示/隐藏" },
-    { "key": "ui.settings.title", "value": "联机设置" },
-    { "key": "ui.settings.toggleHint", "value": "{0} 显示/隐藏" },
-    { "key": "ui.settings.applyChanges", "value": "应用修改" },
-    { "key": "ui.settings.saveGlobal", "value": "保存全局设置" },
-    { "key": "ui.settings.reset", "value": "重置" },
-    { "key": "ui.settings.nav.network", "value": "网络" },
-    { "key": "ui.settings.nav.aiSync", "value": "AI同步" },
-    { "key": "ui.settings.nav.aiDifficulty", "value": "AI难度" },
-    { "key": "ui.settings.nav.loot", "value": "战利品" },
-    { "key": "ui.settings.section.network.title", "value": "网络" },
-    { "key": "ui.settings.section.network.subtitle", "value": "传输模式和广播节奏（仅主机生效）" },
-    { "key": "ui.settings.transportMode", "value": "传输模式" },
-    { "key": "ui.settings.transport.direct", "value": "直连" },
-    { "key": "ui.settings.transport.steam", "value": "Steam P2P" },
-    { "key": "ui.settings.port", "value": "端口" },
-    { "key": "ui.settings.broadcastInterval", "value": "广播间隔（秒）" },
-    { "key": "ui.settings.syncInterval", "value": "同步间隔（秒）" },
-    { "key": "ui.settings.projectileSyncMaxDistance", "value": "子弹同步最大距离（米）" },
-    { "key": "ui.settings.teleporterSpawnTogether", "value": "传送台一起出生" },
-    { "key": "ui.teleporter.openInterfaceFirst", "value": "你没有打开传送机界面，请先进入传送界面" },
-    { "key": "ui.aiSettings.title", "value": "联机 AI 同步" },
-    { "key": "ui.aiSettings.toggleHint", "value": "{0} 显示/隐藏" },
-    { "key": "ui.aiSettings.section.distance.title", "value": "AI 同步距离" },
-    { "key": "ui.aiSettings.section.distance.subtitle", "value": "控制 AI 激活/休眠的判定范围" },
-    { "key": "ui.aiSettings.activationRadius", "value": "激活半径（米）" },
-    { "key": "ui.aiSettings.deactivationRadius", "value": "休眠半径（米）" },
-    { "key": "ui.aiSettings.section.pacing.title", "value": "同步节奏" },
-    { "key": "ui.aiSettings.section.pacing.subtitle", "value": "控制 AI 状态广播、空闲记录与生命值同步频率" },
-    { "key": "ui.aiSettings.activationRetryInterval", "value": "激活重试间隔（秒）" },
-    { "key": "ui.aiSettings.stateBroadcastInterval", "value": "状态广播间隔（秒）" },
-    { "key": "ui.aiSettings.idleStateRecordInterval", "value": "空闲采样间隔（秒）" },
-    { "key": "ui.aiSettings.healthBroadcastInterval", "value": "生命值广播间隔（秒）" },
-    { "key": "ui.aiSettings.section.precision.title", "value": "插值与精度" },
-    { "key": "ui.aiSettings.section.precision.subtitle", "value": "定义位置/朝向阈值与速度插值力度" },
-    { "key": "ui.aiSettings.minPositionDelta", "value": "最小位置变化（米）" },
-    { "key": "ui.aiSettings.minRotationDelta", "value": "最小朝向变化（度）" },
-    { "key": "ui.aiSettings.velocityLerp", "value": "速度插值力度（系数）" },
-    { "key": "ui.aiSettings.section.snapshot.title", "value": "快照与队列" },
-    { "key": "ui.aiSettings.section.snapshot.subtitle", "value": "控制快照刷新、队列上限与掉包补偿" },
-    { "key": "ui.aiSettings.snapshotRefreshInterval", "value": "快照刷新间隔（秒）" },
-    { "key": "ui.aiSettings.snapshotRequestTimeout", "value": "快照请求超时（秒）" },
-    { "key": "ui.aiSettings.snapshotRecoveryCooldown", "value": "快照恢复冷却（秒）" },
-    { "key": "ui.aiSettings.snapshotChunkSize", "value": "快照分块大小（条目）" },
-    { "key": "ui.aiSettings.maxStoredBuffs", "value": "最大存储 Buff（条目）" },
-    { "key": "ui.aiSettings.maxSnapshotAppliesPerFrame", "value": "每帧应用快照上限（次数）" },
-    { "key": "ui.aiSettings.maxClientEntryChecksPerFrame", "value": "每帧条目检查上限（次数）" },
-    { "key": "ui.aiSettings.maxStateUpdatesPerFrame", "value": "每帧状态更新上限（次数）" },
-    { "key": "ui.aiSettings.maxPendingSnapshotQueue", "value": "快照队列上限（数量）" },
-    { "key": "ui.aiSettings.maxPendingStateQueue", "value": "状态队列上限（数量）" },
-    { "key": "ui.aiSettings.snapshotDropResyncThreshold", "value": "快照丢包补偿阈值（次数）" },
-    { "key": "ui.aiSettings.stateDropResyncThreshold", "value": "状态丢包补偿阈值（次数）" },
-    { "key": "ui.aiSettings.section.hostOnly.title", "value": "主机限定" },
-    { "key": "ui.aiSettings.section.hostOnly.subtitle", "value": "以下调节仅房主生效" },
-    { "key": "ui.aiSettings.serverControllerRescanInterval", "value": "AI 控制器重扫间隔（秒）" },
-    { "key": "ui.aiSettings.serverSnapshotBroadcastInterval", "value": "快照广播间隔（秒）" },
-    { "key": "ui.aiSettings.serverSnapshotRetryInterval", "value": "快照重试间隔（秒）" },
-    { "key": "ui.settings.broadcastInterval.desc", "value": "主机在局域网广播房间的频率（秒），数值越小广播越频繁。" },
-    { "key": "ui.settings.syncInterval.desc", "value": "主机向客户端同步周期（秒）。" },
-    { "key": "ui.settings.projectileSyncMaxDistance.desc", "value": "当子弹发射点距离你超过此值时不再生成远程子弹。上限500米，填0可关闭限制。" },
-    { "key": "ui.settings.teleporterSpawnTogether.desc", "value": "仅主机可改：通过传送台投票进图时，让所有客户端出生在主机位置。" },
-    { "key": "ui.aiSettings.activationRadius.desc", "value": "远端AI开始激活并同步的距离（米）。" },
-    { "key": "ui.aiSettings.deactivationRadius.desc", "value": "远端AI进入休眠并停止同步的距离（米）。" },
-    { "key": "ui.aiSettings.activationRetryInterval.desc", "value": "重新尝试激活失败AI的等待时间（秒）。" },
-    { "key": "ui.aiSettings.stateBroadcastInterval.desc", "value": "广播AI状态快照的基础间隔（秒）。" },
-    { "key": "ui.aiSettings.idleStateRecordInterval.desc", "value": "记录待机AI位置用于平滑的频率（秒）。" },
-    { "key": "ui.aiSettings.healthBroadcastInterval.desc", "value": "发送AI生命变化的间隔（秒）。" },
-    { "key": "ui.aiSettings.minPositionDelta.desc", "value": "位置变化至少达到多少米才发送更新。" },
-    { "key": "ui.aiSettings.minRotationDelta.desc", "value": "朝向变化至少达到多少度才发送更新。" },
-    { "key": "ui.aiSettings.velocityLerp.desc", "value": "对AI速度进行插值时使用的系数。" },
-    { "key": "ui.aiSettings.snapshotRefreshInterval.desc", "value": "主机刷新AI快照缓存的周期（秒）。" },
-    { "key": "ui.aiSettings.snapshotRequestTimeout.desc", "value": "重新发送快照请求前的超时时间（秒）。" },
-    { "key": "ui.aiSettings.snapshotRecoveryCooldown.desc", "value": "快照掉包后再次恢复的冷却（秒）。" },
-    { "key": "ui.aiSettings.snapshotChunkSize.desc", "value": "重建状态时每个快照分块包含的条目数量。" },
-    { "key": "ui.aiSettings.maxStoredBuffs.desc", "value": "每个AI最多保留的增益记录数。" },
-    { "key": "ui.aiSettings.maxSnapshotAppliesPerFrame.desc", "value": "每帧可处理的快照应用次数上限。" },
-    { "key": "ui.aiSettings.maxClientEntryChecksPerFrame.desc", "value": "每帧执行的 AI 条目激活/休眠检查上限。" },
-    { "key": "ui.aiSettings.maxStateUpdatesPerFrame.desc", "value": "每帧可处理的状态更新包上限。" },
-    { "key": "ui.aiSettings.maxPendingSnapshotQueue.desc", "value": "排队的快照包上限，超过则丢弃最旧的数量。" },
-    { "key": "ui.aiSettings.maxPendingStateQueue.desc", "value": "排队的状态包上限，超过则丢弃最旧的数量。" },
-    { "key": "ui.aiSettings.snapshotDropResyncThreshold.desc", "value": "累积丢弃快照达到此数量即触发重新同步。" },
-    { "key": "ui.aiSettings.stateDropResyncThreshold.desc", "value": "累积丢弃状态包达到此数量即触发重新同步。" },
-    { "key": "ui.aiSettings.serverControllerRescanInterval.desc", "value": "主机重新扫描并分配AI控制器的周期（秒）。" },
-    { "key": "ui.aiSettings.serverSnapshotBroadcastInterval.desc", "value": "主机广播权威快照的周期（秒）。" },
-    { "key": "ui.aiSettings.serverSnapshotRetryInterval.desc", "value": "主机快照广播失败后再次尝试的间隔（秒）。" },
-    { "key": "ui.aiSettings.badge.hostOnly", "value": "仅主机" },
-    { "key": "ui.aiSettings.badge.hostOnlyShort", "value": "主机" },
-    { "key": "ui.settings.search.placeholder", "value": "搜索设置..." },
-    { "key": "ui.lootSettings.title", "value": "掉落调节（仅主机）" },
-    { "key": "ui.lootSettings.hostOnly", "value": "只有房主可以修改并生效" },
-    { "key": "ui.lootSettings.spawnChanceMultiplier", "value": "生成概率倍率" },
-    { "key": "ui.lootSettings.itemCountMultiplier", "value": "物品数量倍率" },
-    { "key": "ui.lootSettings.globalWeight", "value": "全局权重倍率" },
-    { "key": "ui.lootSettings.qualityBias", "value": "品质倾向" },
-    { "key": "ui.lootSettings.apply", "value": "应用（仅主机）" },
-    { "key": "ui.chat.title", "value": "聊天" },
-    { "key": "ui.chat.inputPlaceholder", "value": "输入消息..." },
-    { "key": "ui.chat.send", "value": "发送" },
-    { "key": "ui.chat.unknown", "value": "未知" },
-    { "key": "ui.playerlist.kick", "value": "踢出" },
-    { "key": "ui.waiting.initializing", "value": "初始化中..." },
-    { "key": "ui.waiting.syncComplete", "value": "同步完成！" },
-    { "key": "ui.waiting.map", "value": "地图: {0}" },
-    { "key": "ui.waiting.time", "value": "时间: 第{0}天 {1:D2}:{2:D2}" },
-    { "key": "ui.waiting.timeUnknown", "value": "时间: --:--" },
-    { "key": "ui.waiting.weather", "value": "天气: {0}" },
-    { "key": "ui.waiting.weatherUnknown", "value": "天气: 未知" },
-    { "key": "ui.waiting.loadingPlayers", "value": "正在获取玩家列表..." },
-    { "key": "ui.settings.friendlyFirePlayers", "value": "玩家间误伤" },
-    { "key": "ui.settings.friendlyFirePlayers.desc", "value": "仅主机可改。开启后将所有玩家代理设为中立队伍以允许误伤，关闭会恢复为玩家队伍。" },
-    { "key": "ui.difficulty.spawnBonus", "value": "敌人生成附加倍数" },
-    { "key": "ui.difficulty.spawnBonus.desc", "value": "在基础生成倍率上增加（例如 +1 表示在现有基础上再加一倍）。" },
-    { "key": "ui.difficulty.forceBoss", "value": "强制生成Boss" },
-    { "key": "ui.difficulty.forceBoss.desc", "value": "仅建议在“不可能”或自定义难度开启。" },
-    { "key": "ui.sceneVote.alreadyActive", "value": "场上已经有了一个投票" }
+    {
+      "key": "ui.window.title",
+      "value": "联机Mod控制面板"
+    },
+    {
+      "key": "ui.window.playerStatus",
+      "value": "玩家状态"
+    },
+    {
+      "key": "ui.mode.current",
+      "value": "当前模式"
+    },
+    {
+      "key": "ui.mode.server",
+      "value": "服务器"
+    },
+    {
+      "key": "ui.mode.client",
+      "value": "客户端"
+    },
+    {
+      "key": "ui.mode.switchTo",
+      "value": "切换到{0}模式"
+    },
+    {
+      "key": "ui.hostList.title",
+      "value": "局域网主机列表"
+    },
+    {
+      "key": "ui.hostList.empty",
+      "value": "（等待广播回应，暂无主机）"
+    },
+    {
+      "key": "ui.hostList.connect",
+      "value": "连接"
+    },
+    {
+      "key": "ui.manualConnect.title",
+      "value": "手动输入 IP 和端口连接:"
+    },
+    {
+      "key": "ui.manualConnect.ip",
+      "value": "IP:"
+    },
+    {
+      "key": "ui.manualConnect.port",
+      "value": "端口:"
+    },
+    {
+      "key": "ui.manualConnect.button",
+      "value": "手动连接"
+    },
+    {
+      "key": "ui.manualConnect.portError",
+      "value": "端口格式错误"
+    },
+    {
+      "key": "ui.status.label",
+      "value": "状态:"
+    },
+    {
+      "key": "ui.status.notConnected",
+      "value": "未连接"
+    },
+    {
+      "key": "ui.status.connecting",
+      "value": "连接中..."
+    },
+    {
+      "key": "ui.status.connected",
+      "value": "已连接"
+    },
+    {
+      "key": "ui.server.listenPort",
+      "value": "服务器监听端口:"
+    },
+    {
+      "key": "ui.server.connections",
+      "value": "当前连接数:"
+    },
+    {
+      "key": "ui.playerStatus.toggle",
+      "value": "显示玩家状态窗口 (切换键: {0})"
+    },
+    {
+      "key": "ui.playerStatus.id",
+      "value": "ID:"
+    },
+    {
+      "key": "ui.playerStatus.name",
+      "value": "名称:"
+    },
+    {
+      "key": "ui.playerStatus.latency",
+      "value": "延迟:"
+    },
+    {
+      "key": "ui.playerStatus.inGame",
+      "value": "游戏中:"
+    },
+    {
+      "key": "ui.playerStatus.yes",
+      "value": "是"
+    },
+    {
+      "key": "ui.playerStatus.no",
+      "value": "否"
+    },
+    {
+      "key": "ui.debug.printLootBoxes",
+      "value": "[Debug] 打印出该地图的所有lootbox"
+    },
+    {
+      "key": "ui.vote.mapVote",
+      "value": "地图投票 / 准备  [{0}]"
+    },
+    {
+      "key": "ui.vote.pressKey",
+      "value": "按 {0} 切换准备（当前：{1}）"
+    },
+    {
+      "key": "ui.vote.ready",
+      "value": "已准备"
+    },
+    {
+      "key": "ui.vote.notReady",
+      "value": "未准备"
+    },
+    {
+      "key": "ui.vote.playerReadyStatus",
+      "value": "玩家准备状态："
+    },
+    {
+      "key": "ui.vote.readyIcon",
+      "value": "就绪"
+    },
+    {
+      "key": "ui.vote.notReadyIcon",
+      "value": "未就绪"
+    },
+    {
+      "key": "ui.vote.cancel",
+      "value": "取消投票"
+    },
+    {
+      "key": "ui.vote.title",
+      "value": "地图投票"
+    },
+    {
+      "key": "ui.spectator.mode",
+      "value": "观战模式：左键 ▶ 下一个 | 右键 ◀ 上一个 | 按 F8 直接进入结算（防卡死）"
+    },
+    {
+      "key": "scene.waitingForHost",
+      "value": "[Coop] 等待主机完成加载… (如迟迟没有进入等待100秒后自动进入)"
+    },
+    {
+      "key": "scene.hostReady",
+      "value": "主机已完成，正在进入…"
+    },
+    {
+      "key": "net.connectionSuccess",
+      "value": "连接成功: {0}"
+    },
+    {
+      "key": "net.connectedTo",
+      "value": "已连接到 {0}"
+    },
+    {
+      "key": "net.disconnected",
+      "value": "断开连接: {0}, 原因: {1}"
+    },
+    {
+      "key": "net.connectionLost",
+      "value": "连接断开"
+    },
+    {
+      "key": "net.networkError",
+      "value": "网络错误: {0} 来自 {1}"
+    },
+    {
+      "key": "net.hostDiscovered",
+      "value": "发现主机: {0}"
+    },
+    {
+      "key": "net.serverStarted",
+      "value": "服务器启动，监听端口 {0}"
+    },
+    {
+      "key": "net.serverStartFailed",
+      "value": "服务器启动失败，请检查端口是否被占用"
+    },
+    {
+      "key": "net.clientStarted",
+      "value": "客户端启动"
+    },
+    {
+      "key": "net.clientStartFailed",
+      "value": "客户端启动失败"
+    },
+    {
+      "key": "net.networkStarted",
+      "value": "网络已启动"
+    },
+    {
+      "key": "net.networkStopped",
+      "value": "网络已停止"
+    },
+    {
+      "key": "net.ipEmpty",
+      "value": "IP为空"
+    },
+    {
+      "key": "net.invalidPort",
+      "value": "端口不合法"
+    },
+    {
+      "key": "net.serverModeCannotConnect",
+      "value": "服务器模式不能主动连接其他主机"
+    },
+    {
+      "key": "net.alreadyConnecting",
+      "value": "正在连接中."
+    },
+    {
+      "key": "net.clientNetworkStartFailed",
+      "value": "启动客户端网络失败：{0}"
+    },
+    {
+      "key": "net.clientNetworkStartFailedStatus",
+      "value": "客户端网络启动失败"
+    },
+    {
+      "key": "net.clientNotStarted",
+      "value": "客户端未启动"
+    },
+    {
+      "key": "net.connectingTo",
+      "value": "连接中: {0}:{1}"
+    },
+    {
+      "key": "net.connectionFailedLog",
+      "value": "连接到主机失败: {0}"
+    },
+    {
+      "key": "net.connectionFailed",
+      "value": "连接失败"
+    },
+    {
+      "key": "net.clientVersionMismatch",
+      "value": "客户端版本不匹配（客户端: {0}，主机: {1}），已拒绝连接"
+    },
+    {
+      "key": "net.clientVersionUnknown",
+      "value": "客户端未知版本，拒绝连接"
+    },
+    {
+      "key": "ui.status.online",
+      "value": "在线"
+    },
+    {
+      "key": "ui.error",
+      "value": "错误"
+    },
+    {
+      "key": "ui.server.management",
+      "value": "服务器管理"
+    },
+    {
+      "key": "ui.server.info",
+      "value": "服务器信息"
+    },
+    {
+      "key": "ui.server.port",
+      "value": "端口"
+    },
+    {
+      "key": "ui.server.create",
+      "value": "创建主机"
+    },
+    {
+      "key": "ui.server.close",
+      "value": "关闭主机"
+    },
+    {
+      "key": "ui.server.closed",
+      "value": "主机已关闭"
+    },
+    {
+      "key": "ui.server.created",
+      "value": "主机创建成功，监听端口 {0}"
+    },
+    {
+      "key": "ui.server.hint.waiting",
+      "value": "服务器模式：等待玩家连接"
+    },
+    {
+      "key": "ui.server.hint.willUsePort",
+      "value": "直连客户端：将使用端口 {0} 创建服务器"
+    },
+    {
+      "key": "ui.client.hint.browse",
+      "value": "客户端模式：浏览并连接服务器"
+    },
+    {
+      "key": "ui.error.serverNotInGame",
+      "value": "服务端不在关卡内，已断开连接"
+    },
+    {
+      "key": "ui.error.gameNotInitialized",
+      "value": "游戏未初始化"
+    },
+    {
+      "key": "ui.error.mustInLevel",
+      "value": "必须先进入关卡才能连接"
+    },
+    {
+      "key": "ui.hostList.lanServer",
+      "value": "局域网服务器 - {0}"
+    },
+    {
+      "key": "ui.hostList.serverDetails",
+      "value": "端口: {0}  |  玩家: 0/4  |  延迟: <50ms"
+    },
+    {
+      "key": "ui.playerStatus.local",
+      "value": "本地"
+    },
+    {
+      "key": "ui.playerStatus.inGameStatus",
+      "value": "游戏中"
+    },
+    {
+      "key": "ui.playerStatus.idle",
+      "value": "待机"
+    },
+    {
+      "key": "ui.vote.title",
+      "value": "地图投票"
+    },
+    {
+      "key": "ui.steam.lobbyList",
+      "value": "Steam房间列表"
+    },
+    {
+      "key": "ui.steam.client.connected",
+      "value": "Steam客户端：已连接到房间"
+    },
+    {
+      "key": "ui.steam.hint.createOrJoin",
+      "value": "Steam P2P模式：创建或加入房间"
+    },
+    {
+      "key": "ui.steam.joinPassword",
+      "value": "房间密码"
+    },
+    {
+      "key": "ui.steam.joinPasswordPlaceholder",
+      "value": "如果房间需要密码"
+    },
+    {
+      "key": "ui.steam.lobbyNamePlaceholder",
+      "value": "我的房间"
+    },
+    {
+      "key": "ui.steam.lobbyPasswordPlaceholder",
+      "value": "留空为公开"
+    },
+    {
+      "key": "ui.steam.visibility",
+      "value": "可见性"
+    },
+    {
+      "key": "ui.steam.maxPlayers.label",
+      "value": "最大人数"
+    },
+    {
+      "key": "ui.steam.lobby.left",
+      "value": "已离开房间"
+    },
+    {
+      "key": "ui.steam.lobby.creating",
+      "value": "正在创建Steam房间..."
+    },
+    {
+      "key": "ui.steam.playerCount",
+      "value": "玩家: {0}/{1}"
+    },
+    {
+      "key": "ui.steam.notInitialized",
+      "value": "Steam未初始化"
+    },
+    {
+      "key": "ui.steam.refresh",
+      "value": "刷新列表"
+    },
+    {
+      "key": "ui.steam.lobbiesEmpty",
+      "value": "未找到可用房间，点击刷新列表"
+    },
+    {
+      "key": "ui.steam.lobbiesEmptyFiltered",
+      "value": "没有符合搜索条件的房间"
+    },
+    {
+      "key": "ui.steam.searchPlaceholder",
+      "value": "搜索房间名或房主"
+    },
+    {
+      "key": "ui.steam.joinButton",
+      "value": "加入房间"
+    },
+    {
+      "key": "ui.steam.createHost",
+      "value": "创建房间"
+    },
+    {
+      "key": "ui.steam.leaveLobby",
+      "value": "离开房间"
+    },
+    {
+      "key": "ui.steam.lobbySettings",
+      "value": "Steam房间设置"
+    },
+    {
+      "key": "ui.steam.lobbyName",
+      "value": "房间名"
+    },
+    {
+      "key": "ui.steam.lobbyPassword",
+      "value": "密码"
+    },
+    {
+      "key": "ui.steam.visibility.public",
+      "value": "公开"
+    },
+    {
+      "key": "ui.steam.visibility.friends",
+      "value": "仅好友"
+    },
+    {
+      "key": "ui.steam.maxPlayers",
+      "value": "最大玩家数: {0}"
+    },
+    {
+      "key": "ui.steam.currentLobby",
+      "value": "当前房间: {0}  玩家: {1}/{2}"
+    },
+    {
+      "key": "ui.steam.server.waiting",
+      "value": "Steam主机：房间已创建"
+    },
+    {
+      "key": "ui.steam.tab.create",
+      "value": "创建房间"
+    },
+    {
+      "key": "ui.steam.tab.browse",
+      "value": "浏览房间"
+    },
+    {
+      "key": "ui.steam.error.notInitialized",
+      "value": "Steam未初始化"
+    },
+    {
+      "key": "ui.steam.error.metadata",
+      "value": "房间信息不可用"
+    },
+    {
+      "key": "ui.steam.error.password",
+      "value": "密码错误"
+    },
+    {
+      "key": "ui.steam.error.generic",
+      "value": "加入房间失败"
+    },
+    {
+      "key": "ui.transport.label",
+      "value": "传输模式"
+    },
+    {
+      "key": "ui.transport.mode.direct",
+      "value": "直连模式"
+    },
+    {
+      "key": "ui.transport.mode.steam",
+      "value": "Steam P2P"
+    },
+    {
+      "key": "ui.manualConnect.hint",
+      "value": "提示：必须在关卡内才能连接"
+    },
+    {
+      "key": "ui.actions.quickActions",
+      "value": "快捷操作"
+    },
+    {
+      "key": "ui.actions.settings",
+      "value": "联机设置"
+    },
+    {
+      "key": "ui.actions.lootSettings",
+      "value": "掉落调节"
+    },
+    {
+      "key": "ui.debug.lootBoxCount",
+      "value": "已输出 {0} 个战利品箱"
+    },
+    {
+      "key": "ui.difficulty.title",
+      "value": "难度"
+    },
+    {
+      "key": "ui.difficulty.hint",
+      "value": "主机可以调整 AI 的反应速度和战斗强度。"
+    },
+    {
+      "key": "ui.difficulty.current",
+      "value": "当前：{0}"
+    },
+    {
+      "key": "ui.difficulty.easy",
+      "value": "简单"
+    },
+    {
+      "key": "ui.difficulty.normal",
+      "value": "普通"
+    },
+    {
+      "key": "ui.difficulty.hard",
+      "value": "困难"
+    },
+    {
+      "key": "ui.difficulty.veryHard",
+      "value": "极难"
+    },
+    {
+      "key": "ui.difficulty.impossible",
+      "value": "不可能"
+    },
+    {
+      "key": "ui.difficulty.custom",
+      "value": "自定义"
+    },
+    {
+      "key": "ui.difficulty.section.title",
+      "value": "AI 难度"
+    },
+    {
+      "key": "ui.difficulty.section.subtitle",
+      "value": "选择一个预设或自己调节。"
+    },
+    {
+      "key": "ui.difficulty.section.hint",
+      "value": "预设只能查看，切换到自定义后可以拖动滑块并保存。"
+    },
+    {
+      "key": "ui.difficulty.value.on",
+      "value": "开"
+    },
+    {
+      "key": "ui.difficulty.value.off",
+      "value": "关"
+    },
+    {
+      "key": "ui.difficulty.patrolTurnSpeed",
+      "value": "巡逻转向速度"
+    },
+    {
+      "key": "ui.difficulty.combatTurnSpeed",
+      "value": "战斗转向速度"
+    },
+    {
+      "key": "ui.difficulty.baseReactionTime",
+      "value": "基础反应时间"
+    },
+    {
+      "key": "ui.difficulty.scatterRunning",
+      "value": "目标奔跑散布"
+    },
+    {
+      "key": "ui.difficulty.scatterOffScreen",
+      "value": "屏幕外散布"
+    },
+    {
+      "key": "ui.difficulty.nightReaction",
+      "value": "夜晚反应倍率"
+    },
+    {
+      "key": "ui.difficulty.hearing",
+      "value": "听觉能力"
+    },
+    {
+      "key": "ui.difficulty.traceTarget",
+      "value": "声音锁定概率"
+    },
+    {
+      "key": "ui.difficulty.shootDelay",
+      "value": "开火前延迟倍率"
+    },
+    {
+      "key": "ui.difficulty.shootTime",
+      "value": "连射持续倍率"
+    },
+    {
+      "key": "ui.difficulty.shootInterval",
+      "value": "射击间隔倍率"
+    },
+    {
+      "key": "ui.difficulty.combatMoveTime",
+      "value": "战斗移动时间倍率"
+    },
+    {
+      "key": "ui.difficulty.sightAngle",
+      "value": "视角倍率"
+    },
+    {
+      "key": "ui.difficulty.sightDistance",
+      "value": "视距倍率"
+    },
+    {
+      "key": "ui.difficulty.canDash",
+      "value": "允许冲刺"
+    },
+    {
+      "key": "ui.difficulty.dashCooldown",
+      "value": "冲刺冷却倍率"
+    },
+    {
+      "key": "ui.difficulty.moveSpeed",
+      "value": "移动速度倍率"
+    },
+    {
+      "key": "ui.difficulty.bulletSpeed",
+      "value": "子弹速度倍率"
+    },
+    {
+      "key": "ui.difficulty.gunDistance",
+      "value": "射程倍率"
+    },
+    {
+      "key": "ui.difficulty.damage",
+      "value": "伤害倍率"
+    },
+    {
+      "key": "ui.difficulty.healthMultiplier",
+      "value": "AI血量倍率（上限2.5倍，额外玩家按难度叠加）"
+    },
+    {
+      "key": "ui.hint.toggleUI",
+      "value": "{0} 显示/隐藏"
+    },
+    {
+      "key": "ui.settings.title",
+      "value": "联机设置"
+    },
+    {
+      "key": "ui.settings.toggleHint",
+      "value": "{0} 显示/隐藏"
+    },
+    {
+      "key": "ui.settings.applyChanges",
+      "value": "应用修改"
+    },
+    {
+      "key": "ui.settings.saveGlobal",
+      "value": "保存全局设置"
+    },
+    {
+      "key": "ui.settings.reset",
+      "value": "重置"
+    },
+    {
+      "key": "ui.settings.nav.network",
+      "value": "网络"
+    },
+    {
+      "key": "ui.settings.nav.aiSync",
+      "value": "AI同步"
+    },
+    {
+      "key": "ui.settings.nav.aiDifficulty",
+      "value": "AI难度"
+    },
+    {
+      "key": "ui.settings.nav.loot",
+      "value": "战利品"
+    },
+    {
+      "key": "ui.settings.section.network.title",
+      "value": "网络"
+    },
+    {
+      "key": "ui.settings.section.network.subtitle",
+      "value": "传输模式和广播节奏（仅主机生效）"
+    },
+    {
+      "key": "ui.settings.transportMode",
+      "value": "传输模式"
+    },
+    {
+      "key": "ui.settings.transport.direct",
+      "value": "直连"
+    },
+    {
+      "key": "ui.settings.transport.steam",
+      "value": "Steam P2P"
+    },
+    {
+      "key": "ui.settings.port",
+      "value": "端口"
+    },
+    {
+      "key": "ui.settings.broadcastInterval",
+      "value": "广播间隔（秒）"
+    },
+    {
+      "key": "ui.settings.syncInterval",
+      "value": "同步间隔（秒）"
+    },
+    {
+      "key": "ui.settings.projectileSyncMaxDistance",
+      "value": "子弹同步最大距离（米）"
+    },
+    {
+      "key": "ui.settings.teleporterSpawnTogether",
+      "value": "传送台一起出生"
+    },
+    {
+      "key": "ui.aiSettings.title",
+      "value": "联机 AI 同步"
+    },
+    {
+      "key": "ui.aiSettings.toggleHint",
+      "value": "{0} 显示/隐藏"
+    },
+    {
+      "key": "ui.aiSettings.section.distance.title",
+      "value": "AI 同步距离"
+    },
+    {
+      "key": "ui.aiSettings.section.distance.subtitle",
+      "value": "控制 AI 激活/休眠的判定范围"
+    },
+    {
+      "key": "ui.aiSettings.activationRadius",
+      "value": "激活半径（米）"
+    },
+    {
+      "key": "ui.aiSettings.deactivationRadius",
+      "value": "休眠半径（米）"
+    },
+    {
+      "key": "ui.aiSettings.section.pacing.title",
+      "value": "同步节奏"
+    },
+    {
+      "key": "ui.aiSettings.section.pacing.subtitle",
+      "value": "控制 AI 状态广播、空闲记录与生命值同步频率"
+    },
+    {
+      "key": "ui.aiSettings.activationRetryInterval",
+      "value": "激活重试间隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.stateBroadcastInterval",
+      "value": "状态广播间隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.idleStateRecordInterval",
+      "value": "空闲采样间隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.healthBroadcastInterval",
+      "value": "生命值广播间隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.section.precision.title",
+      "value": "插值与精度"
+    },
+    {
+      "key": "ui.aiSettings.section.precision.subtitle",
+      "value": "定义位置/朝向阈值与速度插值力度"
+    },
+    {
+      "key": "ui.aiSettings.minPositionDelta",
+      "value": "最小位置变化（米）"
+    },
+    {
+      "key": "ui.aiSettings.minRotationDelta",
+      "value": "最小朝向变化（度）"
+    },
+    {
+      "key": "ui.aiSettings.velocityLerp",
+      "value": "速度插值力度（系数）"
+    },
+    {
+      "key": "ui.aiSettings.section.snapshot.title",
+      "value": "快照与队列"
+    },
+    {
+      "key": "ui.aiSettings.section.snapshot.subtitle",
+      "value": "控制快照刷新、队列上限与掉包补偿"
+    },
+    {
+      "key": "ui.aiSettings.snapshotRefreshInterval",
+      "value": "快照刷新间隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.snapshotRequestTimeout",
+      "value": "快照请求超时（秒）"
+    },
+    {
+      "key": "ui.aiSettings.snapshotRecoveryCooldown",
+      "value": "快照恢复冷却（秒）"
+    },
+    {
+      "key": "ui.aiSettings.snapshotChunkSize",
+      "value": "快照分块大小（条目）"
+    },
+    {
+      "key": "ui.aiSettings.maxStoredBuffs",
+      "value": "最大存储 Buff（条目）"
+    },
+    {
+      "key": "ui.aiSettings.maxSnapshotAppliesPerFrame",
+      "value": "每帧应用快照上限（次数）"
+    },
+    {
+      "key": "ui.aiSettings.maxClientEntryChecksPerFrame",
+      "value": "每帧条目检查上限（次数）"
+    },
+    {
+      "key": "ui.aiSettings.maxStateUpdatesPerFrame",
+      "value": "每帧状态更新上限（次数）"
+    },
+    {
+      "key": "ui.aiSettings.maxPendingSnapshotQueue",
+      "value": "快照队列上限（数量）"
+    },
+    {
+      "key": "ui.aiSettings.maxPendingStateQueue",
+      "value": "状态队列上限（数量）"
+    },
+    {
+      "key": "ui.aiSettings.snapshotDropResyncThreshold",
+      "value": "快照丢包补偿阈值（次数）"
+    },
+    {
+      "key": "ui.aiSettings.stateDropResyncThreshold",
+      "value": "状态丢包补偿阈值（次数）"
+    },
+    {
+      "key": "ui.aiSettings.section.hostOnly.title",
+      "value": "主机限定"
+    },
+    {
+      "key": "ui.aiSettings.section.hostOnly.subtitle",
+      "value": "以下调节仅房主生效"
+    },
+    {
+      "key": "ui.aiSettings.serverControllerRescanInterval",
+      "value": "AI 控制器重扫间隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.serverSnapshotBroadcastInterval",
+      "value": "快照广播间隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.serverSnapshotRetryInterval",
+      "value": "快照重试间隔（秒）"
+    },
+    {
+      "key": "ui.settings.broadcastInterval.desc",
+      "value": "主机在局域网广播房间的频率（秒），数值越小广播越频繁。"
+    },
+    {
+      "key": "ui.settings.syncInterval.desc",
+      "value": "主机向客户端同步周期（秒）。"
+    },
+    {
+      "key": "ui.settings.projectileSyncMaxDistance.desc",
+      "value": "当子弹发射点距离你超过此值时不再生成远程子弹。上限500米，填0可关闭限制。"
+    },
+    {
+      "key": "ui.settings.teleporterSpawnTogether.desc",
+      "value": "仅主机可改：通过传送台投票进图时，让所有客户端出生在主机位置。"
+    },
+    {
+      "key": "ui.aiSettings.activationRadius.desc",
+      "value": "远端AI开始激活并同步的距离（米）。"
+    },
+    {
+      "key": "ui.aiSettings.deactivationRadius.desc",
+      "value": "远端AI进入休眠并停止同步的距离（米）。"
+    },
+    {
+      "key": "ui.aiSettings.activationRetryInterval.desc",
+      "value": "重新尝试激活失败AI的等待时间（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.stateBroadcastInterval.desc",
+      "value": "广播AI状态快照的基础间隔（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.idleStateRecordInterval.desc",
+      "value": "记录待机AI位置用于平滑的频率（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.healthBroadcastInterval.desc",
+      "value": "发送AI生命变化的间隔（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.minPositionDelta.desc",
+      "value": "位置变化至少达到多少米才发送更新。"
+    },
+    {
+      "key": "ui.aiSettings.minRotationDelta.desc",
+      "value": "朝向变化至少达到多少度才发送更新。"
+    },
+    {
+      "key": "ui.aiSettings.velocityLerp.desc",
+      "value": "对AI速度进行插值时使用的系数。"
+    },
+    {
+      "key": "ui.aiSettings.snapshotRefreshInterval.desc",
+      "value": "主机刷新AI快照缓存的周期（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.snapshotRequestTimeout.desc",
+      "value": "重新发送快照请求前的超时时间（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.snapshotRecoveryCooldown.desc",
+      "value": "快照掉包后再次恢复的冷却（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.snapshotChunkSize.desc",
+      "value": "重建状态时每个快照分块包含的条目数量。"
+    },
+    {
+      "key": "ui.aiSettings.maxStoredBuffs.desc",
+      "value": "每个AI最多保留的增益记录数。"
+    },
+    {
+      "key": "ui.aiSettings.maxSnapshotAppliesPerFrame.desc",
+      "value": "每帧可处理的快照应用次数上限。"
+    },
+    {
+      "key": "ui.aiSettings.maxClientEntryChecksPerFrame.desc",
+      "value": "每帧执行的 AI 条目激活/休眠检查上限。"
+    },
+    {
+      "key": "ui.aiSettings.maxStateUpdatesPerFrame.desc",
+      "value": "每帧可处理的状态更新包上限。"
+    },
+    {
+      "key": "ui.aiSettings.maxPendingSnapshotQueue.desc",
+      "value": "排队的快照包上限，超过则丢弃最旧的数量。"
+    },
+    {
+      "key": "ui.aiSettings.maxPendingStateQueue.desc",
+      "value": "排队的状态包上限，超过则丢弃最旧的数量。"
+    },
+    {
+      "key": "ui.aiSettings.snapshotDropResyncThreshold.desc",
+      "value": "累积丢弃快照达到此数量即触发重新同步。"
+    },
+    {
+      "key": "ui.aiSettings.stateDropResyncThreshold.desc",
+      "value": "累积丢弃状态包达到此数量即触发重新同步。"
+    },
+    {
+      "key": "ui.aiSettings.serverControllerRescanInterval.desc",
+      "value": "主机重新扫描并分配AI控制器的周期（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.serverSnapshotBroadcastInterval.desc",
+      "value": "主机广播权威快照的周期（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.serverSnapshotRetryInterval.desc",
+      "value": "主机快照广播失败后再次尝试的间隔（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.badge.hostOnly",
+      "value": "仅主机"
+    },
+    {
+      "key": "ui.aiSettings.badge.hostOnlyShort",
+      "value": "主机"
+    },
+    {
+      "key": "ui.settings.search.placeholder",
+      "value": "搜索设置..."
+    },
+    {
+      "key": "ui.lootSettings.title",
+      "value": "掉落调节（仅主机）"
+    },
+    {
+      "key": "ui.lootSettings.hostOnly",
+      "value": "只有房主可以修改并生效"
+    },
+    {
+      "key": "ui.lootSettings.spawnChanceMultiplier",
+      "value": "生成概率倍率"
+    },
+    {
+      "key": "ui.lootSettings.itemCountMultiplier",
+      "value": "物品数量倍率"
+    },
+    {
+      "key": "ui.lootSettings.globalWeight",
+      "value": "全局权重倍率"
+    },
+    {
+      "key": "ui.lootSettings.qualityBias",
+      "value": "品质倾向"
+    },
+    {
+      "key": "ui.lootSettings.apply",
+      "value": "应用（仅主机）"
+    },
+    {
+      "key": "ui.chat.title",
+      "value": "聊天"
+    },
+    {
+      "key": "ui.chat.inputPlaceholder",
+      "value": "输入消息..."
+    },
+    {
+      "key": "ui.chat.send",
+      "value": "发送"
+    },
+    {
+      "key": "ui.chat.unknown",
+      "value": "未知"
+    },
+    {
+      "key": "ui.playerlist.kick",
+      "value": "踢出"
+    },
+    {
+      "key": "ui.waiting.initializing",
+      "value": "初始化中..."
+    },
+    {
+      "key": "ui.waiting.syncComplete",
+      "value": "同步完成！"
+    },
+    {
+      "key": "ui.waiting.map",
+      "value": "地图: {0}"
+    },
+    {
+      "key": "ui.waiting.time",
+      "value": "时间: 第{0}天 {1:D2}:{2:D2}"
+    },
+    {
+      "key": "ui.waiting.timeUnknown",
+      "value": "时间: --:--"
+    },
+    {
+      "key": "ui.waiting.weather",
+      "value": "天气: {0}"
+    },
+    {
+      "key": "ui.waiting.weatherUnknown",
+      "value": "天气: 未知"
+    },
+    {
+      "key": "ui.waiting.loadingPlayers",
+      "value": "正在获取玩家列表..."
+    },
+    {
+      "key": "ui.settings.friendlyFirePlayers",
+      "value": "玩家间误伤"
+    },
+    {
+      "key": "ui.settings.friendlyFirePlayers.desc",
+      "value": "仅主机可改。开启后将所有玩家代理设为中立队伍以允许误伤，关闭会恢复为玩家队伍。"
+    },
+    {
+      "key": "ui.settings.themeMode",
+      "value": "界面主题"
+    },
+    {
+      "key": "ui.settings.themeMode.desc",
+      "value": "本地切换联机面板的白色、黑色或春节主题。"
+    },
+    {
+      "key": "ui.settings.theme.white",
+      "value": "白色"
+    },
+    {
+      "key": "ui.settings.theme.black",
+      "value": "黑色"
+    },
+    {
+      "key": "ui.settings.theme.spring",
+      "value": "春节"
+    },
+    {
+      "key": "ui.settings.theme.summer",
+      "value": "夏日"
+    },
+    {
+      "key": "ui.difficulty.spawnBonus",
+      "value": "敌人生成附加倍数"
+    },
+    {
+      "key": "ui.difficulty.spawnBonus.desc",
+      "value": "在基础生成倍率上增加（例如 +1 表示在现有基础上再加一倍）。"
+    },
+    {
+      "key": "ui.difficulty.forceBoss",
+      "value": "强制生成Boss"
+    },
+    {
+      "key": "ui.difficulty.forceBoss.desc",
+      "value": "仅建议在“不可能”或自定义难度开启。"
+    },
+    {
+      "key": "vehicle.control.title",
+      "value": "载具控制"
+    },
+    {
+      "key": "vehicle.control.current",
+      "value": "当前控制：{0}"
+    },
+    {
+      "key": "vehicle.control.unassigned",
+      "value": "等待分配"
+    },
+    {
+      "key": "vehicle.control.riders",
+      "value": "同乘玩家：{0}"
+    },
+    {
+      "key": "vehicle.control.requester",
+      "value": "申请者：{0}"
+    },
+    {
+      "key": "vehicle.control.key",
+      "value": "F2"
+    },
+    {
+      "key": "vehicle.control.action.approve",
+      "value": "同意控制权申请"
+    },
+    {
+      "key": "vehicle.control.action.controlling",
+      "value": "你正在控制该载具"
+    },
+    {
+      "key": "vehicle.control.action.pending",
+      "value": "已申请，等待当前控制者同意"
+    },
+    {
+      "key": "vehicle.control.action.request",
+      "value": "申请控制权"
+    },
+    {
+      "key": "vehicle.control.tip.approved",
+      "value": "已同意 {0} 控制载具"
+    },
+    {
+      "key": "vehicle.control.tip.requested",
+      "value": "已申请载具控制权，等待当前控制者按 F2 同意"
+    },
+    {
+      "key": "vehicle.control.tip.incomingRequest",
+      "value": "{0} 请求控制当前载具，按 F2 同意"
+    },
+    {
+      "key": "ui.teleporter.openInterfaceFirst",
+      "value": "请先打开传送机界面。"
+    },
+    {
+      "key": "ui.sceneVote.alreadyActive",
+      "value": "已有地图投票正在进行。"
+    }
   ]
 }

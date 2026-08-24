@@ -65,8 +65,6 @@ public class SteamP2PManager : MonoBehaviour
             Debug.LogError("[SteamP2P] Steam未初始化，无法设置回调");
             return;
         }
-        SteamNetworking.AllowP2PPacketRelay(true);
-        Debug.Log("[SteamP2P] ✓ 已启用中继服务器（用于NAT穿透）");
         _p2pSessionRequestCallback = Callback<P2PSessionRequest_t>.Create(OnP2PSessionRequest);
         _p2pSessionConnectFailCallback = Callback<P2PSessionConnectFail_t>.Create(OnP2PSessionConnectFail);
         Debug.Log("[SteamP2P] Steam回调已设置");
@@ -95,7 +93,6 @@ public class SteamP2PManager : MonoBehaviour
         {
             if (SteamNetworking.GetP2PSessionState(steamID, out P2PSessionState_t state))
             {
-                bool usingRelay = state.m_bUsingRelay == 1;
                 string quality = "未知";
                 if (state.m_nBytesQueuedForSend == 0)
                     quality = "优秀（无积压）";
@@ -107,23 +104,13 @@ public class SteamP2PManager : MonoBehaviour
                     quality = "差（严重卡顿）";
                 Debug.Log($"[SteamP2P] 📊 连接质量报告 - {steamID}");
                 Debug.Log($"  - 连接状态: {(state.m_bConnectionActive == 1 ? "✓ 已连接" : "⚠️ 未连接")}");
-                Debug.Log($"  - 连接方式: {(usingRelay ? "⚠️ 中继服务器（延迟较高）" : "✓ 直连（延迟最低）")}");
                 Debug.Log($"  - 发送队列: {state.m_nBytesQueuedForSend} 字节");
                 Debug.Log($"  - 质量评估: {quality}");
-                if (usingRelay)
-                {
-                    Debug.LogWarning($"[SteamP2P] ⚠️ 正在使用中继服务器，这会增加50-200ms延迟");
-                    Debug.LogWarning($"[SteamP2P] 💡 优化建议：");
-                    Debug.LogWarning($"  1. 检查路由器UPnP是否启用");
-                    Debug.LogWarning($"  2. 配置端口转发：UDP 27015-27020");
-                    Debug.LogWarning($"  3. 或接受中继延迟（可玩但不如直连流畅）");
-                }
                 if (state.m_nBytesQueuedForSend > 50000)
                 {
                     Debug.LogError($"[SteamP2P] ❌ 发送队列积压严重！可能原因：");
                     Debug.LogError($"  1. 网络带宽不足");
                     Debug.LogError($"  2. 对方接收速度慢");
-                    Debug.LogError($"  3. 中继服务器拥堵");
                 }
             }
         }

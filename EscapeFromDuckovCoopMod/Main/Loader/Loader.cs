@@ -52,6 +52,7 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         go.AddComponent<LootManager>();
         go.AddComponent<SceneNet>();
         go.AddComponent<MModUI>();
+        go.AddComponent<VehicleControlHud>();
         go.AddComponent<CoopAISettings>();
         go.AddComponent<AISyncSettingsUI>();
         go.AddComponent<CoopLootSettings>();

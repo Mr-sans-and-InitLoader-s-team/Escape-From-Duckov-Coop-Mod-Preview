@@ -87,6 +87,14 @@ public sealed class HostForceHealthBar : MonoBehaviour
         }
 
         _h = GetComponentInChildren<Health>(true);
+        var cmc = GetComponentInChildren<CharacterMainControl>(true);
+        if (cmc && cmc.isVehicle)
+        {
+            HealthM.SuppressHealthBar(_h);
+            enabled = false;
+            return;
+        }
+
         _deadline = Time.time + 5f; // 最多尝试 5 秒
         _tries = 0;
     }

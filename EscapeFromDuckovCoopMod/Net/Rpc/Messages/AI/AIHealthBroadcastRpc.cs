@@ -13,6 +13,7 @@ public struct AIHealthBroadcastRpc : IRpcMessage
     public bool IsDead;
     public bool HasDamage;
     public DamageForwardPayload Damage;
+    public bool KillerCredit;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -25,6 +26,7 @@ public struct AIHealthBroadcastRpc : IRpcMessage
         writer.Put(HasDamage);
         if (HasDamage)
             Damage.Serialize(writer);
+        writer.Put(KillerCredit);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -41,5 +43,6 @@ public struct AIHealthBroadcastRpc : IRpcMessage
             Damage = default;
             Damage.Deserialize(reader);
         }
+        KillerCredit = reader.AvailableBytes > 0 && reader.GetBool();
     }
 }

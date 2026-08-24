@@ -15,6 +15,7 @@
 // GNU Affero General Public License for more details.
 
 using Duckov.UI;
+using Duckov.Scenes;
 using UnityEngine.EventSystems;
 
 namespace EscapeFromDuckovCoopMod;
@@ -61,9 +62,26 @@ internal static class Patch_Mapen_OnPointerClick
     {
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true;
-        if (!mod.IsServer) return false;
+        if (!__instance.ConditionsSatisfied) return true;
+        if (!__instance.Cost.Enough) return true;
+
         SceneNet.Instance.IsMapSelectionEntry = true;
-        SceneNet.Instance.Host_BeginSceneVote_Simple(__instance.SceneID, "", false, false, false, "OnPointerClick");
-        return false;
+        return !SceneLoadVoteGuard.TryStartVote(__instance.SceneID, null, false, false, false, default(MultiSceneLocation), "OnPointerClick");
+    }
+}
+
+[HarmonyPatch(typeof(MapSelectionView), "NotifyEntryClicked")]
+internal static class Patch_MapSelectionView_NotifyEntryClicked_Authority
+{
+    private static bool Prefix(MapSelectionEntry mapSelectionEntry, PointerEventData eventData)
+    {
+        var mod = ModBehaviourF.Instance;
+        if (mod == null || !mod.networkStarted) return true;
+        if (mapSelectionEntry == null) return true;
+        if (!mapSelectionEntry.ConditionsSatisfied) return true;
+        if (!mapSelectionEntry.Cost.Enough) return true;
+
+        SceneNet.Instance.IsMapSelectionEntry = true;
+        return !SceneLoadVoteGuard.TryStartVote(mapSelectionEntry.SceneID, null, false, false, false, default(MultiSceneLocation), "OnPointerClick");
     }
 }

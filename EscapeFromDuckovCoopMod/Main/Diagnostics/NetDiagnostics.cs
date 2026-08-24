@@ -41,6 +41,9 @@ public sealed class NetDiagnostics
 
     public void RecordInbound(Op op, int payloadBytes)
     {
+        if (!BuildInfo.RuntimePerfLoggingEnabled)
+            return;
+
         var stats = GetOrCreate(op);
         var totalBytes = payloadBytes + 1; // include opcode byte
 
@@ -56,6 +59,9 @@ public sealed class NetDiagnostics
 
     public void RecordOutbound(Op op, int payloadBytes)
     {
+        if (!BuildInfo.RuntimePerfLoggingEnabled)
+            return;
+
         var stats = GetOrCreate(op);
         var totalBytes = payloadBytes + 1;
 
@@ -71,6 +77,9 @@ public sealed class NetDiagnostics
 
     public void Update(NetManager? manager, float deltaTime)
     {
+        if (!BuildInfo.RuntimePerfLoggingEnabled)
+            return;
+
         _accumulator += deltaTime;
         if (_accumulator < ReportInterval)
             return;

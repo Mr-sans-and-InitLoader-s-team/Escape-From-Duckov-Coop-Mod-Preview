@@ -15,7 +15,7 @@ internal static class VehicleLocalControlPatch
     private static void Postfix(object __instance)
     {
         var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted || mod.IsServer)
+        if (mod == null || !mod.networkStarted)
             return;
 
         var level = LevelManager.Instance;
@@ -34,6 +34,13 @@ internal static class VehicleLocalControlPatch
         if (mounted == null)
             return;
 
+        var interp = mounted.GetComponent<NetInterpolator>();
+        if (interp)
+        {
+            interp.driveModelPosition = false;
+            interp.enabled = false;
+        }
+
         if (level.ControllingCharacter == mounted)
             return;
 
@@ -50,4 +57,3 @@ internal static class VehicleLocalControlPatch
         targetCharacter.ControlOtherCharacter(mounted, -1f);
     }
 }
-

@@ -11,6 +11,7 @@ public struct AISnapshotRequestRpc : IRpcMessage
     public Vector3 Center;
     public float Radius;
     public bool ForceFull;
+    public bool VehiclesOnly;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -18,6 +19,7 @@ public struct AISnapshotRequestRpc : IRpcMessage
         writer.PutVector3(Center);
         writer.Put(Radius);
         writer.Put(ForceFull);
+        writer.Put(VehiclesOnly);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -26,5 +28,6 @@ public struct AISnapshotRequestRpc : IRpcMessage
         Center = reader.GetVector3();
         Radius = reader.GetFloat();
         ForceFull = reader.GetBool();
+        VehiclesOnly = reader.AvailableBytes > 0 && reader.GetBool();
     }
 }

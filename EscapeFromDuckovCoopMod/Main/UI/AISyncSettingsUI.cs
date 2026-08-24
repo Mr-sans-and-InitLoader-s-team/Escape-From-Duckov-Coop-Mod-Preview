@@ -67,6 +67,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
     private readonly List<DifficultyBoolBinding> _difficultyBoolFields = new();
     private readonly Dictionary<DifficultyLevel, Button> _difficultyButtons = new();
     private readonly List<Toggle> _hostOnlyToggles = new();
+    private readonly Dictionary<UIThemeMode, Button> _themeButtons = new();
     private bool _lastHostState;
 
     private void EnsureWorkingCopies()
@@ -75,9 +76,97 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         _workingGeneral ??= CoopAISettings.ActiveGeneral.Clone();
         _workingLootSettings ??= CoopLootSettings.Active.Clone();
         _workingCustomDifficulty ??= DifficultyManager.GetCustomSettings();
+        NormalizeGeneralTheme(_workingGeneral);
+    }
+
+    private static void NormalizeGeneralTheme(CoopGeneralSettings settings)
+    {
+        if (settings != null)
+            settings.UiThemeMode = MModUITheme.NormalizeMode(settings.UiThemeMode);
     }
 
     private static bool IsHostActive() => ModBehaviourF.Instance != null && ModBehaviourF.Instance.IsServer;
+
+    private static Color WithAlpha(Color color, float alpha)
+    {
+        color.a = alpha;
+        return color;
+    }
+
+    private static Color SettingsPanelColor()
+    {
+        if (MModUITheme.UseLunarNewYearTheme)
+            return new Color(0.74f, 0.10f, 0.15f, 0.97f);
+        if (MModUITheme.IsSummerTheme)
+            return new Color(0.66f, 0.89f, 1f, 0.96f);
+        if (MModUITheme.IsDarkTheme)
+            return new Color(0.07f, 0.09f, 0.12f, 0.96f);
+        return new Color(0.90f, 0.93f, 0.96f, 0.94f);
+    }
+
+    private static Color SettingsSurfaceColor(float alpha = 0.90f)
+    {
+        if (MModUITheme.UseLunarNewYearTheme)
+            return new Color(0.86f, 0.14f, 0.18f, alpha);
+        if (MModUITheme.IsSummerTheme)
+            return new Color(1f, 1f, 1f, Mathf.Min(alpha + 0.02f, 0.94f));
+        if (MModUITheme.IsDarkTheme)
+            return new Color(0.11f, 0.14f, 0.18f, Mathf.Min(alpha, 0.94f));
+        return new Color(0.98f, 0.99f, 1f, alpha);
+    }
+
+    private static Color SettingsRowColor()
+    {
+        if (MModUITheme.UseLunarNewYearTheme)
+            return new Color(0.66f, 0.08f, 0.12f, 0.18f);
+        if (MModUITheme.IsSummerTheme)
+            return new Color(0.05f, 0.58f, 0.90f, 0.12f);
+        if (MModUITheme.IsDarkTheme)
+            return new Color(0.18f, 0.22f, 0.28f, 0.22f);
+        return new Color(0.88f, 0.92f, 0.97f, 0.18f);
+    }
+
+    private static Color SettingsAdjustColor(Color color, float factor)
+    {
+        color.r = Mathf.Clamp01(color.r * factor);
+        color.g = Mathf.Clamp01(color.g * factor);
+        color.b = Mathf.Clamp01(color.b * factor);
+        return color;
+    }
+
+    private static Color SettingsBlendColor(Color from, Color to, float amount)
+    {
+        amount = Mathf.Clamp01(amount);
+        return new Color(
+            Mathf.Lerp(from.r, to.r, amount),
+            Mathf.Lerp(from.g, to.g, amount),
+            Mathf.Lerp(from.b, to.b, amount),
+            Mathf.Lerp(from.a, to.a, amount));
+    }
+
+    private static void ApplySettingsSelectableFeedback(Selectable selectable, Color baseColor, bool animate = true)
+    {
+        if (selectable == null)
+            return;
+
+        var highlighted = SettingsBlendColor(SettingsAdjustColor(baseColor, 1.08f), MModUI.ModernColors.PrimaryHover, 0.18f);
+        var pressed = SettingsBlendColor(SettingsAdjustColor(baseColor, 0.72f), MModUI.ModernColors.PrimaryActive, 0.30f);
+        var colors = selectable.colors;
+        colors.normalColor = baseColor;
+        colors.highlightedColor = highlighted;
+        colors.pressedColor = pressed;
+        colors.selectedColor = highlighted;
+        colors.disabledColor = WithAlpha(SettingsAdjustColor(baseColor, 0.82f), Mathf.Min(baseColor.a, 0.34f));
+        colors.colorMultiplier = 1.06f;
+        colors.fadeDuration = 0.06f;
+        selectable.transition = Selectable.Transition.ColorTint;
+        selectable.colors = colors;
+
+        if (animate && selectable.gameObject.GetComponent<ButtonHoverAnimator>() == null)
+        {
+            selectable.gameObject.AddComponent<ButtonHoverAnimator>();
+        }
+    }
 
     public void Init()
     {
@@ -126,25 +215,70 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         SyncPanelVisibility();
     }
 
-    private void BuildUI()
+    private void ClearBuiltUiReferences()
+    {
+        _panel = null;
+        _canvas = null;
+        _tooltip = null;
+        _tooltipRect = null;
+        _tooltipLabel = null;
+        _searchInput = null;
+        _pagesScroll = null;
+        _pagesWrapperLayout = null;
+        _pagesContentRect = null;
+        _activePageKey = null;
+
+        _pageRoots.Clear();
+        _pageRootLayouts.Clear();
+        _pageScrollLayouts.Clear();
+        _pageScrollRects.Clear();
+        _pageContents.Clear();
+        _navButtons.Clear();
+        _searchEntries.Clear();
+        _difficultyFields.Clear();
+        _difficultyBoolFields.Clear();
+        _difficultyButtons.Clear();
+        _hostOnlyToggles.Clear();
+        _themeButtons.Clear();
+    }
+
+    private void BuildUI(bool reloadSettings = true)
     {
         if (_initialized)
             return;
 
-        _searchEntries.Clear();
+        ClearBuiltUiReferences();
 
         DontDestroyOnLoad(gameObject);
         Instance = this;
-        var loaded = AISyncSettingsPersistence.LoadAndApply(CoopAISettings.Instance, CoopLootSettings.Instance);
+        var loaded = reloadSettings
+            ? AISyncSettingsPersistence.LoadAndApply(CoopAISettings.Instance, CoopLootSettings.Instance)
+            : null;
 
-        _workingSettings = (loaded?.AI ?? CoopAISettings.Active).Clone();
-        _workingGeneral = (loaded?.General ?? CoopAISettings.ActiveGeneral).Clone();
-        _workingLootSettings = (loaded?.Loot ?? CoopLootSettings.Active).Clone();
+        _workingSettings = reloadSettings || _workingSettings == null
+            ? (loaded?.AI ?? CoopAISettings.Active).Clone()
+            : _workingSettings.CloneWithBounds();
+        _workingGeneral = reloadSettings || _workingGeneral == null
+            ? (loaded?.General ?? CoopAISettings.ActiveGeneral).Clone()
+            : _workingGeneral.CloneWithBounds();
+        _workingLootSettings = reloadSettings || _workingLootSettings == null
+            ? (loaded?.Loot ?? CoopLootSettings.Active).Clone()
+            : _workingLootSettings.CloneWithBounds();
         _defaultSettings = AISyncTuningSettings.Default();
         _defaultGeneral = CoopGeneralSettings.Default();
         _defaultLootSettings = LootTuningSettings.Default();
-        _workingDifficultySelection = loaded?.Difficulty?.Selected ?? DifficultyManager.Selected;
-        _workingCustomDifficulty = (loaded?.Difficulty?.Custom ?? DifficultyManager.GetCustomSettings()).CloneAndClamp();
+        NormalizeGeneralTheme(_workingGeneral);
+        NormalizeGeneralTheme(_defaultGeneral);
+        if (reloadSettings || _workingCustomDifficulty == null)
+        {
+            _workingDifficultySelection = loaded?.Difficulty?.Selected ?? DifficultyManager.Selected;
+            _workingCustomDifficulty = (loaded?.Difficulty?.Custom ?? DifficultyManager.GetCustomSettings()).CloneAndClamp();
+        }
+        else
+        {
+            _workingCustomDifficulty = _workingCustomDifficulty.CloneAndClamp();
+        }
+
         _defaultCustomDifficulty = DifficultyManager.GetCustomSettings().CloneAndClamp();
 
         _canvas = new GameObject("AISyncSettingsCanvas").AddComponent<Canvas>();
@@ -162,7 +296,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var background = new GameObject("Background");
         background.transform.SetParent(_canvas.transform, false);
         var bgImage = background.AddComponent<Image>();
-        bgImage.color = new Color(0f, 0f, 0f, 0.35f);
+        bgImage.color = new Color(0f, 0f, 0f, MModUITheme.IsDarkTheme ? 0.62f : 0.50f);
         var bgRect = background.GetComponent<RectTransform>();
         bgRect.anchorMin = Vector2.zero;
         bgRect.anchorMax = Vector2.one;
@@ -171,7 +305,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
 
         _panel = CreatePanel("AISyncSettingsPanel", _canvas.transform);
         var layout = _panel.AddComponent<VerticalLayoutGroup>();
-        layout.padding = new RectOffset(20, 20, 16, 20);
+        layout.padding = new RectOffset(22, 22, 18, 22);
         layout.spacing = 14;
         layout.childControlWidth = true;
         layout.childControlHeight = true;
@@ -189,12 +323,16 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var body = new GameObject("Body");
         body.transform.SetParent(_panel.transform, false);
         var bodyLayout = body.AddComponent<HorizontalLayoutGroup>();
-        bodyLayout.spacing = 16f;
+        bodyLayout.padding = new RectOffset(8, 8, 8, 8);
+        bodyLayout.spacing = 18f;
         bodyLayout.childAlignment = TextAnchor.UpperLeft;
         bodyLayout.childControlWidth = true;
         bodyLayout.childControlHeight = true;
         bodyLayout.childForceExpandWidth = true;
         bodyLayout.childForceExpandHeight = true;
+        var bodyImage = body.AddComponent<Image>();
+        MModUI.StyleControlImage(bodyImage, SettingsSurfaceColor(MModUITheme.IsDarkTheme ? 0.72f : 0.76f));
+        MModUI.AddControlChrome(body, WithAlpha(MModUI.ModernColors.InputBorder, 0.26f), WithAlpha(MModUI.ModernColors.Shadow, 0.10f), new Vector2(0f, -4f));
 
         var nav = CreateNavColumn(body.transform);
         var pagesWrapper = new GameObject("PagesWrapper");
@@ -204,6 +342,10 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         _pagesWrapperLayout.flexibleHeight = 1;
         _pagesWrapperLayout.minHeight = 720f;
         _pagesWrapperLayout.minWidth = 1180f;
+
+        var pagesImage = pagesWrapper.AddComponent<Image>();
+        MModUI.StyleControlImage(pagesImage, SettingsSurfaceColor(MModUITheme.IsDarkTheme ? 0.58f : 0.72f));
+        MModUI.AddControlChrome(pagesWrapper, WithAlpha(MModUI.ModernColors.InputBorder, 0.18f), WithAlpha(MModUI.ModernColors.Shadow, 0.06f), new Vector2(0f, -2f));
 
         _pagesScroll = pagesWrapper.AddComponent<ScrollRect>();
         _pagesScroll.horizontal = false;
@@ -266,6 +408,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         CreateFloatField(network, CoopLocalization.Get("ui.settings.projectileSyncMaxDistance"), () => _workingGeneral.ProjectileSyncMaxDistance, v => _workingGeneral.ProjectileSyncMaxDistance = v, 0f, 500f, true, _defaultGeneral.ProjectileSyncMaxDistance, CoopLocalization.Get("ui.settings.projectileSyncMaxDistance.desc"));
         CreateBoolField(network, CoopLocalization.Get("ui.settings.teleporterSpawnTogether"), () => _workingGeneral.TeleporterSpawnTogether, v => _workingGeneral.TeleporterSpawnTogether = v, true, _defaultGeneral.TeleporterSpawnTogether, CoopLocalization.Get("ui.settings.teleporterSpawnTogether.desc"));
         CreateBoolField(network, CoopLocalization.Get("ui.settings.friendlyFirePlayers"), () => _workingGeneral.FriendlyFirePlayers, v => _workingGeneral.FriendlyFirePlayers = v, true, _defaultGeneral.FriendlyFirePlayers, CoopLocalization.Get("ui.settings.friendlyFirePlayers.desc"));
+        CreateThemeModeField(network, CoopLocalization.Get("ui.settings.themeMode"), () => _workingGeneral.UiThemeMode, v => _workingGeneral.UiThemeMode = v, _defaultGeneral.UiThemeMode, CoopLocalization.Get("ui.settings.themeMode.desc"));
 
         var distances = CreateSection(aiSyncContent,
             CoopLocalization.Get("ui.aiSettings.section.distance.title"),
@@ -352,11 +495,20 @@ public sealed class AISyncSettingsUI : MonoBehaviour
     private void ApplyChanges()
     {
         EnsureWorkingCopies();
+        var previousTheme = MModUITheme.CurrentMode;
 
         _workingSettings = _workingSettings.CloneWithBounds();
         CoopAISettings.Instance?.Apply(_workingSettings);
         _workingGeneral = _workingGeneral.CloneWithBounds();
-        CoopAISettings.Instance?.ApplyGeneral(_workingGeneral);
+        NormalizeGeneralTheme(_workingGeneral);
+        if (CoopAISettings.Instance != null)
+        {
+            CoopAISettings.Instance.ApplyGeneral(_workingGeneral);
+        }
+        else
+        {
+            MModUITheme.SetThemeMode(_workingGeneral.UiThemeMode);
+        }
 
         _workingLootSettings = (_workingLootSettings ?? LootTuningSettings.Default()).CloneWithBounds();
         CoopLootSettings.Instance?.Apply(_workingLootSettings);
@@ -364,6 +516,44 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var customDifficulty = (_workingCustomDifficulty ?? DifficultyManager.GetCustomSettings()).CloneAndClamp();
         DifficultyManager.SetCustomSettings(customDifficulty);
         DifficultyManager.SetDifficulty(_workingDifficultySelection);
+
+        if (_initialized && previousTheme != MModUITheme.CurrentMode)
+        {
+            RebuildForCurrentTheme();
+        }
+    }
+
+    private void RebuildForCurrentTheme()
+    {
+        var wasVisible = _visible;
+        var activePage = string.IsNullOrEmpty(_activePageKey) ? "network" : _activePageKey;
+        var searchText = _searchInput != null ? _searchInput.text : string.Empty;
+
+        HideTooltip();
+
+        if (_canvas != null)
+        {
+            var oldCanvas = _canvas.gameObject;
+            oldCanvas.SetActive(false);
+            Destroy(oldCanvas);
+        }
+
+        _initialized = false;
+        BuildUI(false);
+        _initialized = true;
+        _visible = wasVisible;
+        SyncPanelVisibility();
+
+        if (!string.IsNullOrEmpty(activePage) && _pageRoots.ContainsKey(activePage))
+        {
+            ShowPageInternal(activePage);
+        }
+
+        if (_searchInput != null && !string.IsNullOrEmpty(searchText))
+        {
+            _searchInput.SetTextWithoutNotify(searchText);
+            ApplySearchFilter(searchText);
+        }
     }
 
     private void ApplyChangesFromUI()
@@ -388,14 +578,21 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var header = new GameObject("Header");
         header.transform.SetParent(parent, false);
         var layout = header.AddComponent<HorizontalLayoutGroup>();
-        layout.padding = new RectOffset(4, 4, 0, 0);
-        layout.spacing = 8;
+        layout.padding = new RectOffset(18, 14, 10, 10);
+        layout.spacing = 12;
         layout.childAlignment = TextAnchor.MiddleLeft;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = false;
 
         var headerSizer = header.AddComponent<LayoutElement>();
-        headerSizer.minHeight = 46f;
+        headerSizer.minHeight = 66f;
+        headerSizer.preferredHeight = 66f;
 
         var title = CreateText("Title", header.transform, CoopLocalization.Get("ui.settings.title"), 26, MModUI.ModernColors.TextPrimary, FontStyles.Bold);
+        var titleLayout = title.gameObject.AddComponent<LayoutElement>();
+        titleLayout.preferredWidth = 300f;
+        titleLayout.flexibleWidth = 0f;
         var spacer = new GameObject("Spacer");
         spacer.transform.SetParent(header.transform, false);
         var spacerEl = spacer.AddComponent<LayoutElement>();
@@ -403,9 +600,13 @@ public sealed class AISyncSettingsUI : MonoBehaviour
 
         _searchInput = CreateSearchInput(header.transform);
 
-        CreateCloseButton(_panel.transform);
         CreateApplyButton(header.transform);
         CreateSaveButton(header.transform);
+        CreateCloseButton(header.transform);
+
+        var image = header.AddComponent<Image>();
+        MModUI.StyleControlImage(image, SettingsSurfaceColor(MModUITheme.IsDarkTheme ? 0.82f : 0.84f));
+        MModUI.AddControlChrome(header, WithAlpha(MModUI.ModernColors.InputBorder, 0.28f), WithAlpha(MModUI.ModernColors.Shadow, 0.10f), new Vector2(0f, -3f));
     }
 
     private void CreateCloseButton(Transform parent)
@@ -413,38 +614,15 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var button = new GameObject("CloseButton");
         button.transform.SetParent(parent, false);
         var layout = button.AddComponent<LayoutElement>();
-        layout.ignoreLayout = true;
-        layout.minHeight = 32f;
-        layout.preferredHeight = 32f;
-        layout.preferredWidth = 44f;
-
-        var rect = button.GetComponent<RectTransform>();
-        if (rect == null)
-        {
-            rect = button.AddComponent<RectTransform>();
-        }
-        rect.anchorMin = new Vector2(1f, 1f);
-        rect.anchorMax = new Vector2(1f, 1f);
-        rect.pivot = new Vector2(1f, 1f);
-        rect.sizeDelta = new Vector2(44f, 32f);
-        rect.anchoredPosition = new Vector2(-14f, -14f);
+        layout.minHeight = 38f;
+        layout.preferredHeight = 38f;
+        layout.preferredWidth = 42f;
 
         var image = button.AddComponent<Image>();
-        image.color = new Color(0.3f, 0.3f, 0.3f, 0.6f);
-        var outline = button.AddComponent<Outline>();
-        outline.effectColor = new Color(0f, 0f, 0f, 0.35f);
-        outline.effectDistance = new Vector2(1f, -1f);
-
-        var label = CreateText("Label", button.transform, "×", 18, MModUI.ModernColors.TextPrimary, FontStyles.Bold);
-        label.alignment = TextAlignmentOptions.Center;
-        var labelRect = label.GetComponent<RectTransform>();
-        labelRect.anchorMin = Vector2.zero;
-        labelRect.anchorMax = Vector2.one;
-        labelRect.offsetMin = Vector2.zero;
-        labelRect.offsetMax = Vector2.zero;
+        MModUI.AddControlChrome(button, WithAlpha(MModUI.ModernColors.Error, 0.32f), WithAlpha(MModUI.ModernColors.Shadow, 0.12f), new Vector2(0f, -2f));
 
         var btn = button.AddComponent<Button>();
-        btn.targetGraphic = image;
+        MModUI.ConfigureCloseButton(btn, image, button.transform, 38f, MModUI.ModernColors.Error);
         btn.onClick.AddListener(Hide);
     }
 
@@ -458,12 +636,10 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         layout.preferredWidth = 170f;
 
         var image = button.AddComponent<Image>();
-        image.color = new Color(0.35f, 0.7f, 0.45f, 0.2f);
-        var outline = button.AddComponent<Outline>();
-        outline.effectColor = new Color(0.35f, 0.7f, 0.45f, 0.5f);
-        outline.effectDistance = new Vector2(1f, -1f);
+        MModUI.StyleControlImage(image, WithAlpha(MModUI.ModernColors.Success, MModUITheme.IsDarkTheme ? 0.82f : 0.74f));
+        MModUI.AddControlChrome(button, WithAlpha(MModUI.ModernColors.Success, 0.42f), MModUI.ModernColors.Shadow, new Vector2(0f, -3f));
 
-        var text = CreateText("Label", button.transform, CoopLocalization.Get("ui.settings.saveGlobal"), 15, MModUI.ModernColors.TextPrimary, FontStyles.Bold);
+        var text = CreateText("Label", button.transform, CoopLocalization.Get("ui.settings.saveGlobal"), 15, MModUI.ModernColors.PrimaryText, FontStyles.Bold);
         text.alignment = TextAlignmentOptions.Center;
         var rect = text.GetComponent<RectTransform>();
         rect.anchorMin = Vector2.zero;
@@ -473,6 +649,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
 
         var btn = button.AddComponent<Button>();
         btn.targetGraphic = image;
+        ApplySettingsSelectableFeedback(btn, WithAlpha(MModUI.ModernColors.Success, MModUITheme.IsDarkTheme ? 0.82f : 0.74f));
         btn.onClick.AddListener(SaveSettingsToDisk);
     }
 
@@ -486,12 +663,10 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         layout.preferredWidth = 150f;
 
         var image = button.AddComponent<Image>();
-        image.color = new Color(0.32f, 0.58f, 0.95f, 0.2f);
-        var outline = button.AddComponent<Outline>();
-        outline.effectColor = new Color(0.32f, 0.58f, 0.95f, 0.5f);
-        outline.effectDistance = new Vector2(1f, -1f);
+        MModUI.StyleControlImage(image, MModUI.ModernColors.Primary);
+        MModUI.AddControlChrome(button, WithAlpha(MModUI.ModernColors.PrimaryHover, 0.48f), MModUI.ModernColors.Shadow, new Vector2(0f, -3f));
 
-        var text = CreateText("Label", button.transform, CoopLocalization.Get("ui.settings.applyChanges"), 15, MModUI.ModernColors.TextPrimary, FontStyles.Bold);
+        var text = CreateText("Label", button.transform, CoopLocalization.Get("ui.settings.applyChanges"), 15, MModUI.ModernColors.PrimaryText, FontStyles.Bold);
         text.alignment = TextAlignmentOptions.Center;
         var rect = text.GetComponent<RectTransform>();
         rect.anchorMin = Vector2.zero;
@@ -501,6 +676,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
 
         var btn = button.AddComponent<Button>();
         btn.targetGraphic = image;
+        ApplySettingsSelectableFeedback(btn, MModUI.ModernColors.Primary);
         btn.onClick.AddListener(ApplyChangesFromUI);
     }
 
@@ -570,7 +746,8 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         layout.childForceExpandHeight = false;
 
         var background = nav.AddComponent<Image>();
-        background.color = new Color(1f, 1f, 1f, 0.03f);
+        MModUI.StyleControlImage(background, SettingsSurfaceColor(MModUITheme.IsDarkTheme ? 0.70f : 0.82f));
+        MModUI.AddControlChrome(nav, WithAlpha(MModUI.ModernColors.InputBorder, 0.22f), WithAlpha(MModUI.ModernColors.Shadow, 0.08f), new Vector2(0f, -3f));
 
         var navSizer = nav.AddComponent<LayoutElement>();
         navSizer.preferredWidth = 200f;
@@ -620,18 +797,18 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         rect.anchoredPosition = Vector2.zero;
 
         var image = go.AddComponent<Image>();
-        image.color = MModUI.GlassTheme.PanelBg;
+        MModUI.StyleControlImage(image, SettingsPanelColor());
 
         var shadow = go.AddComponent<Shadow>();
         shadow.effectColor = MModUI.ModernColors.Shadow;
         shadow.effectDistance = new Vector2(0, -6f);
 
         var outline = go.AddComponent<Outline>();
-        outline.effectColor = new Color(1f, 1f, 1f, 0.08f);
+        outline.effectColor = WithAlpha(MModUI.ModernColors.InputBorder, 0.34f);
         outline.effectDistance = new Vector2(2f, -2f);
 
         var canvasGroup = go.AddComponent<CanvasGroup>();
-        canvasGroup.alpha = 0.98f;
+        canvasGroup.alpha = 1f;
 
         return go;
     }
@@ -641,10 +818,11 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var card = new GameObject(title + "Card");
         card.transform.SetParent(parent, false);
         var image = card.AddComponent<Image>();
-        image.color = MModUI.GlassTheme.CardBg;
+        MModUI.StyleControlImage(image, SettingsSurfaceColor(MModUITheme.IsDarkTheme ? 0.78f : 0.88f));
+        MModUI.AddControlChrome(card, WithAlpha(MModUI.ModernColors.InputBorder, 0.20f), WithAlpha(MModUI.ModernColors.Shadow, 0.08f), new Vector2(0f, -3f));
         var layout = card.AddComponent<VerticalLayoutGroup>();
-        layout.padding = new RectOffset(16, 16, 12, 14);
-        layout.spacing = 8;
+        layout.padding = new RectOffset(18, 18, 14, 16);
+        layout.spacing = 10;
         layout.childControlWidth = true;
         layout.childControlHeight = true;
 
@@ -659,8 +837,13 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var headerLayout = header.AddComponent<HorizontalLayoutGroup>();
         headerLayout.spacing = 10;
         headerLayout.childAlignment = TextAnchor.MiddleLeft;
+        headerLayout.childControlWidth = true;
+        headerLayout.childForceExpandWidth = false;
 
-        CreateText("Title", header.transform, title, 18, MModUI.ModernColors.TextPrimary, FontStyles.Bold);
+        var titleText = CreateText("Title", header.transform, title, 18, MModUI.ModernColors.TextPrimary, FontStyles.Bold);
+        var titleLayout = titleText.gameObject.AddComponent<LayoutElement>();
+        titleLayout.preferredWidth = 260f;
+        titleLayout.flexibleWidth = 0f;
         if (hostOnly)
         {
             CreateBadge(header.transform, CoopLocalization.Get("ui.aiSettings.badge.hostOnly"));
@@ -695,11 +878,20 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         foreach (var kvp in _navButtons)
         {
             if (kvp.Value == null) continue;
+            var selected = kvp.Key == key;
             var img = kvp.Value.GetComponent<Image>();
             if (img != null)
             {
-                img.color = kvp.Key == key ? new Color(1f, 1f, 1f, 0.12f) : new Color(1f, 1f, 1f, 0.04f);
+                MModUI.StyleControlImage(img, selected ? MModUI.ModernColors.Primary : SettingsSurfaceColor(MModUITheme.IsDarkTheme ? 0.54f : 0.62f));
             }
+
+            var label = kvp.Value.GetComponentInChildren<TextMeshProUGUI>();
+            if (label != null)
+            {
+                label.color = selected ? MModUI.ModernColors.PrimaryText : MModUI.ModernColors.TextPrimary;
+            }
+
+            ApplySettingsSelectableFeedback(kvp.Value, selected ? MModUI.ModernColors.Primary : SettingsSurfaceColor(MModUITheme.IsDarkTheme ? 0.54f : 0.62f));
         }
 
         ApplySearchFilter(_searchInput != null ? _searchInput.text : string.Empty);
@@ -715,7 +907,8 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         layout.minWidth = 180f;
 
         var image = go.AddComponent<Image>();
-        image.color = new Color(1f, 1f, 1f, 0.04f);
+        MModUI.StyleControlImage(image, MModUI.GlassTheme.InputBg);
+        MModUI.AddControlChrome(go, MModUI.ModernColors.InputBorder, MModUI.ModernColors.Shadow, new Vector2(0f, -2f));
 
         var text = CreateText("Label", go.transform, label, 15, MModUI.ModernColors.TextPrimary, FontStyles.Bold);
         text.alignment = TextAlignmentOptions.Center;
@@ -727,6 +920,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
 
         var button = go.AddComponent<Button>();
         button.targetGraphic = image;
+        ApplySettingsSelectableFeedback(button, MModUI.GlassTheme.InputBg);
         button.onClick.AddListener(() => ShowPageInternal(key));
 
         _navButtons[key] = button;
@@ -737,14 +931,26 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var badge = new GameObject("Badge");
         badge.transform.SetParent(parent, false);
         var layout = badge.AddComponent<LayoutElement>();
-        layout.preferredWidth = 64;
-        layout.preferredHeight = 22;
+        layout.minWidth = text.Length <= 2 ? 42 : 54;
+        layout.preferredWidth = text.Length <= 2 ? 42 : 54;
+        layout.preferredHeight = 24;
+        layout.flexibleWidth = 0;
         var image = badge.AddComponent<Image>();
-        image.color = new Color(0.85f, 0.35f, 0.35f, 0.75f);
+        MModUI.StyleToggleBoxImage(image, WithAlpha(MModUI.ModernColors.Error, MModUITheme.IsDarkTheme ? 0.32f : 0.18f));
         image.raycastTarget = false;
 
-        var t = CreateText("BadgeText", badge.transform, text, 12, Color.white, FontStyles.Bold);
+        var badgeTextColor = MModUITheme.IsDarkTheme || MModUITheme.UseLunarNewYearTheme
+            ? Color.white
+            : MModUI.ModernColors.Error;
+        var t = CreateText("BadgeText", badge.transform, text, 11, badgeTextColor, FontStyles.Bold);
         t.alignment = TextAlignmentOptions.Center;
+        var textRect = t.GetComponent<RectTransform>();
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = Vector2.zero;
+        textRect.offsetMax = Vector2.zero;
+        var textLayout = t.gameObject.AddComponent<LayoutElement>();
+        textLayout.ignoreLayout = true;
     }
 
     private void CreateFloatField(Transform parent, string label, System.Func<float> getter, System.Action<float> setter, float min, float max, bool hostOnly = false, float? defaultValue = null, string tooltip = null)
@@ -781,37 +987,51 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var toggleObj = new GameObject(label + "Toggle");
         toggleObj.transform.SetParent(row, false);
         var toggleLayout = toggleObj.AddComponent<LayoutElement>();
-        toggleLayout.preferredWidth = 44f;
-        toggleLayout.preferredHeight = 22f;
+        toggleLayout.minWidth = 24f;
+        toggleLayout.preferredWidth = 24f;
+        toggleLayout.flexibleWidth = 0f;
+        toggleLayout.minHeight = 24f;
+        toggleLayout.preferredHeight = 24f;
+        toggleLayout.flexibleHeight = 0f;
 
         var toggleRect = toggleObj.GetComponent<RectTransform>();
-        toggleRect.sizeDelta = new Vector2(40f, 20f);
+        toggleRect.sizeDelta = new Vector2(24f, 24f);
+
+        var backgroundObj = new GameObject("Background");
+        backgroundObj.transform.SetParent(toggleObj.transform, false);
+        var toggleBg = backgroundObj.AddComponent<Image>();
+        MModUI.StyleToggleBoxImage(toggleBg, MModUI.GlassTheme.InputBg);
+        toggleBg.raycastTarget = true;
+        MModUI.AddControlChrome(backgroundObj, MModUI.ModernColors.InputBorder, MModUI.ModernColors.Shadow, new Vector2(0f, -2f));
+        var bgRect = backgroundObj.GetComponent<RectTransform>();
+        bgRect.anchorMin = Vector2.zero;
+        bgRect.anchorMax = Vector2.one;
+        bgRect.sizeDelta = Vector2.zero;
+
+        var checkmark = new GameObject("Checkmark");
+        checkmark.transform.SetParent(backgroundObj.transform, false);
+        var checkRect = checkmark.AddComponent<RectTransform>();
+        checkRect.anchorMin = new Vector2(0.25f, 0.25f);
+        checkRect.anchorMax = new Vector2(0.75f, 0.75f);
+        checkRect.sizeDelta = Vector2.zero;
+        var checkImage = checkmark.AddComponent<Image>();
+        MModUI.StyleToggleBoxImage(checkImage, MModUI.ModernColors.Primary);
+        checkImage.type = Image.Type.Simple;
+        checkImage.preserveAspect = false;
+        checkImage.color = MModUI.ModernColors.Primary;
 
         var toggle = toggleObj.AddComponent<Toggle>();
-        var toggleBg = toggleObj.AddComponent<Image>();
-        toggleBg.color = MModUI.GlassTheme.InputBg;
-        toggleBg.raycastTarget = true;
-        var toggleOutline = toggleObj.AddComponent<Outline>();
-        toggleOutline.effectColor = MModUI.ModernColors.InputBorder;
-        toggleOutline.effectDistance = new Vector2(1f, -1f);
         toggle.targetGraphic = toggleBg;
-        var checkmark = new GameObject("Checkmark");
-        checkmark.transform.SetParent(toggleObj.transform, false);
-        var checkRect = checkmark.AddComponent<RectTransform>();
-        checkRect.anchorMin = new Vector2(0.5f, 0.5f);
-        checkRect.anchorMax = new Vector2(0.5f, 0.5f);
-        checkRect.sizeDelta = new Vector2(16f, 10f);
-        var checkImage = checkmark.AddComponent<Image>();
-        checkImage.color = MModUI.ModernColors.Primary;
         toggle.graphic = checkImage;
 
         var toggleColors = toggle.colors;
-        toggleColors.normalColor = new Color(1f, 1f, 1f, 0.14f);
-        toggleColors.highlightedColor = new Color(1f, 1f, 1f, 0.18f);
-        toggleColors.pressedColor = new Color(1f, 1f, 1f, 0.22f);
-        toggleColors.selectedColor = new Color(1f, 1f, 1f, 0.18f);
+        toggleColors.normalColor = MModUI.GlassTheme.ButtonBg;
+        toggleColors.highlightedColor = MModUI.GlassTheme.ButtonHover;
+        toggleColors.pressedColor = MModUI.GlassTheme.ButtonActive;
+        toggleColors.selectedColor = MModUI.GlassTheme.ButtonBg;
         toggleColors.disabledColor = new Color(1f, 1f, 1f, 0.08f);
         toggle.colors = toggleColors;
+        ApplySettingsSelectableFeedback(toggle, MModUI.GlassTheme.InputBg);
 
         toggle.SetIsOnWithoutNotify(getter());
         toggle.interactable = !hostOnly || IsHostActive();
@@ -888,12 +1108,15 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         sliderLayout.preferredWidth = 170f;
         sliderLayout.minWidth = 140f;
         sliderLayout.flexibleWidth = 0;
+        sliderLayout.minHeight = 24f;
+        sliderLayout.preferredHeight = 24f;
+        sliderLayout.flexibleHeight = 0f;
 
         var sliderBg = sliderObj.AddComponent<Image>();
-        sliderBg.color = new Color(1f, 1f, 1f, 0.06f);
+        MModUI.StyleControlImage(sliderBg, WithAlpha(MModUI.GlassTheme.InputBg, MModUITheme.IsDarkTheme ? 0.45f : 0.50f));
 
         var sliderRect = sliderObj.GetComponent<RectTransform>();
-        sliderRect.sizeDelta = new Vector2(170, 14);
+        sliderRect.sizeDelta = new Vector2(170, 24);
 
         var slider = sliderObj.AddComponent<Slider>();
         slider.direction = Slider.Direction.LeftToRight;
@@ -903,10 +1126,10 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var fillArea = new GameObject("FillArea");
         fillArea.transform.SetParent(sliderObj.transform, false);
         var fillAreaRect = fillArea.AddComponent<RectTransform>();
-        fillAreaRect.anchorMin = new Vector2(0, 0.35f);
-        fillAreaRect.anchorMax = new Vector2(1, 0.65f);
-        fillAreaRect.offsetMin = new Vector2(8, 0);
-        fillAreaRect.offsetMax = new Vector2(-8, 0);
+        fillAreaRect.anchorMin = new Vector2(0, 0.5f);
+        fillAreaRect.anchorMax = new Vector2(1, 0.5f);
+        fillAreaRect.offsetMin = new Vector2(8, -3);
+        fillAreaRect.offsetMax = new Vector2(-8, 3);
 
         var fill = new GameObject("Fill");
         fill.transform.SetParent(fillArea.transform, false);
@@ -935,6 +1158,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         handleRect.sizeDelta = new Vector2(12, 12);
         slider.handleRect = handleRect;
         slider.targetGraphic = handleImage;
+        ApplySettingsSelectableFeedback(slider, Color.white, false);
 
         var input = CreateInput(row, getter(GetSelectedDifficultySettings()).ToString(format));
         input.contentType = TMP_InputField.ContentType.DecimalNumber;
@@ -1018,37 +1242,51 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var toggleObj = new GameObject(label + "Toggle");
         toggleObj.transform.SetParent(row, false);
         var toggleLayout = toggleObj.AddComponent<LayoutElement>();
-        toggleLayout.preferredWidth = 44f;
-        toggleLayout.preferredHeight = 22f;
+        toggleLayout.minWidth = 24f;
+        toggleLayout.preferredWidth = 24f;
+        toggleLayout.flexibleWidth = 0f;
+        toggleLayout.minHeight = 24f;
+        toggleLayout.preferredHeight = 24f;
+        toggleLayout.flexibleHeight = 0f;
 
         var toggleRect = toggleObj.GetComponent<RectTransform>();
-        toggleRect.sizeDelta = new Vector2(40f, 20f);
+        toggleRect.sizeDelta = new Vector2(24f, 24f);
+
+        var backgroundObj = new GameObject("Background");
+        backgroundObj.transform.SetParent(toggleObj.transform, false);
+        var toggleBg = backgroundObj.AddComponent<Image>();
+        MModUI.StyleToggleBoxImage(toggleBg, MModUI.GlassTheme.InputBg);
+        toggleBg.raycastTarget = true;
+        MModUI.AddControlChrome(backgroundObj, MModUI.ModernColors.InputBorder, MModUI.ModernColors.Shadow, new Vector2(0f, -2f));
+        var bgRect = backgroundObj.GetComponent<RectTransform>();
+        bgRect.anchorMin = Vector2.zero;
+        bgRect.anchorMax = Vector2.one;
+        bgRect.sizeDelta = Vector2.zero;
+
+        var checkmark = new GameObject("Checkmark");
+        checkmark.transform.SetParent(backgroundObj.transform, false);
+        var checkRect = checkmark.AddComponent<RectTransform>();
+        checkRect.anchorMin = new Vector2(0.25f, 0.25f);
+        checkRect.anchorMax = new Vector2(0.75f, 0.75f);
+        checkRect.sizeDelta = Vector2.zero;
+        var checkImage = checkmark.AddComponent<Image>();
+        MModUI.StyleToggleBoxImage(checkImage, MModUI.ModernColors.Primary);
+        checkImage.type = Image.Type.Simple;
+        checkImage.preserveAspect = false;
+        checkImage.color = MModUI.ModernColors.Primary;
 
         var toggle = toggleObj.AddComponent<Toggle>();
-        var toggleBg = toggleObj.AddComponent<Image>();
-        toggleBg.color = MModUI.GlassTheme.InputBg;
-        toggleBg.raycastTarget = true;
-        var toggleOutline = toggleObj.AddComponent<Outline>();
-        toggleOutline.effectColor = MModUI.ModernColors.InputBorder;
-        toggleOutline.effectDistance = new Vector2(1f, -1f);
         toggle.targetGraphic = toggleBg;
-        var checkmark = new GameObject("Checkmark");
-        checkmark.transform.SetParent(toggleObj.transform, false);
-        var checkRect = checkmark.AddComponent<RectTransform>();
-        checkRect.anchorMin = new Vector2(0.5f, 0.5f);
-        checkRect.anchorMax = new Vector2(0.5f, 0.5f);
-        checkRect.sizeDelta = new Vector2(16f, 10f);
-        var checkImage = checkmark.AddComponent<Image>();
-        checkImage.color = MModUI.ModernColors.Primary;
         toggle.graphic = checkImage;
 
         var toggleColors = toggle.colors;
-        toggleColors.normalColor = new Color(1f, 1f, 1f, 0.14f);
-        toggleColors.highlightedColor = new Color(1f, 1f, 1f, 0.18f);
-        toggleColors.pressedColor = new Color(1f, 1f, 1f, 0.22f);
-        toggleColors.selectedColor = new Color(1f, 1f, 1f, 0.18f);
+        toggleColors.normalColor = MModUI.GlassTheme.ButtonBg;
+        toggleColors.highlightedColor = MModUI.GlassTheme.ButtonHover;
+        toggleColors.pressedColor = MModUI.GlassTheme.ButtonActive;
+        toggleColors.selectedColor = MModUI.GlassTheme.ButtonBg;
         toggleColors.disabledColor = new Color(1f, 1f, 1f, 0.08f);
         toggle.colors = toggleColors;
+        ApplySettingsSelectableFeedback(toggle, MModUI.GlassTheme.InputBg);
 
         var valueText = CreateText("Value", row, getter(GetSelectedDifficultySettings()) ? CoopLocalization.Get("ui.difficulty.value.on") : CoopLocalization.Get("ui.difficulty.value.off"), 14, MModUI.ModernColors.TextSecondary);
         var valueLayout = valueText.GetComponent<RectTransform>().gameObject.AddComponent<LayoutElement>();
@@ -1085,6 +1323,119 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         });
     }
 
+    private void CreateThemeModeField(
+        Transform parent,
+        string label,
+        System.Func<UIThemeMode> getter,
+        System.Action<UIThemeMode> setter,
+        UIThemeMode defaultValue,
+        string tooltip = null)
+    {
+        var row = CreateFieldRow(parent, label, false, tooltip);
+
+        var buttonGroup = new GameObject("ThemeButtons");
+        buttonGroup.transform.SetParent(row, false);
+        var groupLayout = buttonGroup.AddComponent<HorizontalLayoutGroup>();
+        groupLayout.spacing = 8f;
+        groupLayout.childAlignment = TextAnchor.MiddleLeft;
+        groupLayout.childControlHeight = true;
+        groupLayout.childControlWidth = true;
+        groupLayout.childForceExpandHeight = false;
+        groupLayout.childForceExpandWidth = false;
+
+        var groupSize = buttonGroup.AddComponent<LayoutElement>();
+        groupSize.preferredWidth = 360f;
+        groupSize.preferredHeight = 38f;
+
+        CreateThemeButton(buttonGroup.transform, UIThemeMode.Black, getter, setter);
+        CreateThemeButton(buttonGroup.transform, UIThemeMode.Spring, getter, setter);
+        CreateThemeButton(buttonGroup.transform, UIThemeMode.Summer, getter, setter);
+        RefreshThemeButtons();
+
+        CreateResetButton(row, () =>
+        {
+            setter(MModUITheme.NormalizeMode(defaultValue));
+            ApplyChanges();
+            RefreshThemeButtons();
+        });
+    }
+
+    private void CreateThemeButton(
+        Transform parent,
+        UIThemeMode mode,
+        System.Func<UIThemeMode> getter,
+        System.Action<UIThemeMode> setter)
+    {
+        var buttonObj = new GameObject($"Theme_{mode}");
+        buttonObj.transform.SetParent(parent, false);
+        var layout = buttonObj.AddComponent<LayoutElement>();
+        layout.preferredWidth = 110f;
+        layout.preferredHeight = 36f;
+
+        var image = buttonObj.AddComponent<Image>();
+        MModUI.StylePillImage(image, MModUI.GlassTheme.InputBg);
+        MModUI.AddControlChrome(buttonObj, MModUI.ModernColors.InputBorder, MModUI.ModernColors.Shadow, new Vector2(0f, -2f));
+
+        var text = CreateText("Label", buttonObj.transform, GetThemeModeName(mode), 14, MModUI.ModernColors.TextPrimary, FontStyles.Bold);
+        text.alignment = TextAlignmentOptions.Center;
+        var rect = text.GetComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = new Vector2(8, 5);
+        rect.offsetMax = new Vector2(-8, -5);
+
+        var button = buttonObj.AddComponent<Button>();
+        button.targetGraphic = image;
+        ApplySettingsSelectableFeedback(button, MModUI.GlassTheme.InputBg);
+        button.onClick.AddListener(() =>
+        {
+            var normalizedMode = MModUITheme.NormalizeMode(mode);
+            if (MModUITheme.NormalizeMode(getter()) == normalizedMode)
+                return;
+
+            setter(normalizedMode);
+            ApplyChanges();
+            RefreshThemeButtons();
+        });
+
+        _themeButtons[mode] = button;
+    }
+
+    private void RefreshThemeButtons()
+    {
+        foreach (var pair in _themeButtons)
+        {
+            var button = pair.Value;
+            if (button == null)
+                continue;
+
+            var selected = pair.Key == MModUITheme.NormalizeMode(_workingGeneral.UiThemeMode);
+            if (button.TryGetComponent<Image>(out var image))
+            {
+                MModUI.StylePillImage(image, selected ? MModUI.ModernColors.Primary : MModUI.GlassTheme.InputBg);
+            }
+            ApplySettingsSelectableFeedback(button, selected ? MModUI.ModernColors.Primary : MModUI.GlassTheme.InputBg);
+
+            var label = button.GetComponentInChildren<TextMeshProUGUI>();
+            if (label != null)
+            {
+                label.text = GetThemeModeName(pair.Key);
+                label.color = selected ? MModUI.ModernColors.PrimaryText : MModUI.ModernColors.TextPrimary;
+            }
+        }
+    }
+
+    private static string GetThemeModeName(UIThemeMode mode)
+    {
+        return mode switch
+        {
+            UIThemeMode.Black => CoopLocalization.Get("ui.settings.theme.black"),
+            UIThemeMode.Spring => CoopLocalization.Get("ui.settings.theme.spring"),
+            UIThemeMode.Summer => CoopLocalization.Get("ui.settings.theme.summer"),
+            _ => CoopLocalization.Get("ui.settings.theme.white")
+        };
+    }
+
     private void CreateEnumField(Transform parent, string label, System.Func<NetworkTransportMode> getter, System.Action<NetworkTransportMode> setter, NetworkTransportMode? defaultValue = null, bool hostOnly = false, string tooltip = null)
     {
         var row = CreateFieldRow(parent, label, hostOnly, tooltip);
@@ -1116,10 +1467,8 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         layout.preferredHeight = 34f;
 
         var image = button.AddComponent<Image>();
-        image.color = MModUI.GlassTheme.InputBg;
-        var outline = button.AddComponent<Outline>();
-        outline.effectColor = MModUI.ModernColors.InputBorder;
-        outline.effectDistance = new Vector2(1f, -1f);
+        MModUI.StyleControlImage(image, MModUI.GlassTheme.InputBg);
+        MModUI.AddControlChrome(button, MModUI.ModernColors.InputBorder, MModUI.ModernColors.Shadow, new Vector2(0f, -2f));
 
         var text = CreateText("ResetLabel", button.transform, CoopLocalization.Get("ui.settings.reset"), 14, MModUI.ModernColors.TextPrimary, FontStyles.Bold);
         text.alignment = TextAlignmentOptions.Center;
@@ -1131,6 +1480,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
 
         var btn = button.AddComponent<Button>();
         btn.targetGraphic = image;
+        ApplySettingsSelectableFeedback(btn, MModUI.GlassTheme.InputBg);
         btn.onClick.AddListener(() => onClick());
 
         return btn;
@@ -1145,9 +1495,14 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         layout.childAlignment = TextAnchor.MiddleLeft;
         layout.childForceExpandWidth = false;
         layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandHeight = false;
 
         var rowSize = row.AddComponent<LayoutElement>();
         rowSize.minHeight = 42f;
+
+        var rowImage = row.AddComponent<Image>();
+        MModUI.StyleControlImage(rowImage, SettingsRowColor());
 
         var labelText = CreateText("Label", row.transform, label, 15, MModUI.ModernColors.TextPrimary);
         var labelLayout = labelText.GetComponent<RectTransform>().gameObject.AddComponent<LayoutElement>();
@@ -1197,19 +1552,25 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var go = new GameObject("Dropdown");
         go.transform.SetParent(parent, false);
         var image = go.AddComponent<Image>();
-        image.color = new Color(1f, 1f, 1f, 0.05f);
+        MModUI.StyleControlImage(image, MModUI.GlassTheme.InputBg);
+        MModUI.AddControlChrome(go, MModUI.ModernColors.InputBorder, MModUI.ModernColors.Shadow, new Vector2(0f, -2f));
         var rect = go.GetComponent<RectTransform>();
         rect.sizeDelta = new Vector2(240, 36);
 
         var dropdown = go.AddComponent<TMP_Dropdown>();
+        dropdown.targetGraphic = image;
         dropdown.template = CreateDropdownTemplate(go.transform);
-        dropdown.captionText = CreateDropdownLabel(go.transform, CoopLocalization.Get(value == NetworkTransportMode.Direct ? "ui.settings.transport.direct" : "ui.settings.transport.steam"));
+        var captionKey = value == NetworkTransportMode.Direct
+            ? "ui.settings.transport.direct"
+            : "ui.settings.transport.steam";
+        dropdown.captionText = CreateDropdownLabel(go.transform, CoopLocalization.Get(captionKey));
         dropdown.itemText = dropdown.template.GetComponentInChildren<TextMeshProUGUI>();
         dropdown.options.Clear();
         dropdown.options.Add(new TMP_Dropdown.OptionData(CoopLocalization.Get("ui.settings.transport.direct")));
         dropdown.options.Add(new TMP_Dropdown.OptionData(CoopLocalization.Get("ui.settings.transport.steam")));
         dropdown.value = (int)value;
         dropdown.RefreshShownValue();
+        ApplySettingsSelectableFeedback(dropdown, MModUI.GlassTheme.InputBg);
 
         var layout = go.AddComponent<LayoutElement>();
         layout.preferredWidth = 260;
@@ -1237,13 +1598,16 @@ public sealed class AISyncSettingsUI : MonoBehaviour
             var selected = kvp.Key == _workingDifficultySelection;
             if (image != null)
             {
-                image.color = selected ? MModUI.ModernColors.Primary : new Color(1f, 1f, 1f, 0.04f);
+                MModUI.StyleControlImage(image, selected ? MModUI.ModernColors.Primary : MModUI.GlassTheme.InputBg);
             }
+
+            ApplySettingsSelectableFeedback(button, selected ? MModUI.ModernColors.Primary : MModUI.GlassTheme.InputBg);
 
             var label = button.GetComponentInChildren<TextMeshProUGUI>();
             if (label != null)
             {
                 label.text = DifficultyManager.GetLocalizedName(kvp.Key);
+                label.color = selected ? MModUI.ModernColors.PrimaryText : MModUI.ModernColors.TextPrimary;
             }
         }
     }
@@ -1312,7 +1676,8 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         layout.preferredHeight = 46f;
 
         var image = btnObj.AddComponent<Image>();
-        image.color = new Color(1f, 1f, 1f, 0.04f);
+        MModUI.StyleControlImage(image, MModUI.GlassTheme.InputBg);
+        MModUI.AddControlChrome(btnObj, MModUI.ModernColors.InputBorder, MModUI.ModernColors.Shadow, new Vector2(0f, -2f));
 
         var text = CreateText("Label", btnObj.transform, DifficultyManager.GetLocalizedName(level), 14, MModUI.ModernColors.TextPrimary, FontStyles.Bold);
         text.alignment = TextAlignmentOptions.Center;
@@ -1324,6 +1689,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
 
         var btn = btnObj.AddComponent<Button>();
         btn.targetGraphic = image;
+        ApplySettingsSelectableFeedback(btn, MModUI.GlassTheme.InputBg);
         btn.onClick.AddListener(() => OnDifficultySelected(level));
 
         _difficultyButtons[level] = btn;
@@ -1440,6 +1806,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var itemBg = item.AddComponent<Image>();
         itemBg.color = new Color(1f, 1f, 1f, 0.08f);
         itemLayout.targetGraphic = itemBg;
+        ApplySettingsSelectableFeedback(itemLayout, MModUI.GlassTheme.InputBg, false);
 
         var checkmark = new GameObject("Checkmark");
         checkmark.transform.SetParent(item.transform, false);
@@ -1465,6 +1832,12 @@ public sealed class AISyncSettingsUI : MonoBehaviour
 
         var scrollbar = new GameObject("Scrollbar");
         scrollbar.transform.SetParent(templateGO.transform, false);
+        var scrollbarRect = scrollbar.AddComponent<RectTransform>();
+        scrollbarRect.anchorMin = new Vector2(1, 0);
+        scrollbarRect.anchorMax = new Vector2(1, 1);
+        scrollbarRect.pivot = new Vector2(1, 0.5f);
+        scrollbarRect.sizeDelta = new Vector2(8, 0);
+
         var scrollRect = templateGO.AddComponent<ScrollRect>();
         scrollRect.viewport = viewportRect;
         scrollRect.content = contentRect;
@@ -1472,7 +1845,10 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         scrollRect.vertical = true;
         scrollRect.movementType = ScrollRect.MovementType.Clamped;
         scrollRect.scrollSensitivity = 20f;
-        scrollRect.verticalScrollbar = scrollbar.AddComponent<Scrollbar>();
+        scrollRect.verticalScrollbar = MModUI.ConfigureVerticalScrollbar(
+            scrollbar,
+            new Color(1f, 1f, 1f, MModUITheme.IsDarkTheme ? 0.06f : 0.18f),
+            new Color(MModUI.ModernColors.Primary.r, MModUI.ModernColors.Primary.g, MModUI.ModernColors.Primary.b, 0.74f));
         scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
         scrollRect.verticalScrollbarSpacing = -3f;
 
@@ -1707,16 +2083,16 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var go = new GameObject("Search");
         go.transform.SetParent(parent, false);
         var layout = go.AddComponent<LayoutElement>();
-        layout.preferredWidth = 200f;
-        layout.minHeight = 32f;
+        layout.preferredWidth = 260f;
+        layout.minHeight = 38f;
+        layout.preferredHeight = 38f;
 
         var bg = go.AddComponent<Image>();
-        bg.color = new Color(1f, 1f, 1f, 0.08f);
-        var outline = go.AddComponent<Outline>();
-        outline.effectColor = MModUI.ModernColors.InputBorder;
-        outline.effectDistance = new Vector2(1f, -1f);
+        MModUI.StyleControlImage(bg, MModUI.GlassTheme.InputBg);
+        MModUI.AddControlChrome(go, WithAlpha(MModUI.ModernColors.InputBorder, 0.36f), WithAlpha(MModUI.ModernColors.Shadow, 0.10f), new Vector2(0f, -2f));
 
         var input = go.AddComponent<TMP_InputField>();
+        input.targetGraphic = bg;
         input.textViewport = CreateSearchViewport(go.transform);
         input.textComponent = CreateSearchText(input.textViewport.transform);
         input.placeholder = CreateSearchPlaceholder(input.textViewport.transform);
@@ -1724,6 +2100,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         input.characterLimit = 64;
         input.onValueChanged.AddListener(ApplySearchFilter);
         input.text = string.Empty;
+        ApplySettingsSelectableFeedback(input, MModUI.GlassTheme.InputBg);
 
         return input;
     }
@@ -1737,8 +2114,7 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         rect.anchorMax = new Vector2(1, 1);
         rect.offsetMin = new Vector2(8, 6);
         rect.offsetMax = new Vector2(-8, -6);
-        viewport.AddComponent<Mask>().showMaskGraphic = false;
-        viewport.AddComponent<Image>().color = new Color(1f, 1f, 1f, 0.01f);
+        viewport.AddComponent<RectMask2D>();
         return rect;
     }
 
@@ -1750,7 +2126,14 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         text.fontSize = 15;
         text.color = MModUI.ModernColors.TextTertiary;
         text.text = CoopLocalization.Get("ui.settings.search.placeholder");
+        text.alignment = TextAlignmentOptions.MidlineLeft;
         text.enableWordWrapping = false;
+        text.overflowMode = TextOverflowModes.Ellipsis;
+        var rect = text.GetComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
         return text;
     }
 
@@ -1761,7 +2144,14 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var text = go.AddComponent<TextMeshProUGUI>();
         text.fontSize = 16;
         text.color = MModUI.ModernColors.TextPrimary;
+        text.alignment = TextAlignmentOptions.MidlineLeft;
         text.enableWordWrapping = false;
+        text.overflowMode = TextOverflowModes.Ellipsis;
+        var rect = text.GetComponent<RectTransform>();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
         return text;
     }
 
@@ -1886,10 +2276,8 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         var go = new GameObject("Input");
         go.transform.SetParent(parent, false);
         var background = go.AddComponent<Image>();
-        background.color = MModUI.GlassTheme.InputBg;
-        var outline = go.AddComponent<Outline>();
-        outline.effectColor = MModUI.ModernColors.InputBorder;
-        outline.effectDistance = new Vector2(1f, -1f);
+        MModUI.StyleControlImage(background, MModUI.GlassTheme.InputBg);
+        MModUI.AddControlChrome(go, MModUI.ModernColors.InputBorder, MModUI.ModernColors.Shadow, new Vector2(0f, -2f));
         var layout = go.AddComponent<LayoutElement>();
         layout.preferredWidth = 140;
         layout.preferredHeight = 38;
@@ -1907,9 +2295,11 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         textRect.offsetMax = new Vector2(-10, -8);
 
         var input = go.AddComponent<TMP_InputField>();
+        input.targetGraphic = background;
         input.textComponent = text;
         input.text = value;
         input.contentType = TMP_InputField.ContentType.Standard;
+        ApplySettingsSelectableFeedback(input, MModUI.GlassTheme.InputBg);
 
         return input;
     }

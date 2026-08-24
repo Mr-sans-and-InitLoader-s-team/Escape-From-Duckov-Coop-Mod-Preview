@@ -17,6 +17,7 @@
 using Duckov.Scenes;
 using Duckov.UI;
 using Eflatun.SceneReference;
+using System;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -29,10 +30,10 @@ public static class Patch_SceneLoaderProxy_Authority
     {
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true;
-        if (SceneNet.Instance.allowLocalSceneLoad) return true;
 
         if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var proxySceneId = Traverse.Create(__instance).Field<string>("sceneID").Value;
+        if (SceneNet.Instance.IsLocalSceneLoadAllowed(proxySceneId)) return true;
         var useLoc = Traverse.Create(__instance).Field<bool>("useLocation").Value;
         var loc = Traverse.Create(__instance).Field<MultiSceneLocation>("location").Value;
         var curtain = Traverse.Create(__instance).Field<SceneReference>("overrideCurtainScene").Value;
@@ -123,6 +124,160 @@ public static class Patch_SceneLoaderProxy_Authority
 
 }
 
+internal static class SceneLoadVoteGuard
+{
+    internal static bool PrefixLoadScene(
+        ref UniTask __result,
+        string targetId,
+        SceneReference curtain,
+        bool notifyEvac,
+        bool save,
+        bool useLocation,
+        MultiSceneLocation location,
+        string source)
+    {
+        if (!TryStartVote(targetId, curtain, notifyEvac, save, useLocation, location, source))
+            return true;
+
+        __result = UniTask.CompletedTask;
+        return false;
+    }
+
+    internal static bool TryStartVote(
+        string targetId,
+        SceneReference curtain,
+        bool notifyEvac,
+        bool save,
+        bool useLocation,
+        MultiSceneLocation location,
+        string source)
+    {
+        var mod = ModBehaviourF.Instance;
+        var sceneNet = SceneNet.Instance;
+        if (mod == null || sceneNet == null || !mod.networkStarted)
+            return false;
+
+        if (string.IsNullOrEmpty(targetId))
+            return false;
+
+        if (sceneNet.IsLocalSceneLoadAllowed(targetId))
+            return false;
+
+        if (LevelManager.Instance == null || MultiSceneCore.Instance == null)
+            return false;
+
+        var curtainGuid = SafeSceneGuid(curtain);
+        var locationName = useLocation ? location.LocationName : source;
+
+        if (mod.IsServer)
+        {
+            sceneNet.Host_BeginSceneVote_Simple(targetId, curtainGuid, notifyEvac, save, useLocation, locationName);
+        }
+        else
+        {
+            sceneNet.Client_RequestBeginSceneVote(targetId, curtainGuid, notifyEvac, save, useLocation, locationName);
+        }
+
+        Debug.Log($"[SCENE] intercepted scene load -> vote: target='{targetId}', source='{source}', useLocation={useLocation}");
+        return true;
+    }
+
+    private static string SafeSceneGuid(SceneReference sceneReference)
+    {
+        if (sceneReference == null)
+            return null;
+
+        try
+        {
+            return sceneReference.Guid;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}
+
+[HarmonyPatch(typeof(SceneLoader), "LoadScene", new Type[]
+{
+    typeof(string),
+    typeof(SceneReference),
+    typeof(bool),
+    typeof(bool),
+    typeof(bool),
+    typeof(bool),
+    typeof(MultiSceneLocation),
+    typeof(bool),
+    typeof(bool)
+})]
+internal static class Patch_SceneLoader_LoadScene_String_Authority
+{
+    private static bool Prefix(
+        ref UniTask __result,
+        string sceneID,
+        SceneReference overrideCurtainScene,
+        bool notifyEvacuation,
+        bool useLocation,
+        MultiSceneLocation location,
+        bool saveToFile)
+    {
+        return SceneLoadVoteGuard.PrefixLoadScene(
+            ref __result,
+            sceneID,
+            overrideCurtainScene,
+            notifyEvacuation,
+            saveToFile,
+            useLocation,
+            location,
+            "SceneLoader.LoadScene");
+    }
+}
+
+[HarmonyPatch(typeof(SceneLoader), "LoadScene", new Type[]
+{
+    typeof(SceneReference),
+    typeof(SceneReference),
+    typeof(bool),
+    typeof(bool),
+    typeof(bool),
+    typeof(bool),
+    typeof(MultiSceneLocation),
+    typeof(bool),
+    typeof(bool)
+})]
+internal static class Patch_SceneLoader_LoadScene_Reference_Authority
+{
+    private static bool Prefix(
+        ref UniTask __result,
+        SceneReference sceneReference,
+        SceneReference overrideCurtainScene,
+        bool notifyEvacuation,
+        bool useLocation,
+        MultiSceneLocation location,
+        bool saveToFile)
+    {
+        string sceneId = null;
+        try
+        {
+            sceneId = sceneReference != null ? SceneInfoCollection.GetSceneID(sceneReference) : null;
+        }
+        catch
+        {
+            sceneId = null;
+        }
+
+        return SceneLoadVoteGuard.PrefixLoadScene(
+            ref __result,
+            sceneId,
+            overrideCurtainScene,
+            notifyEvacuation,
+            saveToFile,
+            useLocation,
+            location,
+            "SceneLoader.LoadScene(SceneReference)");
+    }
+}
+
 //[HarmonyPatch(typeof(MultiSceneTeleporter), "DoTeleport")]
 //internal static class Patch_Mapen_DoTeleport
 //{
@@ -164,18 +319,20 @@ internal static class Patch_Mapen_DoTeleport
    
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true;
-        if (SceneNet.Instance.allowLocalSceneLoad) return true;
-        if (!mod.IsServer) return false;
+        var sceneNet = SceneNet.Instance;
+        if (sceneNet == null) return true;
+        if (sceneNet.IsLocalSceneLoadAllowed(__instance.Target.SceneID)) return true;
+        if (sceneNet.sceneVoteActive) return false;
     
-        SceneNet.Instance.IsDoteleportMap = true;
+        sceneNet.IsDoteleportMap = true;
        // SceneNet.Instance.Host_BeginSceneVote_Simple(__instance.Target.SceneID, "", false, false, false, "DoTeleport");
         if (mod.IsServer)
         {
-            SceneNet.Instance.Host_BeginSceneVote_Simple(__instance.Target.SceneID, __instance.name, false, false, false, "DoTeleport");
+            sceneNet.Host_BeginSceneVote_Simple(__instance.Target.SceneID, __instance.name, false, false, false, "DoTeleport");
             return false;
         }
 
-        SceneNet.Instance.Client_RequestBeginSceneVote(__instance.Target.SceneID, __instance.name, false, false, false, "DoTeleport");
+        sceneNet.Client_RequestBeginSceneVote(__instance.Target.SceneID, __instance.name, false, false, false, "DoTeleport");
         return false;
     }
 }

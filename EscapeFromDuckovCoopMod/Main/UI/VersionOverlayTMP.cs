@@ -74,7 +74,7 @@ namespace EscapeFromDuckovCoopMod
             string name = BuildInfo.Name;
             string ver = BuildInfo.ModVersion;
 
-            bool festival = CnyUtil.IsChuxiOrSpringFestivalToday();
+            bool festival = MModUITheme.UseLunarNewYearTheme;
 
             if (!force && name == _lastName && ver == _lastVer && festival == _lastFestivalFlag)
                 return;

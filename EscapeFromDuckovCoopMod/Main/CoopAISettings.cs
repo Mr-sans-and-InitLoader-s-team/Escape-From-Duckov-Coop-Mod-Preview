@@ -46,6 +46,7 @@ public sealed class CoopAISettings : MonoBehaviour
 
     public void ApplyGeneral(CoopGeneralSettings next)
     {
+        var previousTheme = GeneralSettings.UiThemeMode;
         GeneralSettings = next.CloneWithBounds();
 
         var net = NetService.Instance;
@@ -56,6 +57,15 @@ public sealed class CoopAISettings : MonoBehaviour
         }
 
         COOPManager.FriendlyFire?.OnGeneralSettingsApplied(GeneralSettings);
+
+        if (previousTheme != GeneralSettings.UiThemeMode && MModUITheme.SetThemeMode(GeneralSettings.UiThemeMode))
+        {
+            MModUI.Instance?.RefreshTheme();
+        }
+        else
+        {
+            MModUITheme.SetThemeMode(GeneralSettings.UiThemeMode);
+        }
     }
 }
 
@@ -67,6 +77,7 @@ public sealed class CoopGeneralSettings
     public float ProjectileSyncMaxDistance = 120f;
     public bool TeleporterSpawnTogether = false;
     public bool FriendlyFirePlayers = false;
+    public UIThemeMode UiThemeMode = UIThemeMode.Black;
 
     public CoopGeneralSettings Clone() => (CoopGeneralSettings)MemberwiseClone();
 
@@ -81,6 +92,7 @@ public sealed class CoopGeneralSettings
             500f);
         clone.TeleporterSpawnTogether = TeleporterSpawnTogether;
         clone.FriendlyFirePlayers = FriendlyFirePlayers;
+        clone.UiThemeMode = MModUITheme.NormalizeMode(clone.UiThemeMode);
         return clone;
     }
 
@@ -102,7 +114,7 @@ public sealed class AISyncTuningSettings
     public float SnapshotRefreshInterval = 15f;
     public float SnapshotRequestTimeout = 3f;
     public float SnapshotRecoveryCooldown = 2.5f;
-    public int SnapshotChunkSize = 48;
+    public int SnapshotChunkSize = 16;
     public int MaxStoredBuffs = 32;
     public int MaxSnapshotAppliesPerFrame = 12;
     public int MaxStateUpdatesPerFrame = 24;

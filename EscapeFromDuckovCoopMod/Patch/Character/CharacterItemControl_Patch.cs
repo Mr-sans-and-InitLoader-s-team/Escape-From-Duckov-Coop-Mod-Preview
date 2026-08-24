@@ -61,16 +61,43 @@ internal static class Patch_OnDead
     private static bool Prefix(CharacterMainControl __instance)
     {
         var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted) return true;
+        if (mod == null || !mod.networkStarted || !__instance) return true;
 
 
         if (mod.IsServer)
         {
-            if (__instance.GetComponentInChildren<AICharacterController>() != null)
+            if (__instance.GetComponentInChildren<AICharacterController>(true) != null)
             {
                 DeadLootSpawnContext.InOnDead = __instance;
             }
         }
         return true;
+    }
+
+    private static Exception Finalizer(CharacterMainControl __instance, Exception __exception)
+    {
+        if (__exception == null)
+            return null;
+
+        var mod = ModBehaviourF.Instance;
+        if (mod == null || !mod.networkStarted || mod.IsServer || !IsRemoteClientAi(__instance))
+            return __exception;
+
+        return null;
+    }
+
+    private static bool IsRemoteClientAi(CharacterMainControl cmc)
+    {
+        if (!cmc)
+            return false;
+
+        try
+        {
+            return cmc.GetComponentInChildren<RemoteAIReplicaTag>(true) != null;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

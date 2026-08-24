@@ -114,26 +114,39 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
 
     public string ResolveLocalPlayerName()
     {
-        if (SteamManager.Initialized)
-        {
-            try
-            {
-                var persona = SteamFriends.GetPersonaName();
-                if (!string.IsNullOrEmpty(persona))
-                {
-                    return persona;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[NetService] Failed to query Steam persona name: {ex}");
-            }
-        }
+        var steamName = ResolveLocalSteamName();
+        if (!string.IsNullOrEmpty(steamName))
+            return steamName;
 
         return IsServer ? "Host" : "Client";
     }
 
     public string ResolvePeerDisplayName(NetPeer peer, string fallback)
+    {
+        var steamName = ResolvePeerSteamName(peer, null);
+        if (!string.IsNullOrEmpty(steamName))
+            return steamName;
+
+        return fallback;
+    }
+
+    public string ResolveLocalSteamName()
+    {
+        if (!SteamManager.Initialized)
+            return string.Empty;
+
+        try
+        {
+            return SanitizeSteamName(SteamFriends.GetPersonaName());
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning($"[NetService] Failed to query Steam persona name: {ex}");
+            return string.Empty;
+        }
+    }
+
+    public string ResolvePeerSteamName(NetPeer peer, string fallback)
     {
         if (peer != null && SteamManager.Initialized && SteamEndPointMapper.Instance != null)
         {
@@ -141,11 +154,9 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
             {
                 try
                 {
-                    var persona = SteamFriends.GetFriendPersonaName(steamId);
+                    var persona = SanitizeSteamName(SteamFriends.GetFriendPersonaName(steamId));
                     if (!string.IsNullOrEmpty(persona))
-                    {
                         return persona;
-                    }
                 }
                 catch (Exception ex)
                 {
@@ -154,7 +165,18 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
             }
         }
 
-        return fallback;
+        return SanitizeSteamName(fallback);
+    }
+
+    private static string SanitizeSteamName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return string.Empty;
+
+        name = name.Trim();
+        return string.Equals(name, "[unknown]", StringComparison.OrdinalIgnoreCase)
+            ? string.Empty
+            : name;
     }
 
     public void OnPeerConnected(NetPeer peer)
@@ -167,6 +189,7 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
             status = CoopLocalization.Get("net.connectedTo", peer.EndPoint.ToString());
             isConnecting = false;
             Send_ClientStatus.Instance.SendClientStatusUpdate();
+            LocalPlayerManager.Instance?.RequestFullLoadoutSync();
         }
 
         if (!playerStatuses.ContainsKey(peer))
@@ -175,6 +198,7 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
             {
                 EndPoint = peer.EndPoint.ToString(),
                 PlayerName = ResolvePeerDisplayName(peer, IsServer ? $"Player_{peer.Id}" : "Host"),
+                SteamName = ResolvePeerSteamName(peer, string.Empty),
                 Latency = peer.Ping,
                 IsInGame = false,
                 LastIsInGame = false,
@@ -210,6 +234,7 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
             }
             clientRemoteCharacters.Clear();
             clientPlayerStatuses.Clear();
+            RPCPlayer.ClearVehicleRiders();
             CoopTool._cliPendingRemoteHp.Clear();
             CustomFace._cliPendingFace.Clear();
             SceneNet.Instance?._cliLastSceneIdByPlayer.Clear();
@@ -222,6 +247,7 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
             var _st = playerStatuses[peer];
             if (_st != null && !string.IsNullOrEmpty(_st.EndPoint))
             {
+                RPCPlayer.ForgetVehicleRider(_st.EndPoint, true);
                 _playerInvincibleUntil.Remove(_st.EndPoint);
                 SceneNet.Instance._cliLastSceneIdByPlayer.Remove(_st.EndPoint);
           
@@ -376,7 +402,8 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
         writer = new NetDataWriter();
         netManager = new NetManager(this)
         {
-            BroadcastReceiveEnabled = true
+            BroadcastReceiveEnabled = true,
+            UpdateTime = 1
         };
 
 
@@ -421,6 +448,7 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
         remoteCharacters.Clear();
         clientPlayerStatuses.Clear();
         clientRemoteCharacters.Clear();
+        RPCPlayer.ClearVehicleRiders();
         _playerInvincibleUntil.Clear();
         CoopSyncDatabase.AI.Clear();
         COOPManager.AI?.Reset();

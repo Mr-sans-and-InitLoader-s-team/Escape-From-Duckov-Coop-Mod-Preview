@@ -12,6 +12,7 @@ public struct PlayerPositionUpdateRpc : IRpcMessage
     public Vector3 Forward;
     public Vector3 Velocity;
     public double Timestamp;
+    public int VehicleId;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -20,6 +21,7 @@ public struct PlayerPositionUpdateRpc : IRpcMessage
         writer.PutDir(Forward);
         writer.PutVector3(Velocity);
         writer.Put(Timestamp);
+        writer.Put(VehicleId);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -29,5 +31,6 @@ public struct PlayerPositionUpdateRpc : IRpcMessage
         Forward = reader.GetDir();
         Velocity = reader.GetVector3();
         Timestamp = reader.GetDouble();
+        VehicleId = reader.AvailableBytes >= 4 ? reader.GetInt() : 0;
     }
 }

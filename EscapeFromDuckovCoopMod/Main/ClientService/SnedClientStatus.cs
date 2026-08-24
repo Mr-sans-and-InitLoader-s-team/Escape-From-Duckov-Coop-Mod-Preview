@@ -38,8 +38,14 @@ public class Send_ClientStatus : MonoBehaviour
         if (IsServer || connectedPeer == null) return;
 
         localPlayerStatus.CustomFaceJson = CustomFace.LoadLocalCustomFaceJson();
+        var localSteamName = Service.ResolveLocalSteamName();
+        localPlayerStatus.SteamName = localSteamName;
+        if (!string.IsNullOrEmpty(localSteamName))
+            localPlayerStatus.PlayerName = localSteamName;
         var equipmentList = LocalPlayerManager.Instance.GetLocalEquipment();
         var weaponList = LocalPlayerManager.Instance.GetLocalWeapons();
+        localPlayerStatus.EquipmentList = equipmentList;
+        localPlayerStatus.WeaponList = weaponList;
 
         var rpc = new ClientStatusUpdateRpc
         {
@@ -48,6 +54,7 @@ public class Send_ClientStatus : MonoBehaviour
             {
                 PlayerId = localPlayerStatus.EndPoint,
                 PlayerName = localPlayerStatus.PlayerName,
+                SteamName = localPlayerStatus.SteamName,
                 Latency = connectedPeer.Ping,
                 IsInGame = localPlayerStatus.IsInGame,
                 Position = localPlayerStatus.Position,

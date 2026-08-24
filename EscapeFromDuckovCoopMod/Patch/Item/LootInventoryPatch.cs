@@ -14,9 +14,11 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU Affero General Public License for more details.
 
+using Duckov.Scenes;
 using HarmonyLib;
 using ItemStatsSystem;
 using ItemStatsSystem.Items;
+using System;
 using UnityEngine;
 using static EscapeFromDuckovCoopMod.LootNet;
 
@@ -28,6 +30,7 @@ internal static class LootInventoryPatch
     [HarmonyPrefix]
     private static void LootAddAtPrefix(ref int __state)
     {
+      //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
         if (serverLoading)
         {
@@ -41,6 +44,7 @@ internal static class LootInventoryPatch
     [HarmonyPostfix]
     private static void LootAddAtPostfix(Inventory __instance, int atPosition, Item item, bool __result, int __state)
     {
+      //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
         if (serverLoading)
         {
@@ -55,6 +59,7 @@ internal static class LootInventoryPatch
     [HarmonyPostfix]
     private static void LootRemoveAtPostfix(Inventory __instance, int position, bool __result)
     {
+      //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
         if (serverLoading)
         {
@@ -68,6 +73,7 @@ internal static class LootInventoryPatch
     [HarmonyPostfix]
     private static void LootAddItemPostfix(Inventory __instance, Item item, bool __result)
     {
+       // if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
         if (serverLoading)
         {
@@ -81,6 +87,7 @@ internal static class LootInventoryPatch
 
     internal static void NotifySlotChanged(Inventory inv, int slot, Item item, bool isAdd)
     {
+      //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         if (inv == null) return;
         var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
         if (serverLoading)
@@ -121,11 +128,49 @@ internal static class LootInventoryPatch
     }
 }
 
+internal static class GunAmmoUnloadGuard
+{
+    [ThreadStatic] private static int _clientUnloadDepth;
+    private static float _nextLogTime;
+
+    public static bool InClientGunAmmoUnload => _clientUnloadDepth > 0;
+
+    public static void BeginClientUnload()
+    {
+        _clientUnloadDepth++;
+    }
+
+    public static void EndClientUnload()
+    {
+        if (_clientUnloadDepth > 0)
+            _clientUnloadDepth--;
+    }
+
+    public static void LogSuppressedDrop(Item item)
+    {
+        var now = Time.unscaledTime;
+        if (now < _nextLogTime)
+            return;
+
+        _nextLogTime = now + 3f;
+        CoopPerfLog.AppendEvent("ammo-unload", $"suppressedClientDrop itemType={(item ? item.TypeID : 0)}");
+    }
+}
+
 [HarmonyPatch(typeof(global::ItemSetting_Gun), nameof(global::ItemSetting_Gun.TakeOutAllBullets))]
 internal static class GunUnloadPatch
 {
+    private static void Prefix(ref bool __state)
+    {
+        var service = NetService.Instance;
+        __state = service != null && service.networkStarted && !service.IsServer;
+        if (__state)
+            GunAmmoUnloadGuard.BeginClientUnload();
+    }
+
     private static void Postfix(global::ItemSetting_Gun __instance)
     {
+       // if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var gun = __instance == null ? null : __instance.Item;
         if (gun == null) return;
         var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
@@ -157,6 +202,14 @@ internal static class GunUnloadPatch
             lootNet.Client_RequestLootSlotSnapshot(lootInv, master ?? gun);
         }
     }
+
+    private static Exception Finalizer(Exception __exception, bool __state)
+    {
+        if (__state)
+            GunAmmoUnloadGuard.EndClientUnload();
+
+        return __exception;
+    }
 }
 
 [HarmonyPatch(typeof(Inventory), nameof(Inventory.AddAt))]
@@ -164,6 +217,7 @@ internal static class ClientLootAddAtPatch
 {
     private static bool Prefix(Inventory __instance, Item item, int atPosition)
     {
+     //   if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
         if (serverLoading)
         {
@@ -199,6 +253,7 @@ internal static class ClientLootAddItemPatch
 {
     private static bool Prefix(Inventory __instance, Item item)
     {
+       // if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var service = NetService.Instance;
         var lootNet = COOPManager.LootNet;
         if (service == null || !service.networkStarted || lootNet == null)
@@ -234,6 +289,7 @@ internal static class ClientLootRemoveAtPatch
 {
     private static bool Prefix(Inventory __instance, int position)
     {
+      //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var service = NetService.Instance;
         var lootNet = COOPManager.LootNet;
         if (service == null || !service.networkStarted || lootNet == null)
@@ -269,6 +325,7 @@ internal static class LootItemStackPatch
 {
     private static void Postfix(Item __instance)
     {
+      //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var service = NetService.Instance;
         if (service == null || !service.networkStarted) return;
 
@@ -316,6 +373,7 @@ internal static class ItemDropPatch
 {
     private static bool Prefix(Item item, Vector3 pos, bool createRigidbody, Vector3 dropDirection, float randomAngle, ref DuckovItemAgent __result)
     {
+      //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var service = NetService.Instance;
         if (service == null || !service.networkStarted)
             return true;
@@ -337,6 +395,12 @@ internal static class ItemDropPatch
             return true;
         }
 
+        if (GunAmmoUnloadGuard.InClientGunAmmoUnload)
+        {
+            GunAmmoUnloadGuard.LogSuppressedDrop(item);
+            return true;
+        }
+
         var owningInventory = item.InInventory ?? item.Slots?.Master?.InInventory;
         var hasOwnership = owningInventory != null || item.Slots != null;
         if (!hasOwnership)
@@ -349,6 +413,7 @@ internal static class ItemDropPatch
 
     private static void Postfix(Item item, Vector3 pos, bool createRigidbody, Vector3 dropDirection, float randomAngle, DuckovItemAgent __result)
     {
+      //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var service = NetService.Instance;
         if (service == null || !service.IsServer || !service.networkStarted || ItemNet.InNetworkDrop)
             return;
@@ -365,7 +430,7 @@ internal static class CharacterPickupPatch
     private static void Postfix(CharacterMainControl __instance, Item item, bool __result)
     {
         if (!__result || item == null) return;
-
+      //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var service = NetService.Instance;
         if (service == null || !service.networkStarted) return;
 
@@ -400,7 +465,7 @@ internal static class LootSlotWeaponSnapshotHelper
             var service = NetService.Instance;
             if (lpm == null || service == null || !service.networkStarted || master == null)
                 return;
-
+         //   if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
             var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
             if (serverLoading)
             {
@@ -434,6 +499,7 @@ internal static class ClientLootSlotPlugPatch
 {
     private static void Postfix(Slot __instance, Item otherItem, bool __result)
     {
+      //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var service = NetService.Instance;
         var lootNet = COOPManager.LootNet;
         if (service == null || lootNet == null || otherItem == null || !service.networkStarted)
@@ -468,6 +534,7 @@ internal static class ClientLootSlotUnplugPatch
 {
     private static void Postfix(Slot __instance, Item __result)
     {
+      //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var service = NetService.Instance;
         var lootNet = COOPManager.LootNet;
         if (service == null || lootNet == null || !service.networkStarted)
@@ -502,6 +569,7 @@ internal static class PlayerWeaponSlotPlugPatch
 {
     private static void Postfix(Slot __instance, Item otherItem, bool __result)
     {
+      //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
         if (serverLoading)
         {
@@ -548,6 +616,7 @@ internal static class PlayerWeaponSlotUnplugPatch
 {
     private static void Postfix(Slot __instance, Item __result)
     {
+       // if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
         if (serverLoading)
         {

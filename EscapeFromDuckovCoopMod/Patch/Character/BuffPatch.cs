@@ -109,6 +109,7 @@ internal static class Patch_Character_AddBuff_Broadcast
         var service = NetService.Instance;
         if (mod == null || service == null || !service.networkStarted) return;
         if (buffPrefab == null || __instance == null) return;
+        if (Buff_.ApplyingNetworkBuff) return;
 
         var buffId = buffPrefab.ID;
         if (buffId == 0) return;
@@ -133,9 +134,15 @@ internal static class Patch_Character_AddBuff_Broadcast
             return;
         }
 
-        // AI Buff
+        // 远端玩家或 AI Buff
         if (mod.IsServer)
         {
+            if (__instance.GetComponentInChildren<RemoteReplicaTag>(true) != null)
+            {
+                COOPManager.Buff?.Server_BroadcastRemotePlayerBuff(__instance, overrideWeaponID, buffId);
+                return;
+            }
+
             COOPManager.AI?.Server_HandleBuffApplied(__instance, overrideWeaponID, buffId);
             return;
         }
@@ -149,6 +156,20 @@ internal static class Patch_Character_AddBuff_Broadcast
             var rpc = new AIBuffReportRpc
             {
                 Id = aiTag.Id,
+                WeaponTypeId = overrideWeaponID,
+                BuffId = buffId
+            };
+            CoopTool.SendRpc(in rpc);
+            return;
+        }
+
+        if (__instance.GetComponentInChildren<RemoteReplicaTag>(true) != null &&
+            service.TryGetPlayerId(__instance, out var targetPlayerId) &&
+            !string.IsNullOrEmpty(targetPlayerId))
+        {
+            var rpc = new PlayerBuffReportRpc
+            {
+                TargetPlayerId = targetPlayerId,
                 WeaponTypeId = overrideWeaponID,
                 BuffId = buffId
             };

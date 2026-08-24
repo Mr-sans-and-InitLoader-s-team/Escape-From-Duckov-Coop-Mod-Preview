@@ -32,14 +32,18 @@ public static class Patch_CharacterSpawnerRoot_StartSpawn
     {
         var svc = NetService.Instance;
 
-        if(MultiSceneCore.Instance.SceneInfo.ID == "Base" && svc.networkStarted)
+        if (svc == null || !svc.networkStarted)
             return true;
 
-        if(!svc.networkStarted)
-           return true;
-        
-        if (svc != null && !svc.IsServer)
-            return false;   
+        if (MultiSceneCore.Instance?.SceneInfo?.ID == "Base")
+            return true;
+
+        if (!svc.IsServer)
+        {
+            AISpawnerTriggerNet.Client_RequestStart(__instance);
+            return false;
+        }
+
         return true;
     }
 }
@@ -47,17 +51,21 @@ public static class Patch_CharacterSpawnerRoot_StartSpawn
 [HarmonyPatch(typeof(CharacterSpawnerGroup), nameof(CharacterSpawnerGroup.StartSpawn))]
 public static class Patch_CharacterSpawnerGroup_StartSpawn
 {
-    public static bool Prefix()
+    public static bool Prefix(CharacterSpawnerGroup __instance)
     {
         var svc = NetService.Instance;
-        if (MultiSceneCore.Instance.SceneInfo.ID == "Base" && svc.networkStarted)
+        if (svc == null || !svc.networkStarted)
             return true;
 
-        if (!svc.networkStarted)
+        if (MultiSceneCore.Instance?.SceneInfo?.ID == "Base")
             return true;
 
-        if (svc != null && !svc.IsServer)
+        if (!svc.IsServer)
+        {
+            AISpawnerTriggerNet.Client_RequestStart(__instance);
             return false;
+        }
+
         return true;
     }
 }
@@ -65,17 +73,43 @@ public static class Patch_CharacterSpawnerGroup_StartSpawn
 [HarmonyPatch(typeof(CharacterSpawnerGroupSelector), nameof(CharacterSpawnerGroupSelector.StartSpawn))]
 public static class Patch_CharacterSpawnerGroupSelector_StartSpawn
 {
-    public static bool Prefix()
+    public static bool Prefix(CharacterSpawnerGroupSelector __instance)
     {
         var svc = NetService.Instance;
-        if (MultiSceneCore.Instance.SceneInfo.ID == "Base" && svc.networkStarted)
+        if (svc == null || !svc.networkStarted)
             return true;
 
-        if (!svc.networkStarted)
+        if (MultiSceneCore.Instance?.SceneInfo?.ID == "Base")
             return true;
 
-        if (svc != null && !svc.IsServer)
+        if (!svc.IsServer)
+        {
+            AISpawnerTriggerNet.Client_RequestStart(__instance);
             return false;
+        }
+
+        return true;
+    }
+}
+
+[HarmonyPatch(typeof(WaveCharacterSpawner), nameof(WaveCharacterSpawner.StartSpawn))]
+public static class Patch_WaveCharacterSpawner_StartSpawn
+{
+    public static bool Prefix(WaveCharacterSpawner __instance)
+    {
+        var svc = NetService.Instance;
+        if (svc == null || !svc.networkStarted)
+            return true;
+
+        if (MultiSceneCore.Instance?.SceneInfo?.ID == "Base")
+            return true;
+
+        if (!svc.IsServer)
+        {
+            AISpawnerTriggerNet.Client_RequestStart(__instance);
+            return false;
+        }
+
         return true;
     }
 }

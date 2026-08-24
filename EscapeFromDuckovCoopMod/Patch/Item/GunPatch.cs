@@ -105,6 +105,9 @@ public static class Patch_Melee_Attack_Request
 [HarmonyPatch(typeof(ItemAgent_Gun), "ShootOneBullet")]
 public static class Patch_ShootOneBullet_Client
 {
+    private static readonly AccessTools.FieldRef<ItemAgent_Gun, Projectile> FR_ProjInst =
+        AccessTools.FieldRefAccess<ItemAgent_Gun, Projectile>("projInst");
+
     private struct FireState
     {
         public bool ShouldNotify;
@@ -130,14 +133,7 @@ public static class Patch_ShootOneBullet_Client
         if (!__state.ShouldNotify)
             return;
 
-        Projectile proj = null;
-        try
-        {
-            proj = Traverse.Create(__instance).Field<Projectile>("projInst").Value;
-        }
-        catch
-        {
-        }
+        var proj = __instance ? FR_ProjInst(__instance) : null;
 
         var muzzle = proj ? proj.transform.position : __state.MuzzlePoint;
         var dir = proj ? proj.transform.forward : (__instance.muzzle ? __instance.muzzle.forward : __instance.transform.forward);
@@ -152,6 +148,8 @@ public static class Patch_ShootOneBullet_Client
 [HarmonyPatch(typeof(Projectile), nameof(Projectile.Init), typeof(ProjectileContext))]
 internal static class Patch_ProjectileInit_Broadcast
 {
+    private static readonly Dictionary<int, int> AiIdByCharacterInstance = new();
+
     private static void Postfix(Projectile __instance, ref ProjectileContext _context)
     {
         var mod = ModBehaviourF.Instance;
@@ -168,9 +166,7 @@ internal static class Patch_ProjectileInit_Broadcast
         }
         else
         {
-            var ai = fromC.GetComponentInChildren<AICharacterController>();
-            if (ai && CoopSyncDatabase.AI.TryGet(ai, out var entry) && entry != null)
-                aiId = entry.Id;
+            aiId = ResolveAiId(fromC);
         }
 
         var weaponType = 0;
@@ -200,5 +196,29 @@ internal static class Patch_ProjectileInit_Broadcast
 
         COOPManager.WeaponHandle.Server_BroadcastProjectileSpawn(gun, _context, __instance.transform.position,
             _context.direction, aiId, shooterId);
+    }
+
+    private static int ResolveAiId(CharacterMainControl character)
+    {
+        if (!character) return 0;
+
+        var key = character.GetInstanceID();
+        if (AiIdByCharacterInstance.TryGetValue(key, out var cachedId) &&
+            cachedId != 0 &&
+            CoopSyncDatabase.AI.TryGet(cachedId, out var cachedEntry) &&
+            cachedEntry != null &&
+            cachedEntry.Status != AIStatus.Despawned)
+        {
+            return cachedId;
+        }
+
+        var ai = character.GetComponentInChildren<AICharacterController>();
+        if (ai && CoopSyncDatabase.AI.TryGet(ai, out var entry) && entry != null)
+        {
+            AiIdByCharacterInstance[key] = entry.Id;
+            return entry.Id;
+        }
+
+        return 0;
     }
 }

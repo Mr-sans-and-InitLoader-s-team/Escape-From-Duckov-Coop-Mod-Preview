@@ -359,6 +359,12 @@ public static class DifficultyManager
 
     public static DifficultySettings CurrentSettings => Get(Selected);
 
+    internal static bool TryGetBaseEnemySpawnFactor(out float factor)
+    {
+        factor = _baseEnemySpawnFactor;
+        return !float.IsNaN(factor) && CurrentSettings.EnemySpawnBonusMultiplier > 0f;
+    }
+
     public static DifficultyCustomSettings GetCustomSettings() => _customSettings.Clone();
 
     public static void SetCustomSettings(DifficultyCustomSettings next)

@@ -45,6 +45,11 @@ public class AutoRequestHealthBar : MonoBehaviour
         var cmc = GetComponent<CharacterMainControl>();
         var h = GetComponentInChildren<Health>(true);
         if (!h) yield break;
+        if (cmc && cmc.isVehicle)
+        {
+            HealthM.SuppressHealthBar(h);
+            yield break;
+        }
 
         // 绑定 Health⇄Character（远端克隆常见问题）
         try

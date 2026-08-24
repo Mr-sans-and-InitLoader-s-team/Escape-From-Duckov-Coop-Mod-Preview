@@ -57,8 +57,17 @@ public sealed class AISyncRegistry
     private readonly Dictionary<int, AISyncEntry> _entries = new();
     private readonly Dictionary<AICharacterController, AISyncEntry> _byController = new();
     private readonly Dictionary<int, AISyncEntry> _byPositionKey = new();
+    private readonly List<AISyncEntry> _entryList = new();
 
     public IEnumerable<AISyncEntry> Entries => _entries.Values;
+    public int Count => _entryList.Count;
+    public int Version { get; private set; }
+
+    public void CopyEntriesTo(List<AISyncEntry> target)
+    {
+        if (target == null) return;
+        target.AddRange(_entryList);
+    }
 
     public AISyncEntry RegisterController(AICharacterController controller)
     {
@@ -125,6 +134,8 @@ public sealed class AISyncRegistry
         {
             entry = new AISyncEntry { Id = id };
             _entries[id] = entry;
+            _entryList.Add(entry);
+            Version++;
         }
 
         return entry;
@@ -169,11 +180,14 @@ public sealed class AISyncRegistry
 
         if (!_entries.TryGetValue(id, out var entry) || entry == null)
         {
-            _entries.Remove(id);
+            if (_entries.Remove(id))
+                Version++;
             return;
         }
 
         _entries.Remove(id);
+        _entryList.Remove(entry);
+        Version++;
 
         if (entry.Controller)
             _byController.Remove(entry.Controller);
@@ -191,6 +205,8 @@ public sealed class AISyncRegistry
         _entries.Clear();
         _byController.Clear();
         _byPositionKey.Clear();
+        _entryList.Clear();
+        Version++;
     }
 
     public static int ComputeStableId(AICharacterController controller)

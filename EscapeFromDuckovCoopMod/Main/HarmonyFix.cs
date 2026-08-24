@@ -71,7 +71,7 @@ internal static class Patch_ServerForwardRemotePlayerDamage
 
             if(__0.fromCharacter != null)
             {
-                if (__0.fromCharacter.GetComponentsInChildren<AutoRequestHealthBar>() != null)
+                if (__0.fromCharacter.GetComponentInChildren<AutoRequestHealthBar>() != null)
                 {
                     LocalHitKillFx.ClientPlayForPlayer(cmc, __0, predictedDead);
                     LocalHitKillFx.RememberLastBaseDamage(__0.damageValue);
@@ -102,7 +102,7 @@ internal static class Patch_ServerForwardRemotePlayerDamage
 
         if (__0.fromCharacter != null)
         {
-            if (__0.fromCharacter.GetComponentsInChildren<AutoRequestHealthBar>() != null)
+            if (__0.fromCharacter.GetComponentInChildren<AutoRequestHealthBar>() != null)
             {
                 LocalHitKillFx.ClientPlayForPlayer(cmc, __0, predictedDead);
                 LocalHitKillFx.RememberLastBaseDamage(__0.damageValue);
@@ -125,6 +125,7 @@ internal static class Patch_SABPD_FixedUpdate_AllPlayersUnion
 {
     private static NetService Service => NetService.Instance;
     private static Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
+    private static readonly List<Vector3> Sources = new(8);
 
     private static bool Prefix(SetActiveByPlayerDistance __instance)
     {
@@ -145,7 +146,8 @@ internal static class Patch_SABPD_FixedUpdate_AllPlayersUnion
         var d2 = dist * dist;
 
         // === 收集所有在线玩家的位置（本地 + 远端） ===
-        var sources = new List<Vector3>(8);
+        var sources = Sources;
+        sources.Clear();
         var main = CharacterMainControl.Main;
         if (main) sources.Add(main.transform.position);
 

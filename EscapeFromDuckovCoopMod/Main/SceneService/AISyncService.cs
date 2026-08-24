@@ -24,6 +24,7 @@ using LiteNetLib;
 using Sirenix.Utilities;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 using UnityEngine.InputSystem.XR;
 using UnityEngine.SceneManagement;
@@ -42,6 +43,15 @@ public sealed class AISyncService
     private const float SlowAiMinPositionDeltaFloor = 0.01f;
     private const float VehicleStateIntervalFloor = 0.2f;
     private const float VehicleMinPositionDeltaFloor = 0.4f;
+    private const float VehicleReplicaKeepAliveDistance = 140f;
+    private const float VehicleSnapshotRefreshInterval = 6f;
+    private const float VehicleStateSuppressAfterTransformSeconds = 1f;
+    private const float MinSnapshotRefreshIntervalRuntime = 30f;
+    private const float MinServerSnapshotBroadcastIntervalRuntime = 30f;
+    private const float PerfLogInterval = 5f;
+    private const int MaxReplicaSpawnsPerFrame = 1;
+    private const int ClientEntryCheckBudgetCap = 64;
+    private const int MaxSnapshotChunkEntriesRuntime = 16;
 
     private AISyncTuningSettings Settings => CoopAISettings.Active;
 
@@ -54,10 +64,10 @@ public sealed class AISyncService
     private float MinPositionDelta => Settings.MinPositionDelta;
     private float MinRotationDelta => Settings.MinRotationDelta;
     private float VelocityLerp => Settings.VelocityLerp;
-    private float SnapshotRefreshInterval => Settings.SnapshotRefreshInterval;
+    private float SnapshotRefreshInterval => Mathf.Max(Settings.SnapshotRefreshInterval, MinSnapshotRefreshIntervalRuntime);
     private float SnapshotRequestTimeout => Settings.SnapshotRequestTimeout;
     private float SnapshotRecoveryCooldown => Settings.SnapshotRecoveryCooldown;
-    private int SnapshotChunkSize => Settings.SnapshotChunkSize;
+    private int SnapshotChunkSize => Mathf.Min(Settings.SnapshotChunkSize, MaxSnapshotChunkEntriesRuntime);
     private int MaxStoredBuffs => Settings.MaxStoredBuffs;
     private int MaxSnapshotAppliesPerFrame => Settings.MaxSnapshotAppliesPerFrame;
     private int MaxStateUpdatesPerFrame => Settings.MaxStateUpdatesPerFrame;
@@ -67,7 +77,7 @@ public sealed class AISyncService
     private int SnapshotDropResyncThreshold => Settings.SnapshotDropResyncThreshold;
     private int StateDropResyncThreshold => Settings.StateDropResyncThreshold;
     private float ServerControllerRescanInterval => Settings.ServerControllerRescanInterval;
-    private float ServerSnapshotBroadcastInterval => Settings.ServerSnapshotBroadcastInterval;
+    private float ServerSnapshotBroadcastInterval => Mathf.Max(Settings.ServerSnapshotBroadcastInterval, MinServerSnapshotBroadcastIntervalRuntime);
     private float ServerSnapshotRetryInterval => Settings.ServerSnapshotRetryInterval;
 
     public bool IsHostHurt { get; set; }
@@ -77,13 +87,19 @@ public sealed class AISyncService
     private readonly Dictionary<int, NetPeer> _serverLastHitPeer = new();
     private readonly Dictionary<int, Queue<(int weaponTypeId, int buffId)>> _serverPendingBuffs = new();
     private readonly Dictionary<int, RemoteAIReplica> _clientReplicas = new();
+    private readonly HashSet<int> _clientQuestKillCreditRaised = new();
     private readonly Dictionary<int, float> _clientRequested = new();
+    private readonly Queue<int> _clientReplicaSpawnQueue = new();
+    private readonly HashSet<int> _clientReplicaSpawnQueued = new();
+    private readonly HashSet<int> _clientReplicaSpawning = new();
     private readonly Dictionary<int, List<(int weaponTypeId, int buffId)>> _clientPendingBuffs = new();
     private readonly Dictionary<int, float> _lastHealthBroadcastTime = new();
     private readonly Dictionary<int, PendingHealthBroadcast> _pendingHealthBroadcasts = new();
     private readonly Dictionary<int, int> _lastSnapshotSignatures = new();
     private readonly Dictionary<int, int> _lastStateSignatures = new();
     private readonly Dictionary<int, int> _lastHealthSignatures = new();
+    private readonly Dictionary<int, float> _clientNextMissingModelWarning = new();
+    private readonly Dictionary<int, float> _serverNextWatcherRefresh = new();
     private readonly Dictionary<string, GameObject> _modelCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, CharacterRandomPreset> _presetCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, GameObject> _hideIfFoundEnemyCache = new(StringComparer.OrdinalIgnoreCase);
@@ -98,10 +114,24 @@ public sealed class AISyncService
     private readonly Dictionary<int, float> _clientReplicaRecoveryTimes = new();
     public readonly Dictionary<int, DamageInfo> _clientLastDamage = new();
     private readonly List<NetPeer> _serverWatcherPruneBuffer = new();
+    private readonly HashSet<NetPeer> _activationRecipients = new();
+    private readonly HashSet<NetPeer> _serverNewWatcherBuffer = new();
+    private readonly Dictionary<int, Animator> _serverAnimatorCache = new();
+    private readonly Dictionary<int, string> _activeWeaponSlotById = new();
+    private readonly Dictionary<int, int> _activeWeaponTypeById = new();
     private float _clientFrameBudgetScale = 1f;
     private bool _processingServerBuffQueue;
     private static readonly AccessTools.FieldRef<CharacterRandomPreset, CharacterModel>
         FR_CharacterModel = AccessTools.FieldRefAccess<CharacterRandomPreset, CharacterModel>("characterModel");
+    private static readonly int AnimMoveSpeedHash = Animator.StringToHash("MoveSpeed");
+    private static readonly int AnimMoveDirXHash = Animator.StringToHash("MoveDirX");
+    private static readonly int AnimMoveDirYHash = Animator.StringToHash("MoveDirY");
+    private static readonly int AnimDashingHash = Animator.StringToHash("Dashing");
+    private static readonly int AnimAttackHash = Animator.StringToHash("Attack");
+    private static readonly int AnimHandStateHash = Animator.StringToHash("HandState");
+    private static readonly int AnimGunReadyHash = Animator.StringToHash("GunReady");
+    private static readonly int AnimVehicleTypeHash = Animator.StringToHash("VehicleType");
+    private static readonly FieldInfo HealthOnDeadEventField = AccessTools.Field(typeof(Health), "OnDead");
 
     private readonly struct PendingHealthBroadcast
     {
@@ -130,6 +160,7 @@ public sealed class AISyncService
     private string _lastSnapshotSceneId;
     private bool _snapshotRequested;
     private float _nextSnapshotRefreshTime;
+    private float _nextVehicleSnapshotRefreshTime;
     private float _lastSnapshotReceiveTime;
     private float _lastSnapshotRequestTime;
     private float _lastSnapshotRecoveryTime;
@@ -141,6 +172,16 @@ public sealed class AISyncService
     private bool _serverPendingSnapshotReset;
     private bool _syncBlocked;
     private int _clientEntryCursor;
+    private int _clientEntryBufferVersion = -1;
+    private int _clientAnchorFrame = -1;
+    private bool _clientAnchorValid;
+    private Vector3 _clientAnchor;
+    private int _localAuthoritativeVehicleFrame = -1;
+    private int _localAuthoritativeVehicleId;
+    private float _nextPerfLogTime;
+    private int _perfStatePackets;
+    private int _perfSnapshotPackets;
+    private int _perfHealthPackets;
 
     private NetService Service => NetService.Instance;
 
@@ -212,6 +253,7 @@ public sealed class AISyncService
             _lastSnapshotSignatures.Clear();
             _lastStateSignatures.Clear();
             _lastHealthSignatures.Clear();
+            _serverNextWatcherRefresh.Clear();
             _pendingHealthFlush.Clear();
         }
         else
@@ -219,10 +261,15 @@ public sealed class AISyncService
             foreach (var replica in _clientReplicas.Values)
                 DestroyReplica(replica);
             _clientReplicas.Clear();
+            _clientQuestKillCreditRaised.Clear();
             _clientRequested.Clear();
+            _clientReplicaSpawnQueue.Clear();
+            _clientReplicaSpawnQueued.Clear();
+            _clientReplicaSpawning.Clear();
             _lastSnapshotSceneId = null;
             _snapshotRequested = false;
             _nextSnapshotRefreshTime = 0f;
+            _nextVehicleSnapshotRefreshTime = 0f;
             _lastSnapshotReceiveTime = 0f;
             _lastSnapshotRequestTime = 0f;
             _lastSnapshotRecoveryTime = 0f;
@@ -235,10 +282,16 @@ public sealed class AISyncService
             _clientEntryBuffer.Clear();
             _clientReplicaRecoveryTimes.Clear();
             _clientLastDamage.Clear();
+            _clientEntryBufferVersion = -1;
+            _clientAnchorFrame = -1;
+            _localAuthoritativeVehicleFrame = -1;
         }
 
         _modelCache.Clear();
         _presetCache.Clear();
+        _serverAnimatorCache.Clear();
+        _activeWeaponSlotById.Clear();
+        _activeWeaponTypeById.Clear();
         _clientPendingBuffs.Clear();
         foreach (var cached in _hideIfFoundEnemyCache.Values)
         {
@@ -250,6 +303,10 @@ public sealed class AISyncService
         _nextServerRescanTime = 0f;
         _nextServerSnapshotBroadcastTime = 0f;
         _serverPendingSnapshotReset = IsServer;
+        _nextPerfLogTime = 0f;
+        _perfStatePackets = 0;
+        _perfSnapshotPackets = 0;
+        _perfHealthPackets = 0;
     }
 
     internal void OnSettingsChanged()
@@ -304,11 +361,12 @@ public sealed class AISyncService
         QueueHealthBroadcast(entry, null, false);
     }
 
-    public void Server_HandleDeath(AISyncEntry entry, float max, float current, float bodyArmor, float headArmor)
+    public void Server_HandleDeath(AISyncEntry entry, float max, float current, float bodyArmor, float headArmor, DamageInfo? damage = null)
     {
         if (!IsServer || entry == null) return;
         if (CheckAndHandleSyncBlock()) return;
 
+        var damagePayload = damage.HasValue ? DamageForwardPayload.FromDamageInfo(damage) : (DamageForwardPayload?)null;
         entry.Status = AIStatus.Dead;
         if (max > 0f) entry.MaxHealth = max;
         entry.CurrentHealth = Mathf.Clamp(current, 0f, entry.MaxHealth <= 0f ? float.MaxValue : entry.MaxHealth);
@@ -316,7 +374,7 @@ public sealed class AISyncService
         entry.HeadArmor = headArmor;
         RefreshEntryPose(entry);
         BroadcastState(entry);
-        QueueHealthBroadcast(entry, null, true);
+        QueueHealthBroadcast(entry, damagePayload, true);
         BroadcastDespawn(entry);
     }
 
@@ -374,7 +432,9 @@ public sealed class AISyncService
         }
 
         var clampedCurrent = entry.CurrentHealth;
-        var appliedDamage = ApplyDamageToController(entry, damage, ResolveAttacker(context));
+        var attacker = ResolveAttacker(context);
+        var wasDead = entry.Status == AIStatus.Dead;
+        var appliedDamage = ApplyDamageToController(entry, damage, attacker);
         if (appliedDamage)
         {
             controller = entry.Controller;
@@ -413,10 +473,9 @@ public sealed class AISyncService
         }
 
         var isDead = message.IsDead || entry.CurrentHealth <= 0.0001f;
-        var wasDead = entry.Status == AIStatus.Dead;
         if (isDead)
         {
-            var forced = appliedDamage || EnsureServerControllerDeath(entry, damage);
+            var forced = appliedDamage || EnsureServerControllerDeath(entry, damage, attacker);
             if (forced)
                 entry.ServerDeathHandled = true;
 
@@ -429,7 +488,7 @@ public sealed class AISyncService
             if (!entry.ServerDeathHandled)
             {
                 entry.ServerDeathHandled = true;
-                TryForceServerOnDead(entry, damage);
+                TryForceServerOnDead(entry, damage, attacker);
             }
             if (!wasDead)
                 NotifyKillerOfServerDeath(entry);
@@ -443,7 +502,7 @@ public sealed class AISyncService
         QueueHealthBroadcast(entry, damage, false);
     }
 
-    private void TryForceServerOnDead(AISyncEntry entry, DamageForwardPayload? damage)
+    private void TryForceServerOnDead(AISyncEntry entry, DamageForwardPayload? damage, CharacterMainControl attacker)
     {
         if (entry == null) return;
 
@@ -456,7 +515,7 @@ public sealed class AISyncService
         if (!receiver && cmc)
             receiver = cmc.GetComponentInChildren<DamageReceiver>(true);
 
-        var info = damage?.ToDamageInfo(null, receiver) ?? new DamageInfo
+        var info = damage?.ToDamageInfo(attacker, receiver) ?? new DamageInfo(attacker)
         {
             damageValue = Mathf.Max(1f, entry.CurrentHealth <= 0f ? 1f : entry.CurrentHealth),
             finalDamage = Mathf.Max(1f, entry.CurrentHealth <= 0f ? 1f : entry.CurrentHealth),
@@ -466,6 +525,8 @@ public sealed class AISyncService
 
         if (info.toDamageReceiver == null)
             info.toDamageReceiver = receiver;
+        if (info.fromCharacter == null)
+            info.fromCharacter = attacker;
 
         var bak = DeadLootSpawnContext.InOnDead;
        // DeadLootSpawnContext.InOnDead = cmc;
@@ -518,6 +579,7 @@ public sealed class AISyncService
             ProcessServerBuffQueue();
 
         var now = Time.unscaledTime;
+        var safeDeltaTime = Mathf.Max(deltaTime, 0.0001f);
         foreach (var entry in CoopSyncDatabase.AI.Entries)
         {
             if (entry == null) continue;
@@ -544,13 +606,21 @@ public sealed class AISyncService
                 if (!activatedNow)
                     _serverWatchers.Remove(entry.Id);
             }
-            var watchers = entry.Activated ? EnsureServerWatchers(entry) : null;
+            var watchers = entry.Activated ? GetServerWatchers(entry.Id) : null;
             if (watchers != null)
+            {
                 watchers = GetServerWatchersInRange(entry, DeactivationRadius);
+            }
+            else if (entry.Activated && ShouldRefreshServerWatchers(entry.Id, now))
+            {
+                watchers = EnsureServerWatchers(entry);
+            }
             var modelTransform = cmc && cmc.characterModel ? cmc.characterModel.transform : null;
             var position = controller.transform.position;
             var rotation = modelTransform ? modelTransform.rotation : controller.transform.rotation;
-            var velocity = (position - entry.LastKnownPosition) / Mathf.Max(Time.deltaTime, 0.0001f);
+            var positionDelta = position - entry.LastKnownPosition;
+            var velocity = positionDelta / safeDeltaTime;
+            var activeWeaponChanged = RefreshActiveWeapon(entry, cmc);
 
             if (watchers == null || watchers.Count == 0)
             {
@@ -564,12 +634,12 @@ public sealed class AISyncService
                 continue;
             }
 
-            var posDelta = Vector3.Distance(position, entry.LastKnownPosition);
+            var posDeltaSqr = positionDelta.sqrMagnitude;
             var rotDelta = Quaternion.Angle(rotation, entry.LastKnownRotation);
 
-            var speed = velocity.magnitude;
-            var isSlowMoving = speed > 0.01f && speed <= SlowAiSpeedThreshold;
-            var isMoving = speed > 0.01f;
+            var speedSqr = velocity.sqrMagnitude;
+            var isSlowMoving = speedSqr > 0.0001f && speedSqr <= SlowAiSpeedThreshold * SlowAiSpeedThreshold;
+            var isMoving = speedSqr > 0.0001f;
             var isVehicleEntry = entry.IsVehicle || (cmc != null && cmc.isVehicle);
 
             var stateInterval = StateBroadcastInterval;
@@ -597,13 +667,13 @@ public sealed class AISyncService
 
             if (isMoving)
             {
-                if (now - entry.LastStateSentTime < stateInterval && rotDelta < MinRotationDelta)
+                if (!activeWeaponChanged && now - entry.LastStateSentTime < stateInterval && rotDelta < MinRotationDelta)
                     continue;
             }
             else
             {
-                if (now - entry.LastStateSentTime < stateInterval &&
-                    posDelta < positionDeltaThreshold && rotDelta < MinRotationDelta)
+                if (!activeWeaponChanged && now - entry.LastStateSentTime < stateInterval &&
+                    posDeltaSqr < positionDeltaThreshold * positionDeltaThreshold && rotDelta < MinRotationDelta)
                     continue;
             }
 
@@ -611,9 +681,9 @@ public sealed class AISyncService
             entry.LastKnownRotation = rotation;
             entry.LastKnownVelocity = Vector3.Lerp(entry.LastKnownVelocity, velocity, deltaTime * VelocityLerp);
             entry.LastStateSentTime = now;
-            entry.LastAnimSample = CaptureAnimSample(controller);
+            entry.LastAnimSample = CaptureAnimSample(entry, controller);
 
-            BroadcastState(entry, watchers);
+            BroadcastState(entry, watchers, true);
         }
 
         Server_FlushPendingHealth(now);
@@ -630,6 +700,8 @@ public sealed class AISyncService
             _serverPendingSnapshotReset &= !sent;
             _nextServerSnapshotBroadcastTime = now + (sent ? ServerSnapshotBroadcastInterval : ServerSnapshotRetryInterval);
         }
+
+        TryWriteAiPerfLog(now, deltaTime);
     }
 
     public void Server_HandleSnapshotRequest(RpcContext context, AISnapshotRequestRpc message)
@@ -648,14 +720,20 @@ public sealed class AISyncService
             foreach (var entry in CoopSyncDatabase.AI.Entries)
             {
                 if (entry == null) continue;
+                if (message.VehiclesOnly && !entry.IsVehicle) continue;
 
                 if (hasRadius)
                 {
-                    var distanceSqr = (entry.SpawnPosition - center).sqrMagnitude;
+                    var distanceSqr = (GetEntryAnchor(entry) - center).sqrMagnitude;
                     if (distanceSqr > radiusSqr) continue;
                 }
 
-                _snapshotBuffer.Add(BuildSnapshotEntry(entry));
+                var snapshot = BuildSnapshotEntry(entry);
+                var duplicate = !hasRadius && !snapshot.IsVehicle && !message.VehiclesOnly && HasDuplicateSnapshot(entry.Id, in snapshot);
+                if (!reset && duplicate)
+                    continue;
+
+                _snapshotBuffer.Add(snapshot);
 
                 if (_snapshotBuffer.Count >= SnapshotChunkSize)
                 {
@@ -742,19 +820,25 @@ public sealed class AISyncService
         _snapshotRequested = true;
         Client_SendSnapshotRequest(true);
         _nextSnapshotRefreshTime = Time.unscaledTime + SnapshotRefreshInterval;
+        _nextVehicleSnapshotRefreshTime = Time.unscaledTime + 1f;
     }
 
-    private void Client_SendSnapshotRequest(bool forceFull)
+    private void Client_SendSnapshotRequest(bool forceFull, bool vehiclesOnly = false)
     {
         if (IsServer || Service == null || !Service.networkStarted) return;
         if (CheckAndHandleSyncBlock()) return;
 
+        var hasAnchor = TryGetClientAnchor(out var center);
+        var radius = vehiclesOnly
+            ? VehicleReplicaKeepAliveDistance * 1.2f
+            : Mathf.Max(ActivationRadius, VehicleReplicaKeepAliveDistance) * 1.2f;
         var request = new AISnapshotRequestRpc
         {
-            HasRadius = false,
-            Radius = ActivationRadius * 1.2f,
-            Center = Vector3.zero,
-            ForceFull = forceFull
+            HasRadius = hasAnchor,
+            Radius = radius,
+            Center = hasAnchor ? center : Vector3.zero,
+            ForceFull = forceFull,
+            VehiclesOnly = vehiclesOnly
         };
         CoopTool.SendRpc(in request);
         _lastSnapshotRequestTime = Time.unscaledTime;
@@ -776,7 +860,7 @@ public sealed class AISyncService
 
         foreach (var snap in message.Entries)
         {
-            if (!IsClientEntryInRange(in snap, ActivationRadius))
+            if (!IsClientEntryInRange(in snap, GetClientSnapshotRange(snap.IsVehicle)))
                 continue;
 
             if (_pendingSnapshotQueue.Count >= MaxPendingSnapshotQueue)
@@ -801,7 +885,7 @@ public sealed class AISyncService
 
         var entry = CoopSyncDatabase.AI.GetOrCreate(message.Id);
 
-        if (!IsClientEntryInRange(entry, ActivationRadius))
+        if (!IsClientEntryInRange(entry, GetClientSnapshotRange(entry.IsVehicle)))
         {
             Client_DestroyReplica(message.Id, AIStatus.Despawned, false);
             entry.Activated = false;
@@ -825,7 +909,7 @@ public sealed class AISyncService
         if (IsServer) return;
         if (CheckAndHandleSyncBlock()) return;
 
-        if (!IsClientEntryInRange(in message.Entry, ActivationRadius))
+        if (!IsClientEntryInRange(in message.Entry, GetClientSnapshotRange(message.Entry.IsVehicle)))
             return;
 
         var entry = CoopSyncDatabase.AI.GetOrCreate(message.Entry.Id);
@@ -860,7 +944,8 @@ public sealed class AISyncService
             return;
 
         var anchor = message.Position != Vector3.zero ? message.Position : GetEntryAnchor(entry);
-        if (!IsClientWithinRange(anchor, DeactivationRadius))
+        var stateRange = entry.IsVehicle ? VehicleReplicaKeepAliveDistance : DeactivationRadius;
+        if (!IsClientWithinRange(anchor, stateRange))
         {
             Client_DestroyReplica(message.Id, AIStatus.Despawned, false);
             return;
@@ -887,12 +972,19 @@ public sealed class AISyncService
         Client_RequestSnapshotIfNeeded();
         Client_ProcessPendingSnapshots();
         Client_ProcessPendingStateUpdates();
+        Client_ProcessReplicaSpawnQueue();
 
         var now = Time.unscaledTime;
         if (_snapshotRequested && _nextSnapshotRefreshTime > 0f && now >= _nextSnapshotRefreshTime)
         {
             Client_SendSnapshotRequest(false);
             _nextSnapshotRefreshTime = now + SnapshotRefreshInterval;
+        }
+
+        if (_snapshotRequested && _nextVehicleSnapshotRefreshTime > 0f && now >= _nextVehicleSnapshotRefreshTime)
+        {
+            Client_SendSnapshotRequest(false, true);
+            _nextVehicleSnapshotRefreshTime = now + VehicleSnapshotRefreshInterval;
         }
 
         if (_snapshotRequested && now - _lastSnapshotRequestTime >= SnapshotRequestTimeout && now - _lastSnapshotReceiveTime >= SnapshotRequestTimeout)
@@ -904,14 +996,17 @@ public sealed class AISyncService
         foreach (var replica in _clientReplicas.Values)
             replica.Update(deltaTime);
 
-        _clientEntryBuffer.Clear();
-        _clientEntryBuffer.AddRange(CoopSyncDatabase.AI.Entries);
+        RefreshClientEntryBufferIfNeeded();
         var totalEntries = _clientEntryBuffer.Count;
-        if (totalEntries == 0) return;
+        if (totalEntries == 0)
+        {
+            TryWriteAiPerfLog(now, deltaTime);
+            return;
+        }
 
         UpdateClientFrameBudgetScale(deltaTime);
 
-        var entryBudget = GetDynamicProcessBudget(MaxClientEntryChecksPerFrame, totalEntries);
+        var entryBudget = GetDynamicProcessBudget(Mathf.Min(MaxClientEntryChecksPerFrame, ClientEntryCheckBudgetCap), totalEntries);
         entryBudget = ScaleBudgetForDelta(entryBudget);
         _clientEntryCursor = Mathf.Clamp(_clientEntryCursor, 0, Mathf.Max(0, totalEntries - 1));
 
@@ -923,7 +1018,7 @@ public sealed class AISyncService
 
             if (entry == null) continue;
 
-            var forceSpawn = entry.IsVehicle || IsForceSpawnModel(entry.ModelName);
+            var forceSpawn = ShouldForceSpawnReplica(entry);
             var shouldKeepAlive = ShouldKeepReplicaAlive(entry) || forceSpawn;
 
             if (!entry.Activated && !forceSpawn)
@@ -932,7 +1027,128 @@ public sealed class AISyncService
                 continue;
             }
 
+            if (!ShouldHaveClientReplica(entry))
+            {
+                Client_DestroyReplica(entry.Id, AIStatus.Despawned, !shouldKeepAlive);
+                continue;
+            }
+
             Client_EnsureReplica(entry);
+        }
+
+        TryWriteAiPerfLog(now, deltaTime);
+    }
+
+    private void RefreshClientEntryBufferIfNeeded()
+    {
+        var registry = CoopSyncDatabase.AI;
+        if (_clientEntryBufferVersion == registry.Version && _clientEntryBuffer.Count == registry.Count)
+            return;
+
+        _clientEntryBuffer.Clear();
+        registry.CopyEntriesTo(_clientEntryBuffer);
+        _clientEntryBufferVersion = registry.Version;
+
+        if (_clientEntryCursor >= _clientEntryBuffer.Count)
+            _clientEntryCursor = 0;
+    }
+
+    private bool ShouldForceSpawnReplica(AISyncEntry entry)
+    {
+        if (entry == null)
+            return false;
+
+        if (IsForceSpawnModel(entry.ModelName))
+            return true;
+
+        if (!entry.IsVehicle)
+            return false;
+
+        return IsLocalAuthoritativeVehicle(entry) || IsClientEntryInStrictRange(entry, VehicleReplicaKeepAliveDistance);
+    }
+
+    private float GetClientSnapshotRange(bool isVehicle)
+    {
+        return isVehicle ? VehicleReplicaKeepAliveDistance : ActivationRadius;
+    }
+
+    private bool ShouldHaveClientReplica(AISyncEntry entry)
+    {
+        if (entry == null || entry.Status == AIStatus.Dead || entry.Status == AIStatus.Despawned)
+            return false;
+
+        var forceSpawn = ShouldForceSpawnReplica(entry);
+        if (entry.IsVehicle)
+            return forceSpawn;
+
+        if (!entry.Activated && !forceSpawn)
+            return false;
+
+        return forceSpawn || IsClientEntryInRange(entry, DeactivationRadius);
+    }
+
+    private static bool HasReplicaSpawnMetadata(AISyncEntry entry)
+    {
+        return entry != null &&
+               (!string.IsNullOrEmpty(entry.ModelName) ||
+                !string.IsNullOrEmpty(entry.CharacterPresetKey));
+    }
+
+    private void LogMissingModelPrefab(AISyncEntry entry)
+    {
+        if (entry == null)
+            return;
+
+        if (!HasReplicaSpawnMetadata(entry))
+            return;
+
+        var now = Time.unscaledTime;
+        if (_clientNextMissingModelWarning.TryGetValue(entry.Id, out var next) && now < next)
+            return;
+
+        _clientNextMissingModelWarning[entry.Id] = now + 10f;
+        Debug.LogWarning(
+            $"[AI][CLIENT] Missing model prefab id={entry.Id} model='{entry.ModelName}' preset='{entry.CharacterPresetKey}', defer replica spawn.");
+    }
+
+    private void QueueReplicaSpawn(AISyncEntry entry)
+    {
+        if (entry == null)
+            return;
+
+        if (!HasReplicaSpawnMetadata(entry))
+        {
+            Client_DeferReplicaSpawn(entry, true);
+            return;
+        }
+
+        if (_clientReplicaRecoveryTimes.TryGetValue(entry.Id, out var retryAt) && Time.unscaledTime < retryAt)
+            return;
+
+        if (_clientReplicas.ContainsKey(entry.Id) || _clientReplicaSpawning.Contains(entry.Id))
+            return;
+
+        if (_clientReplicaSpawnQueued.Add(entry.Id))
+            _clientReplicaSpawnQueue.Enqueue(entry.Id);
+    }
+
+    private void Client_ProcessReplicaSpawnQueue()
+    {
+        var spawned = 0;
+        while (spawned < MaxReplicaSpawnsPerFrame && _clientReplicaSpawnQueue.Count > 0)
+        {
+            var id = _clientReplicaSpawnQueue.Dequeue();
+            _clientReplicaSpawnQueued.Remove(id);
+
+            if (_clientReplicas.ContainsKey(id) || _clientReplicaSpawning.Contains(id))
+                continue;
+
+            if (!CoopSyncDatabase.AI.TryGet(id, out var entry) || entry == null || !ShouldHaveClientReplica(entry))
+                continue;
+
+            _clientReplicaSpawning.Add(id);
+            SpawnReplicaAsync(entry).Forget();
+            spawned++;
         }
     }
 
@@ -952,14 +1168,14 @@ public sealed class AISyncService
             return;
         }
 
-        var forceSpawn = entry.IsVehicle || IsForceSpawnModel(entry.ModelName);
-        var activated = entry.Activated || forceSpawn;
-        if (!activated)
+        if (!ShouldHaveClientReplica(entry))
         {
             Client_DestroyReplica(entry.Id, AIStatus.Despawned, false);
             return;
         }
 
+        if (_clientReplicaRecoveryTimes.TryGetValue(entry.Id, out var retryAt) && Time.unscaledTime < retryAt)
+            return;
         _clientReplicaRecoveryTimes.Remove(entry.Id);
         _clientPendingBuffs.Remove(entry.Id);
 
@@ -969,7 +1185,7 @@ public sealed class AISyncService
             return;
         }
 
-        SpawnReplicaAsync(entry).Forget();
+        QueueReplicaSpawn(entry);
     }
 
     private void Client_DestroyReplica(int id, AIStatus status, bool removeEntry)
@@ -988,8 +1204,10 @@ public sealed class AISyncService
         }
 
         _clientRequested.Remove(id);
+        _clientReplicaSpawnQueued.Remove(id);
         _clientPendingBuffs.Remove(id);
         _clientReplicaRecoveryTimes.Remove(id);
+        _clientNextMissingModelWarning.Remove(id);
 
         if (removeEntry)
             CoopSyncDatabase.AI.RemoveEntry(id);
@@ -999,17 +1217,10 @@ public sealed class AISyncService
     {
         if (_pendingSnapshotReset)
         {
-            foreach (var replica in _clientReplicas.Values)
-                DestroyReplica(replica);
-            _clientReplicas.Clear();
             _clientRequested.Clear();
+            _clientReplicaSpawnQueue.Clear();
+            _clientReplicaSpawnQueued.Clear();
             _clientPendingBuffs.Clear();
-
-            foreach (var entry in CoopSyncDatabase.AI.Entries)
-            {
-                if (entry == null) continue;
-                entry.Status = AIStatus.Dormant;
-            }
 
             _pendingSnapshotReset = false;
         }
@@ -1045,10 +1256,14 @@ public sealed class AISyncService
         }
 
         _latestPendingStateById.Clear();
-        while (_pendingStateUpdates.Count > 0)
+        var budget = GetDynamicProcessBudget(MaxStateUpdatesPerFrame, _pendingStateUpdates.Count);
+        budget = ScaleBudgetForDelta(budget);
+        var drained = 0;
+        while (drained < budget && _pendingStateUpdates.Count > 0)
         {
             var message = _pendingStateUpdates.Dequeue();
             _latestPendingStateById[message.Id] = message;
+            drained++;
         }
 
         foreach (var message in _latestPendingStateById.Values)
@@ -1069,8 +1284,11 @@ public sealed class AISyncService
         }
 
         var localAuthVehicle = IsLocalAuthoritativeVehicle(entry);
+        var suppressVehicleState = entry.IsVehicle &&
+                                   !localAuthVehicle &&
+                                   RPCVehicle.HasRecentVehicleTransform(message.Id, VehicleStateSuppressAfterTransformSeconds);
 
-        if (!localAuthVehicle)
+        if (!localAuthVehicle && !suppressVehicleState)
         {
             entry.LastKnownPosition = message.Position;
             entry.LastKnownRotation = message.Rotation;
@@ -1078,11 +1296,12 @@ public sealed class AISyncService
             entry.LastKnownRemoteTime = message.Timestamp;
         }
         entry.CurrentHealth = message.CurrentHealth;
+        SetActiveWeapon(message.Id, GetActiveWeaponSlot(message.Id), message.ActiveWeaponTypeId);
         entry.LastStateReceivedTime = Time.unscaledTime;
         if (message.StatusOverride != AIStatus.Dormant)
             entry.Status = message.StatusOverride;
 
-        if (!localAuthVehicle)
+        if (!localAuthVehicle && !suppressVehicleState)
         {
             entry.LastAnimSample = new AnimSample
             {
@@ -1100,7 +1319,7 @@ public sealed class AISyncService
             };
         }
 
-        if (_clientReplicas.TryGetValue(message.Id, out var replica))
+        if (!suppressVehicleState && _clientReplicas.TryGetValue(message.Id, out var replica))
             replica.ApplyState(entry);
     }
 
@@ -1124,6 +1343,8 @@ public sealed class AISyncService
         if (message.IsDead)
         {
             entry.Status = AIStatus.Dead;
+            if (message.KillerCredit)
+                Client_RaiseQuestKillCredit(message.Id, in message);
             Client_DestroyReplica(message.Id, AIStatus.Dead, false);
             return;
         }
@@ -1278,6 +1499,7 @@ public sealed class AISyncService
                     entry.VehicleRunSpeed = Mathf.Max(entry.VehicleWalkSpeed, mv.runSpeed);
                 }
             }
+            RefreshActiveWeapon(entry, cmc);
 
             var health = cmc.Health;
             if (health)
@@ -1356,7 +1578,7 @@ public sealed class AISyncService
         entry.LastKnownPosition = position;
         entry.LastKnownRotation = rotation;
         entry.LastKnownVelocity = velocity;
-        entry.LastAnimSample = CaptureAnimSample(controller);
+        entry.LastAnimSample = CaptureAnimSample(entry, controller);
     }
 
     private static string TryCaptureFaceJson(CharacterModel model)
@@ -1407,8 +1629,69 @@ public sealed class AISyncService
         if (_clientFrameBudgetScale <= 1f)
             return budget;
 
-        var scaled = Mathf.CeilToInt(budget * _clientFrameBudgetScale);
-        return Mathf.Clamp(scaled, budget, budget * 6);
+        var divisor = Mathf.Clamp(_clientFrameBudgetScale, 1f, 4f);
+        var scaled = Mathf.FloorToInt(budget / divisor);
+        return Mathf.Clamp(scaled, 1, budget);
+    }
+
+    private void TryWriteAiPerfLog(float now, float deltaTime)
+    {
+        if (now < _nextPerfLogTime)
+            return;
+
+        _nextPerfLogTime = now + PerfLogInterval;
+
+        var totalEntries = CoopSyncDatabase.AI.Count;
+        var activeEntries = 0;
+        foreach (var entry in CoopSyncDatabase.AI.Entries)
+        {
+            if (entry != null && entry.Status == AIStatus.Active && entry.Activated)
+                activeEntries++;
+        }
+
+        var watcherLinks = 0;
+        if (IsServer)
+        {
+            foreach (var watchers in _serverWatchers.Values)
+                watcherLinks += watchers?.Count ?? 0;
+        }
+
+        CoopPerfLog.AppendAiSample(
+            IsServer,
+            totalEntries,
+            activeEntries,
+            _clientReplicas.Count,
+            watcherLinks,
+            _pendingSnapshotQueue.Count,
+            _pendingStateUpdates.Count,
+            _perfStatePackets,
+            _perfSnapshotPackets,
+            _perfHealthPackets,
+            deltaTime,
+            _clientFrameBudgetScale);
+
+        if (!IsServer)
+        {
+            CoopPerfLog.AppendEvent(
+                "ai-client",
+                $"spawnQueue={_clientReplicaSpawnQueue.Count} spawning={_clientReplicaSpawning.Count} vehicleReplicas={CountClientVehicleReplicas()}");
+        }
+
+        _perfStatePackets = 0;
+        _perfSnapshotPackets = 0;
+        _perfHealthPackets = 0;
+    }
+
+    private int CountClientVehicleReplicas()
+    {
+        var count = 0;
+        foreach (var id in _clientReplicas.Keys)
+        {
+            if (CoopSyncDatabase.AI.TryGet(id, out var entry) && entry != null && entry.IsVehicle)
+                count++;
+        }
+
+        return count;
     }
 
     private void Client_TryScheduleSnapshotRecovery(bool forceFull)
@@ -1424,6 +1707,15 @@ public sealed class AISyncService
         _snapshotRequested = true;
         Client_SendSnapshotRequest(forceFull);
         _nextSnapshotRefreshTime = now + SnapshotRefreshInterval;
+    }
+
+    private void Client_DeferReplicaSpawn(AISyncEntry entry, bool forceFull)
+    {
+        if (entry == null)
+            return;
+
+        _clientReplicaRecoveryTimes[entry.Id] = Time.unscaledTime + Mathf.Max(0.25f, ActivationRetryInterval);
+        Client_TryScheduleSnapshotRecovery(forceFull);
     }
 
     private void BroadcastSpawn(AISyncEntry entry, HashSet<NetPeer> targets)
@@ -1478,6 +1770,8 @@ public sealed class AISyncService
         }
 
         _serverWatchers.Remove(entry.Id);
+        _serverNextWatcherRefresh.Remove(entry.Id);
+        _serverAnimatorCache.Remove(entry.Id);
         _serverLastHitPeer.Remove(entry.Id);
         foreach (var kv in _serverLastDamageByPeer.Values)
             kv?.Remove(entry.Id);
@@ -1496,7 +1790,8 @@ public sealed class AISyncService
 
         var anchor = GetEntryAnchor(entry);
         var watchers = GetServerWatchersInRange(entry, ActivationRadius) ?? EnsureServerWatchers(entry);
-        var recipients = new HashSet<NetPeer>();
+        var recipients = _activationRecipients;
+        recipients.Clear();
         try
         {
             if (watchers != null)
@@ -1561,7 +1856,7 @@ public sealed class AISyncService
             return watchers.Count > 0 ? watchers : null;
 
         var anchor = GetEntryAnchor(entry);
-        HashSet<NetPeer> newPeers = null;
+        _serverNewWatcherBuffer.Clear();
 
         foreach (var kvp in statuses)
         {
@@ -1575,13 +1870,13 @@ public sealed class AISyncService
 
             if (watchers.Add(peer))
             {
-                newPeers ??= new HashSet<NetPeer>();
-                newPeers.Add(peer);
+                _serverNewWatcherBuffer.Add(peer);
             }
         }
 
-        if (newPeers != null && newPeers.Count > 0)
-            BroadcastSpawn(entry, newPeers);
+        if (_serverNewWatcherBuffer.Count > 0)
+            BroadcastSpawn(entry, _serverNewWatcherBuffer);
+        _serverNewWatcherBuffer.Clear();
 
         if (watchers.Count == 0)
         {
@@ -1590,6 +1885,18 @@ public sealed class AISyncService
         }
 
         return watchers;
+    }
+
+    private bool ShouldRefreshServerWatchers(int id, float now)
+    {
+        if (id == 0)
+            return false;
+
+        if (_serverNextWatcherRefresh.TryGetValue(id, out var next) && now < next)
+            return false;
+
+        _serverNextWatcherRefresh[id] = now + ActivationRetryInterval;
+        return true;
     }
 
     private void SendActivationState(AISyncEntry entry, NetPeer peer, bool activated)
@@ -1629,14 +1936,25 @@ public sealed class AISyncService
 
     private bool TryGetClientAnchor(out Vector3 anchor)
     {
-        anchor = Vector3.zero;
+        var frame = Time.frameCount;
+        if (_clientAnchorFrame == frame)
+        {
+            anchor = _clientAnchor;
+            return _clientAnchorValid;
+        }
 
+        _clientAnchorFrame = frame;
+        _clientAnchor = Vector3.zero;
+        _clientAnchorValid = false;
+        anchor = Vector3.zero;
         var service = Service;
         var localStatus = service?.localPlayerStatus;
         if (localStatus == null || !localStatus.IsInGame)
             return false;
 
-        anchor = localStatus.Position;
+        _clientAnchor = localStatus.Position;
+        _clientAnchorValid = true;
+        anchor = _clientAnchor;
         return true;
     }
 
@@ -1649,9 +1967,23 @@ public sealed class AISyncService
         return distSqr <= range * range;
     }
 
+    private bool IsClientWithinStrictRange(Vector3 target, float range)
+    {
+        if (!TryGetClientAnchor(out var anchor))
+            return false;
+
+        var distSqr = (anchor - target).sqrMagnitude;
+        return distSqr <= range * range;
+    }
+
     private bool IsClientEntryInRange(AISyncEntry entry, float range)
     {
         return entry == null || IsClientWithinRange(GetEntryAnchor(entry), range);
+    }
+
+    private bool IsClientEntryInStrictRange(AISyncEntry entry, float range)
+    {
+        return entry != null && IsClientWithinStrictRange(GetEntryAnchor(entry), range);
     }
 
     private bool IsClientEntryInRange(in AISnapshotEntry snapshot, float range)
@@ -1664,39 +1996,64 @@ public sealed class AISyncService
         if (IsServer || entry == null || !entry.IsVehicle)
             return false;
 
+        var frame = Time.frameCount;
+        if (_localAuthoritativeVehicleFrame != frame)
+        {
+            _localAuthoritativeVehicleFrame = frame;
+            _localAuthoritativeVehicleId = ResolveLocalAuthoritativeVehicleId();
+        }
+
+        return _localAuthoritativeVehicleId != 0 && _localAuthoritativeVehicleId == entry.Id;
+    }
+
+    private int ResolveLocalAuthoritativeVehicleId()
+    {
+        if (IsServer)
+            return 0;
+
         var level = LevelManager.Instance;
         var controlling = level != null ? level.ControllingCharacter : null;
         if (controlling != null && controlling.isVehicle)
         {
             var controllingId = ResolveVehicleId(controlling);
-            if (controllingId != 0)
-                return controllingId == entry.Id;
+            if (controllingId != 0 &&
+                (SendLocalVehicleStatus.Instance == null ||
+                 SendLocalVehicleStatus.Instance.IsLocalAuthorityForVehicle(controllingId)))
+            {
+                return controllingId;
+            }
         }
 
         var service = Service;
         var localStatus = service?.localPlayerStatus;
         if (localStatus == null || !localStatus.IsInGame)
-            return false;
+            return 0;
 
         var mainControl = CharacterMainControl.Main;
         if (mainControl == null)
-            return false;
+            return 0;
 
         var model = mainControl.modelRoot
             ? mainControl.modelRoot.Find("0_CharacterModel_Custom_Template(Clone)")
             : null;
         if (model == null)
-            return false;
+            return 0;
 
         var animCtrl = model.GetComponent<CharacterAnimationControl_MagicBlend>();
         if (animCtrl == null || animCtrl.animator == null)
-            return false;
+            return 0;
 
         if (animCtrl.animator.GetInteger("VehicleType") <= 0)
-            return false;
+            return 0;
 
-        var anchor = GetEntryAnchor(entry);
-        return (localStatus.Position - anchor).sqrMagnitude <= 36f;
+        var nearestId = FindNearestVehicleId(localStatus.Position, 6f);
+        if (nearestId == 0)
+            return 0;
+
+        return SendLocalVehicleStatus.Instance == null ||
+               SendLocalVehicleStatus.Instance.IsLocalAuthorityForVehicle(nearestId)
+            ? nearestId
+            : 0;
     }
 
     private static int ResolveVehicleId(CharacterMainControl vehicle)
@@ -1715,6 +2072,29 @@ public sealed class AISyncService
         }
 
         return 0;
+    }
+
+    private static int FindNearestVehicleId(Vector3 position, float maxDistance)
+    {
+        var maxSqr = maxDistance * maxDistance;
+        var bestId = 0;
+        var bestSqr = float.MaxValue;
+
+        foreach (var entry in CoopSyncDatabase.AI.Entries)
+        {
+            if (entry == null || !entry.IsVehicle || entry.Status == AIStatus.Dead)
+                continue;
+
+            var anchor = GetEntryAnchor(entry);
+            var distSqr = (anchor - position).sqrMagnitude;
+            if (distSqr > maxSqr || distSqr >= bestSqr)
+                continue;
+
+            bestSqr = distSqr;
+            bestId = entry.Id;
+        }
+
+        return bestId;
     }
 
     private bool IsPeerWithinRange(NetPeer peer, Vector3 anchor, float range)
@@ -1777,11 +2157,12 @@ public sealed class AISyncService
         return watchers;
     }
 
-    private void BroadcastState(AISyncEntry entry, HashSet<NetPeer> watchers = null)
+    private void BroadcastState(AISyncEntry entry, HashSet<NetPeer> watchers = null, bool watchersAlreadyFiltered = false)
     {
         if (!IsServer || entry == null) return;
 
-        watchers = GetServerWatchersInRange(entry, DeactivationRadius) ?? watchers;
+        if (!watchersAlreadyFiltered)
+            watchers = GetServerWatchersInRange(entry, DeactivationRadius) ?? watchers;
         if (watchers == null || watchers.Count == 0)
             return;
 
@@ -1803,6 +2184,7 @@ public sealed class AISyncService
             IsAttacking = sample.attack,
             HandState = sample.hand,
             GunReady = sample.gunReady,
+            ActiveWeaponTypeId = GetActiveWeaponType(entry.Id),
             VehicleType = sample.vehicleType,
             StateHash = sample.stateHash,
             NormTime = sample.normTime,
@@ -1819,12 +2201,17 @@ public sealed class AISyncService
         {
             writer.Put((byte)descriptor.Op);
             message.Serialize(writer);
+            var sent = 0;
             foreach (var peer in watchers)
             {
                 if (peer != null && peer.ConnectionState == ConnectionState.Connected &&
-                    IsPeerWithinRange(peer, anchor, DeactivationRadius))
+                    (watchersAlreadyFiltered || IsPeerWithinRange(peer, anchor, DeactivationRadius)))
+                {
                     peer.Send(writer, descriptor.Delivery);
+                    sent++;
+                }
             }
+            _perfStatePackets += sent;
         }
         finally
         {
@@ -1879,7 +2266,8 @@ public sealed class AISyncService
             HeadArmor = entry.HeadArmor,
             IsDead = entry.Status == AIStatus.Dead,
             HasDamage = damage.HasValue,
-            Damage = damage ?? default
+            Damage = damage ?? default,
+            KillerCredit = false
         };
 
         var signature = ComputeHealthSignature(in message);
@@ -1892,8 +2280,15 @@ public sealed class AISyncService
         {
             writer.Put((byte)descriptor.Op);
             message.Serialize(writer);
+            var sent = 0;
             foreach (var watcher in watchers)
-                watcher?.Send(writer, descriptor.Delivery);
+            {
+                if (watcher == null || watcher.ConnectionState != ConnectionState.Connected)
+                    continue;
+                watcher.Send(writer, descriptor.Delivery);
+                sent++;
+            }
+            _perfHealthPackets += sent;
         }
         finally
         {
@@ -1922,7 +2317,8 @@ public sealed class AISyncService
             HeadArmor = entry.HeadArmor,
             IsDead = true,
             HasDamage = true,
-            Damage = payload
+            Damage = payload,
+            KillerCredit = true
         };
 
         var writer = RpcWriterPool.Rent();
@@ -2057,7 +2453,7 @@ public sealed class AISyncService
         return null;
     }
 
-    private bool EnsureServerControllerDeath(AISyncEntry entry, DamageForwardPayload? damage)
+    private bool EnsureServerControllerDeath(AISyncEntry entry, DamageForwardPayload? damage, CharacterMainControl attacker)
     {
         if (entry == null) return false;
         var controller = entry.Controller;
@@ -2085,13 +2481,15 @@ public sealed class AISyncService
             if (!receiver && cmc)
                 receiver = cmc.GetComponentInChildren<DamageReceiver>(true);
 
-            info = damage.Value.ToDamageInfo(null, receiver);
+            info = damage.Value.ToDamageInfo(attacker, receiver);
             if (info.toDamageReceiver == null)
                 info.toDamageReceiver = receiver;
+            if (info.fromCharacter == null)
+                info.fromCharacter = attacker;
         }
         else
         {
-            info = new DamageInfo
+            info = new DamageInfo(attacker)
             {
                 damageValue = Mathf.Max(1f, current),
                 finalDamage = Mathf.Max(1f, current),
@@ -2103,6 +2501,7 @@ public sealed class AISyncService
         try
         {
             health.OnDeadEvent?.Invoke(info);
+            RaiseStaticHealthOnDead(health, info);
             return true;
         }
         catch
@@ -2143,7 +2542,8 @@ public sealed class AISyncService
         var message = new AISnapshotChunkRpc
         {
             Reset = reset,
-            Entries = buffer.ToArray()
+            EntryList = buffer,
+            EntryCount = buffer.Count
         };
 
         var writer = RpcWriterPool.Rent();
@@ -2152,6 +2552,7 @@ public sealed class AISyncService
             writer.Put((byte)descriptor.Op);
             message.Serialize(writer);
             peer.Send(writer, descriptor.Delivery);
+            _perfSnapshotPackets++;
         }
         finally
         {
@@ -2189,7 +2590,8 @@ public sealed class AISyncService
                 if (entry == null) continue;
 
                 var snapshot = BuildSnapshotEntry(entry);
-                if (!reset && HasDuplicateSnapshot(entry.Id, in snapshot))
+                var duplicate = HasDuplicateSnapshot(entry.Id, in snapshot);
+                if (!reset && duplicate)
                     continue;
 
                 _snapshotBuffer.Add(snapshot);
@@ -2253,6 +2655,9 @@ public sealed class AISyncService
 
     private AISnapshotEntry BuildSnapshotEntry(AISyncEntry entry)
     {
+        if (entry != null && string.IsNullOrEmpty(entry.ModelName) && entry.Controller)
+            PopulateEntryMetadata(entry, entry.Controller);
+
         var snapshot = new AISnapshotEntry
         {
             Id = entry.Id,
@@ -2276,6 +2681,8 @@ public sealed class AISyncService
             VehicleAnimationType = entry.VehicleAnimationType,
             VehicleWalkSpeed = entry.VehicleWalkSpeed,
             VehicleRunSpeed = entry.VehicleRunSpeed,
+            ActiveWeaponSlot = GetActiveWeaponSlot(entry.Id),
+            ActiveWeaponTypeId = GetActiveWeaponType(entry.Id),
             LastKnownPosition = entry.LastKnownPosition != Vector3.zero ? entry.LastKnownPosition : entry.SpawnPosition,
             LastKnownRotation = entry.LastKnownRotation != Quaternion.identity ? entry.LastKnownRotation : entry.SpawnRotation,
             LastKnownVelocity = entry.LastKnownVelocity,
@@ -2375,6 +2782,8 @@ public sealed class AISyncService
         hash.Add(snapshot.VehicleAnimationType);
         hash.Add(snapshot.VehicleWalkSpeed);
         hash.Add(snapshot.VehicleRunSpeed);
+        hash.Add(snapshot.ActiveWeaponSlot);
+        hash.Add(snapshot.ActiveWeaponTypeId);
         hash.Add(snapshot.LastKnownPosition);
         hash.Add(snapshot.LastKnownRotation);
         hash.Add(snapshot.LastKnownVelocity);
@@ -2436,6 +2845,7 @@ public sealed class AISyncService
         hash.Add(message.IsAttacking);
         hash.Add(message.HandState);
         hash.Add(message.GunReady);
+        hash.Add(message.ActiveWeaponTypeId);
         hash.Add(message.VehicleType);
         hash.Add(message.StateHash);
         hash.Add(message.NormTime);
@@ -2452,6 +2862,7 @@ public sealed class AISyncService
         hash.Add(message.HeadArmor);
         hash.Add(message.IsDead);
         hash.Add(message.HasDamage);
+        hash.Add(message.KillerCredit);
         if (message.HasDamage)
         {
             var damage = message.Damage;
@@ -2475,9 +2886,11 @@ public sealed class AISyncService
         entry.Id = snapshot.Id;
         entry.SpawnPosition = snapshot.SpawnPosition;
         entry.SpawnRotation = snapshot.SpawnRotation;
-        entry.ModelName = snapshot.ModelName;
+        if (!string.IsNullOrEmpty(snapshot.ModelName))
+            entry.ModelName = NormalizePrefabName(snapshot.ModelName);
         entry.CustomFaceJson = snapshot.CustomFaceJson;
-        entry.CharacterPresetKey = snapshot.CharacterPresetKey;
+        if (!string.IsNullOrEmpty(snapshot.CharacterPresetKey))
+            entry.CharacterPresetKey = snapshot.CharacterPresetKey;
         entry.HideIfFoundEnemyName = snapshot.HideIfFoundEnemyName;
         entry.SceneBuildIndex = snapshot.SceneBuildIndex;
         entry.ScenePath = snapshot.ScenePath;
@@ -2498,6 +2911,7 @@ public sealed class AISyncService
         entry.VehicleAnimationType = snapshot.VehicleAnimationType;
         entry.VehicleWalkSpeed = snapshot.VehicleWalkSpeed;
         entry.VehicleRunSpeed = snapshot.VehicleRunSpeed;
+        SetActiveWeapon(entry.Id, snapshot.ActiveWeaponSlot, snapshot.ActiveWeaponTypeId);
         entry.LastKnownPosition = snapshot.LastKnownPosition != Vector3.zero ? snapshot.LastKnownPosition : snapshot.SpawnPosition;
         entry.LastKnownRotation = snapshot.LastKnownRotation != Quaternion.identity ? snapshot.LastKnownRotation : snapshot.SpawnRotation;
         entry.LastKnownVelocity = snapshot.LastKnownVelocity;
@@ -2569,9 +2983,11 @@ public sealed class AISyncService
 
     private async UniTaskVoid SpawnReplicaAsync(AISyncEntry entry)
     {
+        var spawnId = entry?.Id ?? 0;
         try
         {
             if (entry == null) return;
+            if (!ShouldHaveClientReplica(entry)) return;
 
             DestroyReplica(entry.Id);
 
@@ -2590,35 +3006,28 @@ public sealed class AISyncService
 
             if (!prefab)
             {
-                if (entry.IsVehicle)
-                {
-                    try
-                    {
-                        Debug.Log($"[AI][CLIENT] Vehicle prefab missing for {entry.ModelName}, try CreateCharacterAsync from testVehicle.");
-                        GameplayDataSettings.CharacterRandomPresetData.testVehicle
-                            .CreateCharacterAsync(entry.SpawnPosition, entry.SpawnRotation.eulerAngles, MultiSceneCore.MainScene.Value.buildIndex, null, false)
-                            .Forget<CharacterMainControl>();
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[AI][CLIENT] testVehicle CreateCharacterAsync failed: {ex}");
-                    }
-                }
-
-                Debug.LogWarning($"[AI][CLIENT] Missing model prefab for {entry.ModelName}, using main character fallback");
-                var mainFallback = CharacterMainControl.Main?.characterModel;
-                if (mainFallback)
-                    prefab = mainFallback;
+                LogMissingModelPrefab(entry);
+                Client_DeferReplicaSpawn(entry, true);
+                return;
             }
 
             var host = CharacterMainControl.Main;
             if (!prefab || !host) return;
 
             var characterItemInstance = await Coopbase.LoadOrCreateCharacterItemInstance();
+            if (!ShouldHaveClientReplica(entry)) return;
            // var modelInstance = Object.Instantiate(prefab);
             //var instance = Object.Instantiate(host.gameObject, entry.SpawnPosition, entry.SpawnRotation);
             var characterMainControl = await LevelManager.Instance.CharacterCreator.CreateCharacter(characterItemInstance, prefab, entry.SpawnPosition, entry.SpawnRotation);
             var instance = characterMainControl ? characterMainControl.gameObject : null;
+            if (!instance) return;
+            instance.SetActive(false);
+            if (!ShouldHaveClientReplica(entry))
+            {
+                if (instance)
+                    Object.Destroy(instance);
+                return;
+            }
             instance.name = $"RemoteAI_{entry.Id}_{prefab.name}";
 
             var aiTag = instance.GetComponent<RemoteAIReplicaTag>();
@@ -2646,6 +3055,7 @@ public sealed class AISyncService
            // MultiplyCharacterStat(characterItemInstance,"RunSpeed", cmc.characterPreset.moveSpeedFactor);
             
             ApplyVehicleState(cmc, entry);
+            RPCVehicle.TryApplyCachedVehicleItemState(entry.Id, cmc);
             ApplySpecialAttachments(cmc,entry);
             cmc.SetTeam(entry.Team);
             MakeReplicaPassive(cmc);
@@ -2659,7 +3069,7 @@ public sealed class AISyncService
             }
             
             ApplyCustomFace(cmc.characterModel, entry.CustomFaceJson);
-            await ApplyEquipmentAsync(cmc.characterModel, entry.Equipment, entry.Weapons, entry.WeaponSnapshots);
+            await ApplyEquipmentAsync(cmc.characterModel, entry.Equipment, entry.Weapons, entry.WeaponSnapshots, GetActiveWeaponSlot(entry.Id), GetActiveWeaponType(entry.Id));
             TryApplyVehicleSpeedStats(characterItemInstance, entry);
 
            // MultiplyCharacterStat(characterItemInstance, "WalkSpeed", cmc.characterPreset.moveSpeedFactor);
@@ -2717,10 +3127,17 @@ public sealed class AISyncService
             cmc.gameObject.SetActive(false);
             cmc.gameObject.SetActive(true);
             ModApiEvents.RaiseAiSpawned(entry.Id, cmc);
+            if (entry.IsVehicle)
+                LevelDataBoolNet.TryApplyCachedVehicleRequiredItems(entry.Id, cmc);
         }
         catch (Exception ex)
         {
             Debug.LogWarning($"[AI][CLIENT] Spawn replica failed: {ex}");
+        }
+        finally
+        {
+            if (spawnId != 0)
+                _clientReplicaSpawning.Remove(spawnId);
         }
     }
 
@@ -2789,10 +3206,17 @@ public sealed class AISyncService
                 info.finalDamage = 99999f;
                 if (info.toDamageReceiver == null)
                     info.toDamageReceiver = receiver;
-                if (info.fromCharacter == null)
-                    info.fromCharacter = cmc;
+                if (info.fromCharacter == null && CharacterMainControl.Main)
+                    info.fromCharacter = CharacterMainControl.Main;
+                Client_RaiseQuestKillCredit(replica.Id, health, info);
                // Debug.Log($"[AI][CLIENT] Invoking OnDeadEvent for replica {replica.Id}");
-                health.OnDeadEvent?.Invoke(info);
+                try
+                {
+                    health.OnDeadEvent?.Invoke(info);
+                }
+                catch
+                {
+                }
             }
 
             _clientLastDamage.Remove(replica.Id);
@@ -2801,6 +3225,67 @@ public sealed class AISyncService
         replica.Dispose();
         if (replica.Instance)
             Object.Destroy(replica.Instance);
+    }
+
+    private void Client_RaiseQuestKillCredit(int id, in AIHealthBroadcastRpc message)
+    {
+        if (!message.HasDamage)
+            return;
+        if (!_clientReplicas.TryGetValue(id, out var replica) || replica == null)
+            return;
+
+        var cmc = replica.Character;
+        var health = cmc ? cmc.Health : null;
+        if (!health)
+            return;
+
+        var receiver = cmc ? cmc.mainDamageReceiver : null;
+        if (!receiver && cmc)
+            receiver = cmc.GetComponentInChildren<DamageReceiver>(true);
+
+        var attacker = CharacterMainControl.Main;
+        if (!attacker)
+            return;
+
+        var info = message.Damage.ToDamageInfo(attacker, receiver);
+        if (info.toDamageReceiver == null)
+            info.toDamageReceiver = receiver;
+        if (info.fromCharacter == null)
+            info.fromCharacter = attacker;
+
+        _clientLastDamage[id] = info;
+        Client_RaiseQuestKillCredit(id, health, info);
+    }
+
+    private bool Client_RaiseQuestKillCredit(int id, Health health, DamageInfo info)
+    {
+        if (IsServer || !health || !CharacterMainControl.Main)
+            return false;
+
+        if (info.fromCharacter == null)
+            info.fromCharacter = CharacterMainControl.Main;
+        if (info.fromCharacter != CharacterMainControl.Main)
+            return false;
+        if (!_clientQuestKillCreditRaised.Add(id))
+            return false;
+
+        RaiseStaticHealthOnDead(health, info);
+        return true;
+    }
+
+    private static void RaiseStaticHealthOnDead(Health health, DamageInfo info)
+    {
+        if (!health)
+            return;
+
+        try
+        {
+            if (HealthOnDeadEventField?.GetValue(null) is Action<Health, DamageInfo> handler)
+                handler.Invoke(health, info);
+        }
+        catch
+        {
+        }
     }
 
     private static bool IsControllerActivated(AICharacterController controller, CharacterMainControl cmc)
@@ -2884,8 +3369,12 @@ public sealed class AISyncService
             list = new List<(int weaponTypeId, int buffId)>();
             _clientPendingBuffs[id] = list;
         }
-        if (list.Any(t => t.weaponTypeId == weaponTypeId && t.buffId == buffId))
-            return;
+        for (var i = 0; i < list.Count; i++)
+        {
+            var item = list[i];
+            if (item.weaponTypeId == weaponTypeId && item.buffId == buffId)
+                return;
+        }
         list.Add((weaponTypeId, buffId));
         if (list.Count > MaxStoredBuffs)
             list.RemoveRange(0, list.Count - MaxStoredBuffs);
@@ -3113,10 +3602,7 @@ public sealed class AISyncService
     {
         modelName = NormalizePrefabName(modelName);
         if (string.IsNullOrEmpty(modelName))
-        {
-            var main = CharacterMainControl.Main;
-            return main ? main.characterModel : null;
-        }
+            return null;
 
         if (_modelCache.TryGetValue(modelName, out var cached) && cached)
         {
@@ -3350,7 +3836,13 @@ public sealed class AISyncService
         }
     }
 
-    private static async UniTask ApplyEquipmentAsync(CharacterModel model, Dictionary<string, int> equipment, Dictionary<string, int> weapons, Dictionary<string, ItemSnapshot> weaponSnapshots = null)
+    private static async UniTask ApplyEquipmentAsync(
+        CharacterModel model,
+        Dictionary<string, int> equipment,
+        Dictionary<string, int> weapons,
+        Dictionary<string, ItemSnapshot> weaponSnapshots = null,
+        string activeWeaponSlot = null,
+        int activeWeaponTypeId = 0)
     {
         if (!model) return;
 
@@ -3360,6 +3852,7 @@ public sealed class AISyncService
         {
             foreach (var kv in equipment)
             {
+                if (IsWeaponSlot(kv.Key)) continue;
                 var typeId = kv.Value;
                 if (typeId <= 0) continue;
                 try
@@ -3376,6 +3869,9 @@ public sealed class AISyncService
 
         if (weapons != null)
         {
+            Item activeItem = null;
+            Item firstGunItem = null;
+            Item firstWeaponItem = null;
             foreach (var kv in weapons)
             {
                 var typeId = kv.Value;
@@ -3396,12 +3892,24 @@ public sealed class AISyncService
                         charItem.TryPlug(item);
 
                     if (item != null)
-                        model.characterMainControl.ChangeHoldItem(item);
+                    {
+                        if (firstWeaponItem == null)
+                            firstWeaponItem = item;
+                        if (firstGunItem == null && item.GetComponent<ItemSetting_Gun>() != null)
+                            firstGunItem = item;
+                        if ((activeWeaponTypeId > 0 && item.TypeID == activeWeaponTypeId) ||
+                            (!string.IsNullOrEmpty(activeWeaponSlot) && string.Equals(slot, activeWeaponSlot, StringComparison.Ordinal)))
+                            activeItem = item;
+                    }
                 }
                 catch
                 {
                 }
             }
+
+            var itemToHold = activeItem ?? firstGunItem ?? firstWeaponItem;
+            if (itemToHold != null && model.characterMainControl)
+                model.characterMainControl.ChangeHoldItem(itemToHold);
         }
     }
 
@@ -3556,7 +4064,117 @@ public sealed class AISyncService
         return key.Contains("hand") || key.Contains("weapon");
     }
 
-    private static AnimSample CaptureAnimSample(AICharacterController controller)
+    private bool RefreshActiveWeapon(AISyncEntry entry, CharacterMainControl cmc)
+    {
+        if (entry == null || !cmc)
+            return false;
+
+        var oldSlot = GetActiveWeaponSlot(entry.Id);
+        var oldType = GetActiveWeaponType(entry.Id);
+        var activeSlot = string.Empty;
+        var activeType = 0;
+
+        try
+        {
+            var hold = cmc.CurrentHoldItemAgent;
+            var item = hold ? hold.Item : null;
+            if (item)
+            {
+                activeType = item.TypeID;
+                activeSlot = ResolveActiveWeaponSlot(cmc, item, hold.handheldSocket);
+            }
+        }
+        catch
+        {
+        }
+
+        if (activeType == 0)
+        {
+            try
+            {
+                var gun = cmc.GetGun();
+                if (gun && gun.Item)
+                {
+                    activeType = gun.Item.TypeID;
+                    activeSlot = ResolveActiveWeaponSlot(cmc, gun.Item, HandheldSocketTypes.normalHandheld);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        if (activeType == 0)
+        {
+            try
+            {
+                var melee = cmc.GetMeleeWeapon();
+                if (melee && melee.Item)
+                {
+                    activeType = melee.Item.TypeID;
+                    activeSlot = ResolveActiveWeaponSlot(cmc, melee.Item, HandheldSocketTypes.meleeWeapon);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        SetActiveWeapon(entry.Id, activeSlot, activeType);
+        return oldType != activeType || !string.Equals(oldSlot, activeSlot, StringComparison.Ordinal);
+    }
+
+    private static string ResolveActiveWeaponSlot(CharacterMainControl cmc, Item item, HandheldSocketTypes fallbackSocket)
+    {
+        if (cmc && item)
+        {
+            try
+            {
+                var slots = cmc.CharacterItem?.Slots;
+                if (slots != null)
+                {
+                    foreach (var slot in slots)
+                    {
+                        if (slot?.Content == item)
+                            return slot.Key ?? string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return fallbackSocket.ToString();
+    }
+
+    private string GetActiveWeaponSlot(int id)
+    {
+        return _activeWeaponSlotById.TryGetValue(id, out var slot) ? slot ?? string.Empty : string.Empty;
+    }
+
+    private int GetActiveWeaponType(int id)
+    {
+        return _activeWeaponTypeById.TryGetValue(id, out var typeId) ? typeId : 0;
+    }
+
+    private void SetActiveWeapon(int id, string slot, int typeId)
+    {
+        if (id == 0)
+            return;
+
+        if (typeId <= 0 && string.IsNullOrEmpty(slot))
+        {
+            _activeWeaponSlotById.Remove(id);
+            _activeWeaponTypeById.Remove(id);
+            return;
+        }
+
+        _activeWeaponSlotById[id] = slot ?? string.Empty;
+        _activeWeaponTypeById[id] = Mathf.Max(0, typeId);
+    }
+
+    private AnimSample CaptureAnimSample(AISyncEntry entry, AICharacterController controller)
     {
         var sample = new AnimSample
         {
@@ -3566,32 +4184,17 @@ public sealed class AISyncService
 
         try
         {
-            var cmc = controller?.CharacterMainControl;
-            var model = cmc ? cmc.characterModel : null;
-            if (!model) return sample;
-
-            CharacterAnimationControl_MagicBlend magic = null;
-            CharacterAnimationControl basic = null;
-
-            try { magic = model.GetComponent<CharacterAnimationControl_MagicBlend>(); }
-            catch { }
-            if (!magic)
-            {
-                try { basic = model.GetComponent<CharacterAnimationControl>(); }
-                catch { }
-            }
-
-            var animator = magic ? magic.animator : basic ? basic.animator : null;
+            var animator = ResolveCachedAiAnimator(entry, controller);
             if (!animator) return sample;
 
-            sample.speed = animator.GetFloat("MoveSpeed");
-            sample.dirX = animator.GetFloat("MoveDirX");
-            sample.dirY = animator.GetFloat("MoveDirY");
-            sample.dashing = animator.GetBool("Dashing");
-            sample.attack = animator.GetBool("Attack");
-            sample.hand = animator.GetInteger("HandState");
-            sample.gunReady = animator.GetBool("GunReady");
-            sample.vehicleType = animator.GetInteger("VehicleType");
+            sample.speed = animator.GetFloat(AnimMoveSpeedHash);
+            sample.dirX = animator.GetFloat(AnimMoveDirXHash);
+            sample.dirY = animator.GetFloat(AnimMoveDirYHash);
+            sample.dashing = animator.GetBool(AnimDashingHash);
+            sample.attack = animator.GetBool(AnimAttackHash);
+            sample.hand = animator.GetInteger(AnimHandStateHash);
+            sample.gunReady = animator.GetBool(AnimGunReadyHash);
+            sample.vehicleType = animator.GetInteger(AnimVehicleTypeHash);
 
             var state = animator.GetCurrentAnimatorStateInfo(0);
             sample.stateHash = state.shortNameHash;
@@ -3604,6 +4207,45 @@ public sealed class AISyncService
         return sample;
     }
 
+    private Animator ResolveCachedAiAnimator(AISyncEntry entry, AICharacterController controller)
+    {
+        if (entry != null && _serverAnimatorCache.TryGetValue(entry.Id, out var cached) && cached)
+            return cached;
+
+        var cmc = controller ? controller.CharacterMainControl : null;
+        var model = cmc ? cmc.characterModel : null;
+        if (!model) return null;
+
+        Animator animator = null;
+        try
+        {
+            var magic = model.GetComponent<CharacterAnimationControl_MagicBlend>();
+            if (magic != null && magic.animator != null)
+                animator = magic.animator;
+        }
+        catch
+        {
+        }
+
+        if (!animator)
+        {
+            try
+            {
+                var basic = model.GetComponent<CharacterAnimationControl>();
+                if (basic != null && basic.animator != null)
+                    animator = basic.animator;
+            }
+            catch
+            {
+            }
+        }
+
+        if (animator && entry != null)
+            _serverAnimatorCache[entry.Id] = animator;
+
+        return animator;
+    }
+
     private sealed class RemoteAIReplica
     {
         public readonly int Id;
@@ -3614,9 +4256,12 @@ public sealed class AISyncService
         private readonly AISyncService _service;
         private readonly RemoteAIReplicaTag _tag;
         private readonly NetInterpolator _netInterp;
+        private readonly bool _isVehicle;
         private bool _deathNotified;
         private bool _suppressHealthReport;
         private int _lastEntryApplySignature = int.MinValue;
+        private int _lastActiveWeaponTypeId;
+        private int _pendingActiveWeaponTypeId;
         private float _lastPushedStateReceivedTime = -1f;
         private bool _hasLastPushedTransform;
         private Vector3 _lastPushedPosition;
@@ -3641,6 +4286,15 @@ public sealed class AISyncService
             _netInterp = NetInterpUtil.Attach(instance);
             _health = character ? character.Health : null;
             _tag = character ? character.GetComponent<RemoteAIReplicaTag>() : null;
+            _isVehicle = entry != null && entry.IsVehicle;
+            if (_isVehicle && _netInterp != null)
+            {
+                _netInterp.driveModelPosition = true;
+                _netInterp.interpolationBackTime = 0.1f;
+                _netInterp.maxExtrapolate = 0.18f;
+                _netInterp.hardSnapDistance = 12f;
+                _netInterp.sendInterval = 0.05f;
+            }
             if (_tag)
                 _tag.Id = id;
             if (_health)
@@ -3655,7 +4309,8 @@ public sealed class AISyncService
         {
             if (entry == null || !Instance || !Character) return;
 
-            var applySignature = ComputeEntryApplySignature(entry);
+            var activeWeaponTypeId = _service != null ? _service.GetActiveWeaponType(entry.Id) : 0;
+            var applySignature = ComputeEntryApplySignature(entry, activeWeaponTypeId);
             if (applySignature == _lastEntryApplySignature)
                 return;
             _lastEntryApplySignature = applySignature;
@@ -3726,9 +4381,13 @@ public sealed class AISyncService
                         _animInterp.Push(sample);
                 }
             }
+
+            if (activeWeaponTypeId != _lastActiveWeaponTypeId &&
+                activeWeaponTypeId != _pendingActiveWeaponTypeId)
+                EnsureActiveWeaponAsync(entry, activeWeaponTypeId).Forget();
         }
 
-        private static int ComputeEntryApplySignature(AISyncEntry entry)
+        private static int ComputeEntryApplySignature(AISyncEntry entry, int activeWeaponTypeId)
         {
             var hash = new HashCode();
             hash.Add(entry.Team);
@@ -3742,6 +4401,7 @@ public sealed class AISyncService
             hash.Add(entry.CurrentHealth);
             hash.Add(entry.BodyArmor);
             hash.Add(entry.HeadArmor);
+            hash.Add(activeWeaponTypeId);
 
             var sample = entry.LastAnimSample;
             hash.Add(sample.t);
@@ -3757,6 +4417,102 @@ public sealed class AISyncService
             hash.Add(sample.normTime);
 
             return hash.ToHashCode();
+        }
+
+        private async UniTaskVoid EnsureActiveWeaponAsync(AISyncEntry entry, int typeId)
+        {
+            if (entry == null || !Character)
+                return;
+
+            _pendingActiveWeaponTypeId = typeId;
+
+            try
+            {
+                if (typeId <= 0)
+                {
+                    _lastActiveWeaponTypeId = 0;
+                    return;
+                }
+
+                var item = FindCharacterItemByType(Character, typeId);
+                if (item == null)
+                {
+                    if (TryGetWeaponSnapshot(entry, typeId, out var snap) && snap.TypeId != 0)
+                        item = ItemTool.BuildItemFromSnapshot(snap);
+
+                    if (item == null)
+                        item = await ItemAssetsCollection.InstantiateAsync(typeId);
+
+                    if (item != null && Character && Character.CharacterItem != null)
+                    {
+                        try
+                        {
+                            Character.CharacterItem.TryPlug(item);
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+
+                if (item != null && Character)
+                {
+                    Character.ChangeHoldItem(item);
+                    _lastActiveWeaponTypeId = typeId;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[AI][CLIENT] Apply active weapon failed id={Id} type={typeId}: {ex.Message}");
+            }
+            finally
+            {
+                if (_pendingActiveWeaponTypeId == typeId)
+                    _pendingActiveWeaponTypeId = 0;
+            }
+        }
+
+        private static bool TryGetWeaponSnapshot(AISyncEntry entry, int typeId, out ItemSnapshot snapshot)
+        {
+            if (entry?.WeaponSnapshots != null)
+            {
+                foreach (var kv in entry.WeaponSnapshots)
+                {
+                    if (kv.Value.TypeId == typeId)
+                    {
+                        snapshot = kv.Value;
+                        return true;
+                    }
+                }
+            }
+
+            snapshot = default;
+            return false;
+        }
+
+        private static Item FindCharacterItemByType(CharacterMainControl character, int typeId)
+        {
+            if (!character || typeId <= 0)
+                return null;
+
+            try
+            {
+                var slots = character.CharacterItem?.Slots;
+                if (slots != null)
+                {
+                    foreach (var slot in slots)
+                    {
+                        var item = slot?.Content;
+                        if (item != null && item.TypeID == typeId)
+                            return item;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
         }
 
         public void ApplyBuffList(List<AIBuffState> buffs)
@@ -3789,7 +4545,7 @@ public sealed class AISyncService
             if (!Instance || !Character) return;
 
             var localAuthVehicle = false;
-            if (_service != null && CoopSyncDatabase.AI.TryGet(Id, out var entry) && entry != null)
+            if (_isVehicle && _service != null && CoopSyncDatabase.AI.TryGet(Id, out var entry) && entry != null)
                 localAuthVehicle = _service.IsLocalAuthoritativeVehicle(entry);
 
             if (localAuthVehicle)

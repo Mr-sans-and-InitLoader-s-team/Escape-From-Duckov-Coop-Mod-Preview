@@ -23,6 +23,7 @@ public class HostPlayerApply
 {
     private const float WeaponApplyDebounce = 0.20f; // 200ms 去抖窗口
 
+    private readonly Dictionary<string, string> _lastEquipmentAppliedByRemote = new();
     private readonly Dictionary<string, string> _lastWeaponAppliedByPeer = new();
     private readonly Dictionary<string, float> _lastWeaponAppliedTimeByPeer = new();
     private NetService Service => NetService.Instance;
@@ -45,79 +46,59 @@ public class HostPlayerApply
         var characterModel = remoteObj.GetComponent<CharacterMainControl>().characterModel;
         if (characterModel == null) return;
 
-        if (string.IsNullOrEmpty(itemId))
-        {
-            if (slotHash == 100) COOPManager.ChangeArmorModel(characterModel, null);
-            if (slotHash == 200) COOPManager.ChangeHelmatModel(characterModel, null);
-            if (slotHash == 300) COOPManager.ChangeFaceMaskModel(characterModel, null);
-            if (slotHash == 400) COOPManager.ChangeBackpackModel(characterModel, null);
-            if (slotHash == 500) COOPManager.ChangeHeadsetModel(characterModel, null);
+        var slotName = ResolveEquipmentSlotName(slotHash);
+        if (slotName == null) return;
+
+        var want = itemId ?? string.Empty;
+        var key = $"{remoteObj.GetInstanceID()}:{slotName}";
+        if (_lastEquipmentAppliedByRemote.TryGetValue(key, out var last) && last == want)
             return;
-        }
-        if(int.TryParse(itemId, out var ids1))
+
+        try
         {
-            var item = await COOPManager.GetItemAsync(ids1);
-            remoteObj.GetComponent<CharacterMainControl>().CharacterItem.TryPlug(item);
+            if (string.IsNullOrEmpty(want))
+            {
+                ApplyEquipmentVisual(characterModel, slotName, null);
+                _lastEquipmentAppliedByRemote[key] = want;
+                return;
+            }
+
+            if (!int.TryParse(want, out var typeId))
+                return;
+
+            var item = await COOPManager.GetItemAsync(typeId);
+            if (item == null)
+            {
+                Debug.LogWarning($"无法获取物品: ItemId={want}，槽位 {slotHash} 未更新");
+                return;
+            }
+
+            ApplyEquipmentVisual(characterModel, slotName, item);
+            _lastEquipmentAppliedByRemote[key] = want;
         }
-       
+        catch (Exception ex)
+        {
+            Debug.LogError($"更新装备失败(主机): {peer?.EndPoint}, SlotHash={slotHash}, ItemId={itemId}, 错误: {ex.Message}");
+        }
+    }
 
-        //string slotName = null;
-        //if (slotHash == CharacterEquipmentController.armorHash)
-        //{
-        //    slotName = "armorSlot";
-        //}
-        //else if (slotHash == CharacterEquipmentController.helmatHash)
-        //{
-        //    slotName = "helmatSlot";
-        //}
-        //else if (slotHash == CharacterEquipmentController.faceMaskHash)
-        //{
-        //    slotName = "faceMaskSlot";
-        //}
-        //else if (slotHash == CharacterEquipmentController.backpackHash)
-        //{
-        //    slotName = "backpackSlot";
-        //}
-        //else if (slotHash == CharacterEquipmentController.headsetHash)
-        //{
-        //    slotName = "headsetSlot";
-        //}
-        //else
-        //{
-        //    if (!string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var ids))
-        //    {
-        //        Debug.Log($"尝试更新装备: {peer.EndPoint}, Slot={slotHash}, ItemId={itemId}");
-        //        var item = await COOPManager.GetItemAsync(ids);
-        //        if (item == null) Debug.LogWarning($"无法获取物品: ItemId={itemId}，槽位 {slotHash} 未更新");
-        //        if (slotHash == 100) COOPManager.ChangeArmorModel(characterModel, item);
-        //        if (slotHash == 200) COOPManager.ChangeHelmatModel(characterModel, item);
-        //        if (slotHash == 300) COOPManager.ChangeFaceMaskModel(characterModel, item);
-        //        if (slotHash == 400) COOPManager.ChangeBackpackModel(characterModel, item);
-        //        if (slotHash == 500) COOPManager.ChangeHeadsetModel(characterModel, item);
-        //    }
+    private static string ResolveEquipmentSlotName(int slotHash)
+    {
+        if (slotHash == 100 || slotHash == CharacterEquipmentController.armorHash) return "armorSlot";
+        if (slotHash == 200 || slotHash == CharacterEquipmentController.helmatHash) return "helmatSlot";
+        if (slotHash == 300 || slotHash == CharacterEquipmentController.faceMaskHash) return "faceMaskSlot";
+        if (slotHash == 400 || slotHash == CharacterEquipmentController.backpackHash) return "backpackSlot";
+        if (slotHash == 500 || slotHash == CharacterEquipmentController.headsetHash) return "headsetSlot";
+        return null;
+    }
 
-        //    return;
-        //}
-
-        //try
-        //{
-        //    if (int.TryParse(itemId, out var ids))
-        //    {
-        //        var item = await COOPManager.GetItemAsync(ids);
-        //        if (item != null)
-        //        {
-        //            if (slotName == "armorSlot") COOPManager.ChangeArmorModel(characterModel, item);
-        //            if (slotName == "helmatSlot") COOPManager.ChangeHelmatModel(characterModel, item);
-        //            if (slotName == "faceMaskSlot") COOPManager.ChangeFaceMaskModel(characterModel, item);
-        //            if (slotName == "backpackSlot") COOPManager.ChangeBackpackModel(characterModel, item);
-        //            if (slotName == "headsetSlot") COOPManager.ChangeHeadsetModel(characterModel, item);
-        //        }
-        //    }
-        //}
-        //catch (Exception ex)
-        //{
-        //    Debug.LogError($"更新装备失败(主机): {peer.EndPoint}, SlotHash={slotHash}, ItemId={itemId}, 错误: {ex.Message}");
-        //}
+    private static void ApplyEquipmentVisual(CharacterModel characterModel, string slotName, Item item)
+    {
+        if (slotName == "armorSlot") COOPManager.ChangeArmorModel(characterModel, item);
+        else if (slotName == "helmatSlot") COOPManager.ChangeHelmatModel(characterModel, item);
+        else if (slotName == "faceMaskSlot") COOPManager.ChangeFaceMaskModel(characterModel, item);
+        else if (slotName == "backpackSlot") COOPManager.ChangeBackpackModel(characterModel, item);
+        else if (slotName == "headsetSlot") COOPManager.ChangeHeadsetModel(characterModel, item);
     }
 
     public async UniTask ApplyWeaponUpdate(NetPeer peer, int slotHash, string itemId, ItemSnapshot snapshot)
@@ -131,12 +112,11 @@ public class HostPlayerApply
         // —— 幂等/去抖：同一 peer、同一槽、同一 item 在 200ms 内重复到达则忽略 ——
         var key = $"{peer?.Id ?? -1}:{slotHash}";
         var want = itemId ?? string.Empty;
-        if (_lastWeaponAppliedByPeer.TryGetValue(key, out var last) && last == want)
-            // 同值重复，直接跳过
+        if (_lastWeaponAppliedByPeer.TryGetValue(key, out var last) &&
+            last == want &&
+            _lastWeaponAppliedTimeByPeer.TryGetValue(key, out var ts) &&
+            Time.time - ts < WeaponApplyDebounce)
             return;
-        if (_lastWeaponAppliedTimeByPeer.TryGetValue(key, out var ts))
-            if (Time.time - ts < WeaponApplyDebounce && last == want)
-                return;
         _lastWeaponAppliedByPeer[key] = want;
         _lastWeaponAppliedTimeByPeer[key] = Time.time;
 

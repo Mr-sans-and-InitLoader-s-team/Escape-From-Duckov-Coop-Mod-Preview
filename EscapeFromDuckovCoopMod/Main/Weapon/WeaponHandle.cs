@@ -22,6 +22,10 @@ namespace EscapeFromDuckovCoopMod;
 
 public class WeaponHandle
 {
+    private const int MaxFireBroadcastsPerFrame = 72;
+    private const int MaxFakeProjectileVisualsPerFrame = 28;
+    private const float FireDropLogInterval = 2f;
+
     private readonly Dictionary<int, float> _distCacheByWeaponType = new();
     private readonly Dictionary<int, float> _explDamageCacheByWeaponType = new();
 
@@ -31,6 +35,13 @@ public class WeaponHandle
     private readonly Dictionary<int, Projectile> _projectilePrefabCache = new();
 
     private readonly Dictionary<int, float> _speedCacheByWeaponType = new();
+    private int _fireBroadcastFrame = -1;
+    private int _fireBroadcastCount;
+    private int _droppedFireBroadcastCount;
+    private int _fakeProjectileFrame = -1;
+    private int _fakeProjectileCount;
+    private int _droppedFakeProjectileCount;
+    private float _nextFireDropLogTime;
     private NetService Service => NetService.Instance;
 
     private bool IsServer => Service != null && Service.IsServer;
@@ -43,6 +54,9 @@ public class WeaponHandle
     private void BroadcastProjectileEvent(in WeaponFireEventRpc evt, NetPeer excludePeer = null)
     {
         if (!IsServer || !networkStarted)
+            return;
+
+        if (!ShouldBroadcastFireEvent(in evt))
             return;
 
         var maxDistance = CoopAISettings.ActiveGeneral.ProjectileSyncMaxDistance;
@@ -74,6 +88,36 @@ public class WeaponHandle
 
             CoopTool.SendRpcTo(peer, in evt);
         }
+    }
+
+    private bool ShouldBroadcastFireEvent(in WeaponFireEventRpc evt)
+    {
+        if (!evt.IsFake)
+            return true;
+
+        if (evt.HasPayload && (evt.Payload.explosionRange > 0f || evt.Payload.explosionDamage > 0f))
+            return true;
+
+        var frame = Time.frameCount;
+        if (_fireBroadcastFrame != frame)
+        {
+            _fireBroadcastFrame = frame;
+            _fireBroadcastCount = 0;
+        }
+
+        if (_fireBroadcastCount++ < MaxFireBroadcastsPerFrame)
+            return true;
+
+        _droppedFireBroadcastCount++;
+        var now = Time.unscaledTime;
+        if (now >= _nextFireDropLogTime)
+        {
+            CoopPerfLog.AppendEvent("fire", $"droppedFireBroadcasts={_droppedFireBroadcastCount} perFrameBudget={MaxFireBroadcastsPerFrame}");
+            _droppedFireBroadcastCount = 0;
+            _nextFireDropLogTime = now + FireDropLogInterval;
+        }
+
+        return false;
     }
 
     private CharacterMainControl TryResolveShooter(string shooterId, int aiId, out ItemAgent_Gun resolvedGun)
@@ -253,7 +297,8 @@ public class WeaponHandle
      float distance, bool isFake, ProjectileContext ctx, CharacterMainControl shooterCMC, ItemAgent_Gun overrideGun = null,
      int aiId = 0)
     {
-       
+        var cacheKey = GetShooterCacheKey(shooterId, aiId);
+
         if (!shooterCMC)
         {  
             shooterCMC = TryResolveShooter(shooterId, aiId, out overrideGun);
@@ -295,6 +340,19 @@ public class WeaponHandle
 
         ItemAgent_Gun gun = overrideGun;
         Transform muzzleTf = null;
+        if (gun && gun.muzzle)
+            muzzleTf = gun.muzzle;
+
+        var localPlayer = LocalPlayerManager.Instance;
+        if (!gun && cacheKey != null && localPlayer != null &&
+            localPlayer._gunCacheByShooter.TryGetValue(cacheKey, out var cached) &&
+            cached.gun &&
+            (weaponType == 0 || cached.gun.Item == null || cached.gun.Item.TypeID == weaponType))
+        {
+            gun = cached.gun;
+            muzzleTf = cached.muzzle ? cached.muzzle : gun.muzzle;
+        }
+
         if (!gun && shooterCMC && shooterCMC.characterModel)
         {
             gun = shooterCMC.GetGun();
@@ -308,6 +366,15 @@ public class WeaponHandle
 
             if (gun)
                 muzzleTf = gun.muzzle;
+        }
+
+        if (cacheKey != null && gun && localPlayer != null)
+            localPlayer._gunCacheByShooter[cacheKey] = (gun, muzzleTf);
+
+        if (isFake && !ShouldSpawnFakeProjectile(ctx))
+        {
+            FxManager.PlayMuzzleFxAndShell(shooterId, weaponType, muzzleTf ? muzzleTf.position : spawnPos, dir, gun, muzzleTf, aiId);
+            return;
         }
 
 
@@ -361,6 +428,39 @@ public class WeaponHandle
 
     }
 
+    private static string GetShooterCacheKey(string shooterId, int aiId)
+    {
+        if (aiId != 0) return $"AI:{aiId}";
+        return string.IsNullOrEmpty(shooterId) ? null : shooterId;
+    }
+
+    private bool ShouldSpawnFakeProjectile(ProjectileContext ctx)
+    {
+        if (ctx.explosionRange > 0f || ctx.explosionDamage > 0f)
+            return true;
+
+        var frame = Time.frameCount;
+        if (_fakeProjectileFrame != frame)
+        {
+            _fakeProjectileFrame = frame;
+            _fakeProjectileCount = 0;
+        }
+
+        if (_fakeProjectileCount++ < MaxFakeProjectileVisualsPerFrame)
+            return true;
+
+        _droppedFakeProjectileCount++;
+        var now = Time.unscaledTime;
+        if (now >= _nextFireDropLogTime)
+        {
+            CoopPerfLog.AppendEvent("fire", $"droppedFakeProjectiles={_droppedFakeProjectileCount} perFrameBudget={MaxFakeProjectileVisualsPerFrame}");
+            _droppedFakeProjectileCount = 0;
+            _nextFireDropLogTime = now + FireDropLogInterval;
+        }
+
+        return false;
+    }
+
 
     public void Client_HandleFireEvent(in WeaponFireEventRpc message)
     {
@@ -404,7 +504,7 @@ public class WeaponHandle
         EmitGunshotSound(controller, gun, message.MuzzlePosition, ctx.team);
 
         SpawnVisualProjectile(message.ShooterId, message.WeaponTypeId, message.MuzzlePosition, message.Direction.normalized,
-            message.Speed, message.Distance, message.IsFake, ctx, null, null, message.AiId);
+            message.Speed, message.Distance, message.IsFake, ctx, controller, gun, message.AiId);
     }
 
     public void Server_HandleFireRequest(NetPeer sender, in WeaponFireRequestRpc message)

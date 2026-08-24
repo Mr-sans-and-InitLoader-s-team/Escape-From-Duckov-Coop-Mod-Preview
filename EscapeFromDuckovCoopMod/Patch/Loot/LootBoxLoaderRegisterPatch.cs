@@ -37,12 +37,28 @@ internal static class LootBoxLoaderRegisterUtil
 {
     internal static void TryRegister(LootBoxLoader loader)
     {
-        var lootbox = loader ? loader.GetComponent<InteractableLootbox>() : null;
-        var inv = lootbox ? lootbox.Inventory : null;
-        if (inv == null || LootboxDetectUtil.IsPrivateInventory(inv))
+        if (!LootboxLifecycleGuard.IsLevelInventoryReady())
             return;
 
-        if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
+        if (MultiSceneCore.Instance == null)
+            return;
+
+        var lootbox = loader ? loader.GetComponent<InteractableLootbox>() : null;
+        if (!lootbox)
+            return;
+
+        Inventory inv;
+        try
+        {
+            inv = lootbox.Inventory;
+        }
+        catch
+        {
+            return;
+        }
+
+        if (inv == null || LootboxDetectUtil.IsPrivateInventory(inv))
+            return;
 
         // 记录为世界容器，并把位置/实例信息放进数据库供客户端解析
         LootSearchWorldGate.EnsureWorldFlag(inv);

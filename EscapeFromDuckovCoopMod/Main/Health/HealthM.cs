@@ -15,6 +15,7 @@
 // GNU Affero General Public License for more details.
 
 using Cysharp.Threading.Tasks;
+using Duckov.UI;
 using ItemStatsSystem;
 using LiteNetLib;
 using System.Collections;
@@ -63,7 +64,6 @@ public class HealthM : MonoBehaviour
     public void NotifyLocalHealthChanged(Health health, DamageInfo? damage)
     {
         if (!networkStarted || health == null) return;
-        Debug.Log($"NotifyLocalHealthChanged {health.CurrentHealth} max:{health.MaxHealth}");
         if (IsServer)
             Server_BroadcastHostSnapshot(health, damage);
         else
@@ -91,7 +91,6 @@ public class HealthM : MonoBehaviour
 
         var (max, cur) = ReadHealth(health);
         if (max <= 0f) return;
-        Debug.Log($"Client_SendSnapshot {health.CurrentHealth} max:{health.MaxHealth}");
         var now = Time.time;
         force |= damage.HasValue;
 
@@ -260,24 +259,12 @@ public class HealthM : MonoBehaviour
             return;
         _srvNextDamageRequestBySenderTarget[key] = now + SERVER_DAMAGE_REQUEST_INTERVAL;
 
-        var damage = message.Damage.ToDamageInfo(null, null);
-        LocalHitKillFx.RememberLastBaseDamage(damage.damageValue);
+        LocalHitKillFx.RememberLastBaseDamage(message.Damage.DamageValue);
 
         // Host self hurt
         if (service.IsSelfId(message.TargetPlayerId))
         {
-            var main = CharacterMainControl.Main;
-            var health = main ? main.GetComponentInChildren<Health>(true) : null;
-            var receiver = main ? main.mainDamageReceiver : null;
-            if (!receiver && main)
-                receiver = main.GetComponentInChildren<DamageReceiver>(true);
-
-            if (health && receiver)
-            {
-                damage.toDamageReceiver = receiver;
-                health.Hurt(damage);
-            }
-
+            Server_ApplyDamageToHost(message.Damage).Forget();
             return;
         }
 
@@ -321,14 +308,39 @@ public class HealthM : MonoBehaviour
             return;
         // 允许空 PlayerId 或不匹配的转发继续执行，恢复客户端对自身伤害的本地处理
 
+        Client_ApplyForwardedDamage(message.Damage).Forget();
+    }
+
+    private static async UniTaskVoid Server_ApplyDamageToHost(DamageForwardPayload payload)
+    {
+        var buff = payload.BuffId != 0
+            ? await COOPManager.ResolveBuffAsync(payload.WeaponItemId, payload.BuffId)
+            : null;
         var main = CharacterMainControl.Main;
         var health = main ? main.GetComponentInChildren<Health>(true) : null;
-        if (!health) return;
-
         var receiver = main ? main.mainDamageReceiver : null;
-        var damage = message.Damage.ToDamageInfo(null, receiver);
+        if (!receiver && main)
+            receiver = main.GetComponentInChildren<DamageReceiver>(true);
+        if (!health || !receiver)
+            return;
 
-        health.Hurt(damage);
+        health.Hurt(payload.ToDamageInfo(null, receiver, buff));
+    }
+
+    private static async UniTaskVoid Client_ApplyForwardedDamage(DamageForwardPayload payload)
+    {
+        var buff = payload.BuffId != 0
+            ? await COOPManager.ResolveBuffAsync(payload.WeaponItemId, payload.BuffId)
+            : null;
+        var main = CharacterMainControl.Main;
+        var health = main ? main.GetComponentInChildren<Health>(true) : null;
+        if (!health)
+            return;
+
+        var receiver = main.mainDamageReceiver;
+        if (!receiver)
+            receiver = main.GetComponentInChildren<DamageReceiver>(true);
+        health.Hurt(payload.ToDamageInfo(null, receiver, buff));
     }
 
     public void Server_ApplyCachedHealth(NetPeer peer, GameObject instance)
@@ -381,6 +393,12 @@ public class HealthM : MonoBehaviour
         for (var i = 0; i < attempts; i++)
         {
             if (h == null) yield break;
+            if (!ShouldShowHealthBar(h))
+            {
+                SuppressHealthBar(h);
+                yield break;
+            }
+
             if (NetService.Instance.IsServer)
             {
                 if (h.TryGetCharacter().aiCharacterController == null)
@@ -400,55 +418,74 @@ public class HealthM : MonoBehaviour
         }
     }
 
-    public void ForceSetHealth(Health h, float max, float cur, bool ensureBar = true, float? bodyArmor = null, float? headArmor = null)
+    public void ForceSetHealth(
+        Health h,
+        float max,
+        float cur,
+        bool ensureBar = true,
+        float? bodyArmor = null,
+        float? headArmor = null,
+        bool exactMax = false)
     {
         if (!h) return;
 
         var nowMax = h.MaxHealth;
-
         var defMax = (int)(HealthTool.FI_defaultMax?.GetValue(h) ?? 0);
+        var character = h.TryGetCharacter();
+        var characterItemInstance = character ? character.CharacterItem : null;
 
-        if (max > 0f && (nowMax <= 0f || max > nowMax + 0.0001f || defMax <= 0))
+        var shouldApplyMax = max > 0f &&
+                             (nowMax <= 0f ||
+                              defMax <= 0 ||
+                              max > nowMax + 0.0001f ||
+                              (exactMax && Mathf.Abs(nowMax - max) > 0.0001f));
+
+        if (shouldApplyMax)
         {
             HealthTool.FI_defaultMax?.SetValue(h, Mathf.RoundToInt(max));
-            HealthTool.FI_lastMax?.SetValue(h, -12345f);
-            h.OnMaxHealthChange?.Invoke(h);
-            var characterItemInstance = h.TryGetCharacter().CharacterItem;
             if (characterItemInstance != null)
             {
                 var stat = characterItemInstance.GetStat("MaxHealth".GetHashCode());
                 if (stat != null)
                 {
-                    var rule = LevelManager.Rule;
-                    var factor = rule != null ? rule.EnemyHealthFactor : 1f;
                     stat.BaseValue = max;
                 }
                 ApplyArmorStats(characterItemInstance, bodyArmor, headArmor);
             }
+
+            HealthTool.FI_lastMax?.SetValue(h, -12345f);
+            _ = h.MaxHealth;
+            h.OnMaxHealthChange?.Invoke(h);
         }
         else
         {
-            var characterItemInstance = h.TryGetCharacter().CharacterItem;
             if (characterItemInstance != null)
                 ApplyArmorStats(characterItemInstance, bodyArmor, headArmor);
         }
 
         var effMax = h.MaxHealth;
+        var targetCur = exactMax && max > 0f ? Mathf.Clamp(cur, 0f, max) : cur;
 
-        if (effMax > 0f && cur > effMax + 0.0001f)
+        if (effMax > 0f && targetCur > effMax + 0.0001f)
         {
-            HealthTool.FI__current?.SetValue(h, cur);
+            HealthTool.FI__current?.SetValue(h, targetCur);
 
             h.OnHealthChange?.Invoke(h);
         }
         else
         {
-            h.SetHealth(cur);
+            h.SetHealth(targetCur);
             h.OnHealthChange?.Invoke(h);
         }
 
         if (ensureBar)
         {
+            if (!ShouldShowHealthBar(h))
+            {
+                SuppressHealthBar(h);
+                return;
+            }
+
             if (NetService.Instance.IsServer)
             {
                 if (h.TryGetCharacter().aiCharacterController == null)
@@ -501,7 +538,14 @@ public class HealthM : MonoBehaviour
         HealthTool.BindHealthToCharacter(h, cmc);
 
         var clampedCur = Mathf.Max(0f, cur);
-        ForceSetHealth(h, max, clampedCur, false);
+        ForceSetHealth(h, max, clampedCur, false, exactMax: true);
+
+        if (!ShouldShowHealthBar(h))
+        {
+            SuppressHealthBar(h);
+            EnsureRemoteDeathState(cmc, h, clampedCur);
+            return;
+        }
 
         if(NetService.Instance.IsServer)
         {
@@ -604,4 +648,56 @@ public class HealthM : MonoBehaviour
     }
 
   
+    private static bool ShouldShowHealthBar(Health h)
+    {
+        return h && !IsVehicleHealth(h);
+    }
+
+    public static bool IsVehicleHealth(Health h)
+    {
+        if (!h)
+            return false;
+
+        try
+        {
+            var cmc = h.TryGetCharacter();
+            return cmc && cmc.isVehicle;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static void SuppressHealthBar(Health h)
+    {
+        if (!h)
+            return;
+
+        try
+        {
+            h.showHealthBar = false;
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            var manager = HealthBarManager.Instance;
+            if (manager == null)
+                return;
+
+            var getActive = AccessTools.DeclaredMethod(typeof(HealthBarManager), "GetActiveHealthBar", new[] { typeof(Health) });
+            var healthBar = getActive?.Invoke(manager, new object[] { h }) as HealthBar;
+            if (healthBar == null)
+                return;
+
+            var release = AccessTools.DeclaredMethod(typeof(HealthBar), "Release");
+            release?.Invoke(healthBar, null);
+        }
+        catch
+        {
+        }
+    }
 }

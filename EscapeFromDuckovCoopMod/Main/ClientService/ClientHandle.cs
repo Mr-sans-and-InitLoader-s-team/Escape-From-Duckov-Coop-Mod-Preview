@@ -73,9 +73,7 @@ public class ClientHandle
 
         if (isInGame && !remoteCharacters.ContainsKey(peer))
         {
-            CreateRemoteCharacter.CreateRemoteCharacterAsync(peer, position, rotation, customFaceJson).Forget();
-            foreach (var e in equipmentList) COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(peer, e.SlotHash, e.ItemId).Forget();
-            foreach (var w in weaponList) COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(peer, w.SlotHash, w.ItemId, w.Snapshot).Forget();
+            ApplyAfterSpawnAsync(peer, position, rotation, customFaceJson, equipmentList, weaponList).Forget();
         }
         else if (isInGame)
         {
@@ -92,5 +90,43 @@ public class ClientHandle
         playerStatuses[peer] = st;
 
         SendLocalPlayerStatus.Instance.SendPlayerStatusUpdate();
+    }
+
+    private static async UniTask ApplyAfterSpawnAsync(
+        NetPeer peer,
+        Vector3 position,
+        Quaternion rotation,
+        string customFaceJson,
+        List<EquipmentSyncData> equipmentList,
+        List<WeaponSyncData> weaponList)
+    {
+        var remote = await CreateRemoteCharacter.CreateRemoteCharacterAsync(peer, position, rotation, customFaceJson);
+        if (remote == null)
+            remote = await WaitForHostRemoteAsync(peer);
+        if (remote == null)
+            return;
+
+        foreach (var e in equipmentList)
+            COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(peer, e.SlotHash, e.ItemId).Forget();
+        foreach (var w in weaponList)
+            COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(peer, w.SlotHash, w.ItemId, w.Snapshot).Forget();
+    }
+
+    private static async UniTask<GameObject> WaitForHostRemoteAsync(NetPeer peer)
+    {
+        var service = NetService.Instance;
+        if (service == null || peer == null)
+            return null;
+
+        for (var i = 0; i < 20; i++)
+        {
+            if (service.remoteCharacters.TryGetValue(peer, out var remote) && remote != null)
+                return remote;
+
+            await UniTask.Delay(100);
+        }
+
+        CoopPerfLog.AppendEvent("loadout", $"legacy host spawn wait timeout peer={peer.EndPoint}");
+        return null;
     }
 }

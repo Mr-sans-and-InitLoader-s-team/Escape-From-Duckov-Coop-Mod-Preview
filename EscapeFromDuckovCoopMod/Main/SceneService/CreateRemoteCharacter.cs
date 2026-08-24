@@ -35,135 +35,148 @@ public static class CreateRemoteCharacter
     private static Dictionary<NetPeer, GameObject> remoteCharacters => Service?.remoteCharacters;
     private static Dictionary<NetPeer, PlayerStatus> playerStatuses => Service?.playerStatuses;
     private static Dictionary<string, GameObject> clientRemoteCharacters => Service?.clientRemoteCharacters;
+    private static readonly HashSet<NetPeer> ServerSpawnPending = new();
     private static readonly HashSet<string> ClientSpawnPending = new(StringComparer.Ordinal);
 
     public static async UniTask<GameObject> CreateRemoteCharacterAsync(NetPeer peer, Vector3 position, Quaternion rotation, string customFaceJson)
     {
-        if (remoteCharacters.ContainsKey(peer) && remoteCharacters[peer] != null) return null;
+        if (remoteCharacters.TryGetValue(peer, out var existing) && existing != null) return existing;
+        if (!ServerSpawnPending.Add(peer)) return null;
+
         Debug.Log(peer + " CreateRemoteCharacterAsync");
-        var levelManager = LevelManager.Instance;
-        if (levelManager == null || levelManager.MainCharacter == null) return null;
-
-        var itemLoaded = await Coopbase.LoadOrCreateCharacterItemInstance();
-        var playerP = Traverse.Create(LevelManager.Instance).Field<CharacterModel>("characterModel").Value;
-        var player = await LevelManager.Instance.CharacterCreator.CreateCharacter(itemLoaded, playerP, position, rotation);
-        var instance = player.gameObject;
-        var characterModel = instance.GetComponent<CharacterMainControl>();
-
-        // Traverse.Create(characterModel).Field<Item>("characterItem").Value = itemLoaded;
-        characterModel.SetItem(itemLoaded);
-
-        //  cInventory = CharacterMainControl.Main.CharacterItem.Inventory;
-        //  Traverse.Create(characterModel.CharacterItem).Field<Inventory>("inventory").Value = cInventory;
-
-        var cmc = instance.GetComponent<CharacterMainControl>();
-        COOPManager.StripAllHandItems(cmc);
-
-        var w = new SimplePointOfInterest();
-
-        //cmc.SetTeam(Teams.middle);
-
-        // Debug.Log(peer.EndPoint.ToString() + " CreateRemoteCharacterForClient");
-        // 统一设置初始位姿
-        instance.transform.SetPositionAndRotation(position, rotation);
-
-        MakeRemotePhysicsPassive(instance);
-
-        CustomFace.StripAllCustomFaceParts(instance);
-
-        if (characterModel?.characterModel.CustomFace != null && !string.IsNullOrEmpty(customFaceJson))
-        {
-            var customFaceData = JsonUtility.FromJson<CustomFaceSettingData>(customFaceJson);
-            characterModel.characterModel.CustomFace.LoadFromData(customFaceData);
-        }
-
-        if (playerStatuses.TryGetValue(peer, out var st1) && !string.IsNullOrEmpty(st1.PlayerName))
-        {
-            var playerIcon = Traverse.Create(levelManager).Field<Sprite>("characterMapIcon").Value;
-            Color cA = new Color(0f, 1f, 0f, 0.5f);     // 半透明绿
-
-            CreateMapElement(characterModel, cA, playerIcon, st1.PlayerName);
-        }
-        else
-        {
-            var playerIcon = Traverse.Create(levelManager).Field<Sprite>("characterMapIcon").Value;
-            Color cA = new Color(0f, 1f, 0f, 0.5f);     // 半透明绿
-
-            CreateMapElement(characterModel, cA, playerIcon, "Player");
-        }
-
         try
         {
-            var cm = characterModel.characterModel;
+            var levelManager = LevelManager.Instance;
+            if (levelManager == null || levelManager.MainCharacter == null) return null;
 
-            COOPManager.ChangeArmorModel(cm, null);
-            COOPManager.ChangeHelmatModel(cm, null);
-            COOPManager.ChangeFaceMaskModel(cm, null);
-            COOPManager.ChangeBackpackModel(cm, null);
-            COOPManager.ChangeHeadsetModel(cm, null);
-        }
-        catch
-        {
-        }
+            var itemLoaded = await Coopbase.LoadOrCreateCharacterItemInstance();
+            var playerP = Traverse.Create(LevelManager.Instance).Field<CharacterModel>("characterModel").Value;
+            var player = await LevelManager.Instance.CharacterCreator.CreateCharacter(itemLoaded, playerP, position, rotation);
+            var instance = player.gameObject;
+            var characterModel = instance.GetComponent<CharacterMainControl>();
 
+            // Traverse.Create(characterModel).Field<Item>("characterItem").Value = itemLoaded;
+            characterModel.SetItem(itemLoaded);
 
-        instance.AddComponent<RemoteReplicaTag>();
-        var anim = instance.GetComponentInChildren<Animator>(true);
-        if (anim)
-        {
-            anim.cullingMode = AnimatorCullingMode.AlwaysAnimate;
-            anim.updateMode = AnimatorUpdateMode.Normal;
-        }
+            //  cInventory = CharacterMainControl.Main.CharacterItem.Inventory;
+            //  Traverse.Create(characterModel.CharacterItem).Field<Inventory>("inventory").Value = cInventory;
 
-        var h = instance.GetComponentInChildren<Health>(true);
-        if (h) h.autoInit = false; // ★ 阻止 Start()->Init() 把血直接回满
-        instance.AddComponent<AutoRequestHealthBar>(); // 你已有就不要重复
-        // 主机创建完后立刻挂监听并推一次
-        HealthTool.Server_HookOneHealth(peer, instance);
-        instance.AddComponent<HostForceHealthBar>();
+            var cmc = instance.GetComponent<CharacterMainControl>();
+            COOPManager.StripAllHandItems(cmc);
 
-        NetInterpUtil.Attach(instance)?.Push(position, rotation);
-        AnimInterpUtil.Attach(instance); // 先挂上，样本由后续网络包填
-        cmc.gameObject.SetActive(false);
-        remoteCharacters[peer] = instance;
-        cmc.gameObject.SetActive(true);
+            var w = new SimplePointOfInterest();
 
-        COOPManager.FriendlyFire?.OnRemoteCharacterCreated(cmc);
-        ModApiEvents.RaisePlayerSpawned(cmc, NetService.Instance?.GetPlayerId(peer), false);
+            //cmc.SetTeam(Teams.middle);
 
-        if (IsServer)
-        {
-            var distanceField = Traverse.Create(SetActiveByPlayerDistance.Instance).Field<float>("distance");
-            var originalDistance = distanceField.Value;
-            var hasForceSpawnModel = false;
+            // Debug.Log(peer.EndPoint.ToString() + " CreateRemoteCharacterForClient");
+            // 统一设置初始位姿
+            instance.transform.SetPositionAndRotation(position, rotation);
 
-            foreach (var entry in CoopSyncDatabase.AI.Entries)
+            MakeRemotePhysicsPassive(instance);
+
+            CustomFace.StripAllCustomFaceParts(instance);
+
+            if (characterModel?.characterModel.CustomFace != null && !string.IsNullOrEmpty(customFaceJson))
             {
-                if (entry == null)
-                    continue;
-
-                if (AISyncService.IsForceSpawnModel(entry.ModelName))
-                {
-                    distanceField.Value = 3000f;
-                    hasForceSpawnModel = true;
-                    break;
-                }
+                var customFaceData = JsonUtility.FromJson<CustomFaceSettingData>(customFaceJson);
+                characterModel.characterModel.CustomFace.LoadFromData(customFaceData);
             }
 
-            if (hasForceSpawnModel)
+            if (playerStatuses.TryGetValue(peer, out var st1) && !string.IsNullOrEmpty(st1.PlayerName))
             {
-                UniTask.Void(async () =>
-                {
-                    await UniTask.Delay(5000);
-                    distanceField.Value = originalDistance;
-                });
+                var playerIcon = Traverse.Create(levelManager).Field<Sprite>("characterMapIcon").Value;
+                Color cA = new Color(0f, 1f, 0f, 0.5f);     // 半透明绿
+
+                CreateMapElement(characterModel, cA, playerIcon, st1.PlayerName);
             }
             else
             {
-                distanceField.Value = originalDistance;
+                var playerIcon = Traverse.Create(levelManager).Field<Sprite>("characterMapIcon").Value;
+                Color cA = new Color(0f, 1f, 0f, 0.5f);     // 半透明绿
+
+                CreateMapElement(characterModel, cA, playerIcon, "Player");
             }
+
+            try
+            {
+                var cm = characterModel.characterModel;
+
+                COOPManager.ChangeArmorModel(cm, null);
+                COOPManager.ChangeHelmatModel(cm, null);
+                COOPManager.ChangeFaceMaskModel(cm, null);
+                COOPManager.ChangeBackpackModel(cm, null);
+                COOPManager.ChangeHeadsetModel(cm, null);
+            }
+            catch
+            {
+            }
+
+
+            instance.AddComponent<RemoteReplicaTag>();
+            var anim = instance.GetComponentInChildren<Animator>(true);
+            if (anim)
+            {
+                anim.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+                anim.updateMode = AnimatorUpdateMode.Normal;
+            }
+
+            var h = instance.GetComponentInChildren<Health>(true);
+            if (h) h.autoInit = false; // ★ 阻止 Start()->Init() 把血直接回满
+            instance.AddComponent<AutoRequestHealthBar>(); // 你已有就不要重复
+            // 主机创建完后立刻挂监听并推一次
+            HealthTool.Server_HookOneHealth(peer, instance);
+            instance.AddComponent<HostForceHealthBar>();
+            if (playerStatuses.TryGetValue(peer, out var nameStatus))
+                HealthBarNameDisplay.TryRefreshRemoteCharacter(instance, Service.GetPlayerId(peer), nameStatus.SteamName);
+
+            RPCPlayer.AttachPlayerPositionInterpolator(instance)?.Push(position, rotation);
+            RPCPlayer.AttachPlayerAnimationInterpolator(instance); // 先挂上，样本由后续网络包填
+            cmc.gameObject.SetActive(false);
+            remoteCharacters[peer] = instance;
+            cmc.gameObject.SetActive(true);
+
+            COOPManager.FriendlyFire?.OnRemoteCharacterCreated(cmc);
+            ModApiEvents.RaisePlayerSpawned(cmc, NetService.Instance?.GetPlayerId(peer), false);
+
+            if (IsServer)
+            {
+                var distanceField = Traverse.Create(SetActiveByPlayerDistance.Instance).Field<float>("distance");
+                var originalDistance = distanceField.Value;
+                var hasForceSpawnModel = false;
+
+                foreach (var entry in CoopSyncDatabase.AI.Entries)
+                {
+                    if (entry == null)
+                        continue;
+
+                    if (AISyncService.IsForceSpawnModel(entry.ModelName))
+                    {
+                        distanceField.Value = 3000f;
+                        hasForceSpawnModel = true;
+                        break;
+                    }
+                }
+
+                if (hasForceSpawnModel)
+                {
+                    UniTask.Void(async () =>
+                    {
+                        await UniTask.Delay(5000);
+                        distanceField.Value = originalDistance;
+                    });
+                }
+                else
+                {
+                    distanceField.Value = originalDistance;
+                }
+            }
+
+            return instance;
         }
-        return instance;
+        finally
+        {
+            ServerSpawnPending.Remove(peer);
+        }
     }
 
     public static async UniTask CreateRemoteCharacterForClient(string playerId, Vector3 position, Quaternion rotation, string customFaceJson)
@@ -260,9 +273,11 @@ public static class CreateRemoteCharacter
         if (h) h.autoInit = false;
         instance.AddComponent<AutoRequestHealthBar>();
         CoopTool.Client_ApplyPendingRemoteIfAny(playerId, instance);
+        if (NetService.Instance.clientPlayerStatuses.TryGetValue(playerId, out var nameStatus))
+            HealthBarNameDisplay.TryRefreshRemoteCharacter(instance, playerId, nameStatus.SteamName);
 
-        NetInterpUtil.Attach(instance)?.Push(position, rotation);
-        AnimInterpUtil.Attach(instance);
+        RPCPlayer.AttachPlayerPositionInterpolator(instance)?.Push(position, rotation);
+        RPCPlayer.AttachPlayerAnimationInterpolator(instance);
         cmc.gameObject.SetActive(false);
         clientRemoteCharacters[playerId] = instance;
         cmc.gameObject.SetActive(true);

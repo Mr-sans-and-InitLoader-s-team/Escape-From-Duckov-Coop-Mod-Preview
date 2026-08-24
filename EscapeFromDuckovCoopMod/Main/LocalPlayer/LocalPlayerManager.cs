@@ -44,6 +44,12 @@ public class LocalPlayerManager : MonoBehaviour
     private bool _cliSelfDeathFired;
     private float _localInvincibleUntil;
     private const float ClientInvincibleDuration = 15f;
+    private const float LoadoutSyncRetryDuration = 1.25f;
+    private const float LoadoutSyncRetryInterval = 0.50f;
+    private float _loadoutSyncUntil;
+    private float _nextLoadoutSyncTime;
+    private int _loadoutSyncRequestSeq;
+    private int _loggedLoadoutSyncRequestSeq;
 
     private NetService Service => NetService.Instance;
     private bool IsServer => Service != null && Service.IsServer;
@@ -71,11 +77,13 @@ public class LocalPlayerManager : MonoBehaviour
             : (IsServer ? $"Host:{port}" : $"Client:{Guid.NewGuid().ToString().Substring(0, 8)}");
 
         var resolvedName = Service != null ? Service.ResolveLocalPlayerName() : (IsServer ? "Host" : "Client");
+        var steamName = Service != null ? Service.ResolveLocalSteamName() : string.Empty;
 
         Service.localPlayerStatus = new PlayerStatus
         {
             EndPoint = selfId,
             PlayerName = resolvedName,
+            SteamName = steamName,
             Latency = 0,
             IsInGame = bool1,
             LastIsInGame = bool1,
@@ -85,6 +93,7 @@ public class LocalPlayerManager : MonoBehaviour
             CustomFaceJson = CustomFace.LoadLocalCustomFaceJson(),
         };
         _localInvincibleUntil = 0f;
+        RequestFullLoadoutSync(LoadoutSyncRetryDuration);
     }
 
     public bool IsLocalInvincible()
@@ -349,6 +358,7 @@ public class LocalPlayerManager : MonoBehaviour
                 // 不再二次创建本地主角；只做 Scene 就绪上报，由主机撮合同图远端创建
             {
                 SceneNet.Instance.TrySendSceneReadyOnce();
+                RequestFullLoadoutSync(LoadoutSyncRetryDuration);
             }
 
             if (currentIsInGame && !IsServer)
@@ -375,6 +385,72 @@ public class LocalPlayerManager : MonoBehaviour
         if (currentIsInGame)
         {
             Service.localPlayerStatus.CustomFaceJson = CustomFace.LoadLocalCustomFaceJson();
+            var steamName = Service.ResolveLocalSteamName();
+            Service.localPlayerStatus.SteamName = steamName;
+            if (!string.IsNullOrEmpty(steamName))
+                Service.localPlayerStatus.PlayerName = steamName;
+        }
+
+        TickPendingLoadoutSync();
+    }
+
+    public void RequestFullLoadoutSync(float retrySeconds = LoadoutSyncRetryDuration)
+    {
+        if (!networkStarted || Service?.localPlayerStatus == null)
+            return;
+
+        var now = Time.unscaledTime;
+        var until = now + Mathf.Max(0.1f, retrySeconds);
+        if (until > _loadoutSyncUntil)
+        {
+            _loadoutSyncUntil = until;
+            _loadoutSyncRequestSeq++;
+        }
+
+        _nextLoadoutSyncTime = 0f;
+    }
+
+    private void TickPendingLoadoutSync()
+    {
+        if (!networkStarted || Service?.localPlayerStatus == null)
+            return;
+
+        var now = Time.unscaledTime;
+        if (now > _loadoutSyncUntil || now < _nextLoadoutSyncTime)
+            return;
+
+        _nextLoadoutSyncTime = now + LoadoutSyncRetryInterval;
+        SendFullLoadoutSnapshot();
+    }
+
+    public void SendFullLoadoutSnapshot()
+    {
+        if (!networkStarted || Service?.localPlayerStatus == null || SendLocalPlayerStatus.Instance == null)
+            return;
+
+        if (CharacterMainControl.Main == null)
+            return;
+
+        var equipment = GetLocalEquipment();
+        var weapons = GetLocalWeapons();
+
+        Service.localPlayerStatus.EquipmentList = equipment;
+        Service.localPlayerStatus.WeaponList = weapons;
+
+        if (!IsServer && Send_ClientStatus.Instance != null)
+            Send_ClientStatus.Instance.SendClientStatusUpdate();
+
+        for (var i = 0; i < equipment.Count; i++)
+            SendLocalPlayerStatus.Instance.SendEquipmentUpdate(equipment[i]);
+
+        for (var i = 0; i < weapons.Count; i++)
+            SendLocalPlayerStatus.Instance.SendWeaponUpdate(weapons[i]);
+
+        if (_loggedLoadoutSyncRequestSeq != _loadoutSyncRequestSeq)
+        {
+            _loggedLoadoutSyncRequestSeq = _loadoutSyncRequestSeq;
+            CoopPerfLog.AppendEvent("loadout",
+                $"sync player={Service.localPlayerStatus.EndPoint} equipment={equipment.Count} weapons={weapons.Count} inGame={Service.localPlayerStatus.IsInGame}");
         }
     }
 
@@ -462,7 +538,7 @@ public class LocalPlayerManager : MonoBehaviour
                     continue;
                 }
 
-                NetInterpUtil.Attach(go); // 确保有组件；具体位置更新由 NetInterpolator 驱动
+                RPCPlayer.AttachPlayerPositionInterpolator(go); // 确保有组件；具体位置更新由 NetInterpolator 驱动
             }
         }
         else
@@ -475,7 +551,7 @@ public class LocalPlayerManager : MonoBehaviour
                     continue;
                 }
 
-                NetInterpUtil.Attach(go);
+                RPCPlayer.AttachPlayerPositionInterpolator(go);
             }
         }
     }
@@ -490,6 +566,7 @@ public class PlayerStatus
     public bool IsInGame { get; set; }
     public string EndPoint { get; set; }
     public string PlayerName { get; set; }
+    public string SteamName { get; set; }
     public bool LastIsInGame { get; set; }
     public Vector3 Position { get; set; }
     public Quaternion Rotation { get; set; }

@@ -121,6 +121,7 @@ public class ModBehaviourF : MonoBehaviour
 
     private void Awake()
     {
+        CoopLogSystem.Install();
         Debug.Log("ModBehaviour Awake");
         Instance = this;
         PerformanceDiagnostics.Instance.Reset();
@@ -214,6 +215,7 @@ public class ModBehaviourF : MonoBehaviour
                     SendLocalPlayerStatus.Instance.SendPositionUpdate();
                     SendLocalPlayerStatus.Instance.SendAnimationStatus();
                     SendLocalVehicleStatus.Instance?.SendVehicleTransformUpdate();
+                    netManager?.TriggerUpdate();
                 }
                 syncTimer = 0f;
 

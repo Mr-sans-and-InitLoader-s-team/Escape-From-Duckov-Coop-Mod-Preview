@@ -193,21 +193,21 @@ internal static class Patch_Health_Hurt_AIdEAD
         if (Patch_Health_Hurt_RemoteAnti.IsSimulatingRemoteAiHurt)
             return;
 
+        var character = __instance.TryGetCharacter();
         if (mod.IsServer)
         {
-            if(__instance.TryGetCharacter().GetComponentInChildren<RemoteAIReplicaTag>() == null)
+            if (character != null && character.GetComponentInChildren<RemoteAIReplicaTag>(true) == null)
             {
                 if (__instance.IsDead)
                 {
-                    DeadLootSpawnContext.InOnDead = __instance.TryGetCharacter();
+                    DeadLootSpawnContext.InOnDead = character;
                 }
             }         
         }
 
-        var character = __instance.TryGetCharacter();
         if (character == null) return;
 
-        var remoteTag = character.GetComponentInChildren<RemoteAIReplicaTag>();
+        var remoteTag = character.GetComponentInChildren<RemoteAIReplicaTag>(true);
         if (remoteTag == null) return;
 
         if (!mod.IsServer && __instance.IsDead)
@@ -283,11 +283,19 @@ internal static class Patch_Health_Hurt_RemoteAnti
         //        DamageStatsTracker.Instance?.RecordLocalDamage(damageInfo.damageValue);
         //}
 
-        // 客户端侧的远端 AI：仅转发给主机，不在本地再次结算伤害，避免“假伤害”比主机高
-        var remoteAi = __instance.TryGetCharacter().GetComponentInChildren<RemoteAIReplicaTag>();
-        if (remoteAi != null && !mod.IsServer && damageInfo.fromCharacter != null && damageInfo.fromCharacter == LevelManager.Instance.MainCharacter)
+        var character = __instance.TryGetCharacter();
+        if (character == null)
+            return true;
+
+        // 客户端侧远端 AI 仍继续本地 Hurt 保留命中特效，同时把伤害上报给主机。
+        var remoteAi = character.GetComponentInChildren<RemoteAIReplicaTag>(true);
+        var mainCharacter = LevelManager.Instance != null && LevelManager.Instance.MainCharacter != null
+            ? LevelManager.Instance.MainCharacter
+            : CharacterMainControl.Main;
+        if (remoteAi != null && !mod.IsServer && damageInfo.fromCharacter != null && damageInfo.fromCharacter == mainCharacter)
         {
-            COOPManager.AI._clientLastDamage[remoteAi.Id] = damageInfo;
+            if (COOPManager.AI != null)
+                COOPManager.AI._clientLastDamage[remoteAi.Id] = damageInfo;
             //COOPManager.AI?.Client_ReportAiHealth(remoteAi.Id, __instance, damageInfo);
 
             //// 可选的“本地视觉预测”：在本地运行一次 Hurt 让击中特效/僵直正确，但随后立即恢复血量，避免和主机权威值偏差
@@ -311,8 +319,8 @@ internal static class Patch_Health_Hurt_RemoteAnti
             return true;
         }
 
-        if (__instance.TryGetCharacter().GetComponentInChildren<AICharacterController>() != null) return true;
-        if (__instance.TryGetCharacter().GetComponentInChildren<AutoRequestHealthBar>() != null) return false;
+        if (character.GetComponentInChildren<AICharacterController>(true) != null) return true;
+        if (character.GetComponentInChildren<AutoRequestHealthBar>(true) != null) return false;
 
 
 
@@ -381,6 +389,40 @@ public static class HealthILHelper
             }
 
         }
+    }
+}
+
+[HarmonyPatch(typeof(HealthBarManager), "CreateHealthBarFor")]
+internal static class Patch_HealthBarManager_CreateSteamNameForRemotePlayers
+{
+    private static void Postfix(HealthBar __result, Health health)
+    {
+        HealthBarNameDisplay.TryApplyToHealthBar(__result, health);
+    }
+}
+
+[HarmonyPatch(typeof(Health), nameof(Health.RequestHealthBar))]
+internal static class Patch_Health_RequestHealthBar_SkipVehicle
+{
+    private static bool Prefix(Health __instance)
+    {
+        if (!HealthM.IsVehicleHealth(__instance))
+            return true;
+
+        HealthM.SuppressHealthBar(__instance);
+        return false;
+    }
+}
+
+[HarmonyPatch(typeof(HealthBar), "Refresh")]
+internal static class Patch_HealthBar_RefreshSteamNameForRemotePlayers
+{
+    private static void Postfix(HealthBar __instance)
+    {
+        if (__instance == null)
+            return;
+
+        HealthBarNameDisplay.TryApplyToHealthBar(__instance, __instance.target);
     }
 }
 

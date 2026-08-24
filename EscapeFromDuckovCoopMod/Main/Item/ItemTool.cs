@@ -27,6 +27,8 @@ namespace EscapeFromDuckovCoopMod;
 public static class ItemTool
 {
     private const int DurabilityLossScale = 10000;
+    private const string BuiltInVariableKeyPrefix = "core.var.";
+    private const char BuiltInVariableSeparator = '|';
 
     private static int EncodeInventoryCapacity(int capacity, float durabilityLoss)
     {
@@ -328,7 +330,7 @@ public static class ItemTool
             }
         }
 
-        var customData = ModApiEvents.RaiseItemSnapshotCustomDataRequested(item);
+        var customData = BuildSnapshotCustomData(item);
         if (customData != null)
         {
             var keys = new List<string>(customData.Count);
@@ -726,7 +728,10 @@ public static class ItemTool
         var snapSlots = snapshot.Slots ?? Array.Empty<ItemSlotSnapshot>();
 
         if (slots == null || slots.Count == 0)
+        {
+            ApplyCustomDataSnapshot(item, snapshot);
             return true;
+        }
 
         var snapMap = new Dictionary<string, ItemSlotSnapshot>(StringComparer.Ordinal);
         foreach (var s in snapSlots)
@@ -886,6 +891,123 @@ public static class ItemTool
         snapshot.CustomDataValues = values;
     }
 
+    private static Dictionary<string, string> BuildSnapshotCustomData(Item item)
+    {
+        if (!item) return null;
+
+        var data = new Dictionary<string, string>(StringComparer.Ordinal);
+        AppendBuiltInVariableSnapshot(item, data);
+
+        var external = ModApiEvents.RaiseItemSnapshotCustomDataRequested(item);
+        if (external != null)
+        {
+            foreach (var kvp in external)
+            {
+                if (string.IsNullOrEmpty(kvp.Key)) continue;
+                data[kvp.Key] = kvp.Value ?? string.Empty;
+            }
+        }
+
+        return data.Count > 0 ? data : null;
+    }
+
+    private static void AppendBuiltInVariableSnapshot(Item item, Dictionary<string, string> data)
+    {
+        if (!item || data == null) return;
+
+        try
+        {
+            var variables = item.Variables;
+            if (variables == null || variables.Count == 0)
+                return;
+
+            foreach (var variable in variables)
+            {
+                if (variable == null || string.IsNullOrWhiteSpace(variable.Key))
+                    continue;
+
+                var raw = variable.GetRawCopied() ?? Array.Empty<byte>();
+                data[BuiltInVariableKeyPrefix + variable.Key] = string.Concat(
+                    ((int)variable.DataType).ToString(),
+                    BuiltInVariableSeparator.ToString(),
+                    variable.Display ? "1" : "0",
+                    BuiltInVariableSeparator.ToString(),
+                    Convert.ToBase64String(raw));
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static void ApplyBuiltInVariableSnapshot(Item item, IReadOnlyDictionary<string, string> data)
+    {
+        if (!item || data == null || data.Count == 0)
+            return;
+
+        foreach (var kvp in data)
+        {
+            if (string.IsNullOrEmpty(kvp.Key) ||
+                !kvp.Key.StartsWith(BuiltInVariableKeyPrefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var variableKey = kvp.Key.Substring(BuiltInVariableKeyPrefix.Length);
+            if (string.IsNullOrWhiteSpace(variableKey))
+                continue;
+
+            if (!TryDecodeBuiltInVariable(kvp.Value, out var type, out var raw, out var display))
+                continue;
+
+            try
+            {
+                item.Variables?.SetRaw(variableKey, type, raw, true, display);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static bool TryDecodeBuiltInVariable(string encoded, out CustomDataType type, out byte[] raw, out bool display)
+    {
+        type = CustomDataType.Raw;
+        raw = Array.Empty<byte>();
+        display = false;
+
+        if (string.IsNullOrEmpty(encoded))
+            return false;
+
+        var first = encoded.IndexOf(BuiltInVariableSeparator);
+        if (first <= 0)
+            return false;
+
+        var second = encoded.IndexOf(BuiltInVariableSeparator, first + 1);
+        if (second <= first)
+            return false;
+
+        if (!int.TryParse(encoded.Substring(0, first), out var typeValue))
+            return false;
+
+        if (!Enum.IsDefined(typeof(CustomDataType), typeValue))
+            return false;
+
+        type = (CustomDataType)typeValue;
+        display = string.Equals(encoded.Substring(first + 1, second - first - 1), "1", StringComparison.Ordinal);
+
+        try
+        {
+            raw = Convert.FromBase64String(encoded.Substring(second + 1));
+            return true;
+        }
+        catch
+        {
+            raw = Array.Empty<byte>();
+            return false;
+        }
+    }
+
     private static void ApplyCustomDataSnapshot(Item item, ItemSnapshot snapshot)
     {
         if (!item) return;
@@ -903,8 +1025,20 @@ public static class ItemTool
             map[keys[i]] = values[i] ?? string.Empty;
         }
 
-        if (map.Count > 0)
-            ModApiEvents.RaiseItemSnapshotCustomDataApplied(item, map);
+        ApplyBuiltInVariableSnapshot(item, map);
+
+        Dictionary<string, string> external = null;
+        foreach (var kvp in map)
+        {
+            if (kvp.Key.StartsWith(BuiltInVariableKeyPrefix, StringComparison.Ordinal))
+                continue;
+
+            external ??= new Dictionary<string, string>(StringComparer.Ordinal);
+            external[kvp.Key] = kvp.Value;
+        }
+
+        if (external != null && external.Count > 0)
+            ModApiEvents.RaiseItemSnapshotCustomDataApplied(item, external);
     }
 
     private static bool CustomDataMatches(ItemSnapshot snapshot, Item item)
@@ -926,7 +1060,7 @@ public static class ItemTool
 
         if (map.Count == 0) return true;
 
-        var expected = ModApiEvents.RaiseItemSnapshotCustomDataRequested(item);
+        var expected = BuildSnapshotCustomData(item);
         if (expected == null || expected.Count == 0)
             return false;
 

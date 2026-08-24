@@ -252,7 +252,7 @@ public static class CoopTool
         return null;
     }
 
-    public static void GoTeleport(string SceneID,string MapName)
+    public static bool GoTeleport(string SceneID,string MapName)
     {
         try
         {
@@ -287,12 +287,17 @@ public static class CoopTool
             }
 
             if (!launched) Debug.LogWarning($"[SCENE] Local load fallback failed: no proxy for '{SceneID}'");
+            return launched;
         }
         catch (Exception e)
         {
             Debug.LogWarning("[SCENE] Local load failed: " + e);
+            return false;
         }
-        SceneNet.Instance.allowLocalSceneLoad = false;
+        finally
+        {
+            SceneNet.Instance.allowLocalSceneLoad = false;
+        }
     }
 
     private static string CleanName(string n)
@@ -415,7 +420,7 @@ public static class CoopTool
             {
             }
         }
-        HealthM.Instance.ForceSetHealth(h, applyMax, applyCur);
+        HealthM.Instance.ForceSetHealth(h, applyMax, applyCur, exactMax: true);
         _cliPendingRemoteHp.Remove(playerId);
 
 

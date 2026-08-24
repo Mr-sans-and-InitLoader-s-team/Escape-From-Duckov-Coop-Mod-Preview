@@ -42,6 +42,9 @@ public sealed class PerformanceDiagnostics
 
     public void Update(float deltaTime)
     {
+        if (!BuildInfo.RuntimePerfLoggingEnabled)
+            return;
+
         if (!_initialized)
             return;
 

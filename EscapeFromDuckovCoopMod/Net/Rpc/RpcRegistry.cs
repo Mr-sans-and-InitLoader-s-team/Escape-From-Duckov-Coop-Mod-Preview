@@ -21,6 +21,10 @@ public static class RpcRegistry
         Register<PlayerStatusUpdateRpc>(RPCPlayer.HandlePlayerStatusUpdate);
         Register<PlayerFriendlyFireStateRpc>(RPCPlayer.HandleFriendlyFireState);
         Register<VehicleTransformSyncRpc>(RPCVehicle.HandleVehicleTransformSync);
+        Register<VehicleControlRequestRpc>(RPCVehicle.HandleVehicleControlRequest);
+        Register<VehicleControlDecisionRpc>(RPCVehicle.HandleVehicleControlDecision);
+        Register<VehicleAuthorityStateRpc>(RPCVehicle.HandleVehicleAuthorityState);
+        Register<VehicleItemStateRpc>(RPCVehicle.HandleVehicleItemState);
         Register<EquipmentUpdateRpc>(RPCPlayer.HandleEquipmentUpdate);
         Register<WeaponUpdateRpc>(RPCPlayer.HandleWeaponUpdate);
         Register<WeaponFireRequestRpc>(RPCWeapon.HandleFireRequest);
@@ -49,6 +53,8 @@ public static class RpcRegistry
         Register<EnvDestructibleStateRpc>(RPCEnvironment.HandleDestructibleState);
         Register<EnvExplosiveOilBarrelStateRpc>(RPCEnvironment.HandleExplosiveOilBarrelState);
         Register<EnvLevelDataBoolRpc>(RPCEnvironment.HandleLevelDataBool);
+        Register<InteractableFinishRequestRpc>(RPCEnvironment.HandleInteractableFinishRequest);
+        Register<LotteryBoxStateRpc>(RPCEnvironment.HandleLotteryBoxState);
         Register<EnvExitSnapshotRequestRpc>(RPCEnvironment.HandleExitSnapshotRequest);
         Register<EnvExitSnapshotRpc>(RPCEnvironment.HandleExitSnapshot);
         Register<EnvDestructibleHealthReportRpc>(RPCEnvironment.HandleDestructibleHealthReport);
@@ -73,6 +79,7 @@ public static class RpcRegistry
         Register<AISnapshotRequestRpc>(RPCAI.HandleSnapshotRequest);
         Register<AISnapshotChunkRpc>(RPCAI.HandleSnapshotChunk);
         Register<AIActivationRequestRpc>(RPCAI.HandleActivationRequest);
+        Register<AISpawnerTriggerRequestRpc>(RPCAI.HandleSpawnerTriggerRequest);
         Register<AIActivationStateRpc>(RPCAI.HandleActivationState);
         Register<AISpawnRpc>(RPCAI.HandleSpawn);
         Register<AIDespawnRpc>(RPCAI.HandleDespawn);

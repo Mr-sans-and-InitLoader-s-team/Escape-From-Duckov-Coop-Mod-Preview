@@ -89,6 +89,9 @@ namespace EscapeFromDuckovCoopMod
                 case SystemLanguage.German:
                     currentLanguageCode = "de-DE";
                     break;
+                case SystemLanguage.Portuguese:
+                    currentLanguageCode = "pt-BR";
+                    break;
                 case SystemLanguage.English:
                 default:
                     currentLanguageCode = "en-US";
@@ -293,10 +296,29 @@ namespace EscapeFromDuckovCoopMod
             currentTranslations["ui.spectator.mode"] = "Spectator Mode: LMB ▶ Next | RMB ◀ Previous | Press F8 to end and view results (failsafe)";
             currentTranslations["ui.settings.friendlyFirePlayers"] = "Friendly Fire (Players)";
             currentTranslations["ui.settings.friendlyFirePlayers.desc"] = "Host only. When enabled, new and existing player proxies are set to the neutral team so friendly fire is possible; disabling restores everyone to the Player team.";
+            currentTranslations["ui.settings.themeMode"] = "UI Theme";
+            currentTranslations["ui.settings.themeMode.desc"] = "Switches the co-op panel theme locally.";
+            currentTranslations["ui.settings.theme.white"] = "White";
+            currentTranslations["ui.settings.theme.black"] = "Black";
+            currentTranslations["ui.settings.theme.spring"] = "Spring";
+            currentTranslations["ui.settings.theme.summer"] = "Summer";
             currentTranslations["ui.difficulty.spawnBonus"] = "Enemy Spawn Bonus (additive)";
             currentTranslations["ui.difficulty.spawnBonus.desc"] = "Adds to the base enemy spawn multiplier (e.g., +1 doubles spawns).";
             currentTranslations["ui.difficulty.forceBoss"] = "Force Boss Spawn";
             currentTranslations["ui.difficulty.forceBoss.desc"] = "Only Impossible and custom difficulties should toggle this on.";
+            currentTranslations["vehicle.control.title"] = "Vehicle Control";
+            currentTranslations["vehicle.control.current"] = "Controller: {0}";
+            currentTranslations["vehicle.control.unassigned"] = "Assigning";
+            currentTranslations["vehicle.control.riders"] = "Riders: {0}";
+            currentTranslations["vehicle.control.requester"] = "Requester: {0}";
+            currentTranslations["vehicle.control.key"] = "F2";
+            currentTranslations["vehicle.control.action.approve"] = "Approve control request";
+            currentTranslations["vehicle.control.action.controlling"] = "You are controlling this vehicle";
+            currentTranslations["vehicle.control.action.pending"] = "Request sent, waiting for approval";
+            currentTranslations["vehicle.control.action.request"] = "Request control";
+            currentTranslations["vehicle.control.tip.approved"] = "Approved {0} to control the vehicle";
+            currentTranslations["vehicle.control.tip.requested"] = "Vehicle control requested. Wait for the current controller to press F2";
+            currentTranslations["vehicle.control.tip.incomingRequest"] = "{0} requests vehicle control. Press F2 to approve";
 
             // Scene 관련
             currentTranslations["scene.waitingForHost"] = "[Coop] Waiting for host to finish loading… (Auto-enter after 100s if delayed)";

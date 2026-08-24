@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using LiteNetLib;
 using LiteNetLib.Utils;
 using UnityEngine;
@@ -10,14 +11,27 @@ public struct AISnapshotChunkRpc : IRpcMessage
 {
     public bool Reset;
     public AISnapshotEntry[] Entries;
+    public IReadOnlyList<AISnapshotEntry> EntryList;
+    public int EntryCount;
 
     public void Serialize(NetDataWriter writer)
     {
         writer.Put(Reset);
-        var count = Entries?.Length ?? 0;
+        var list = EntryList;
+        var count = list != null
+            ? (EntryCount > 0 ? Math.Min(EntryCount, list.Count) : list.Count)
+            : Entries?.Length ?? 0;
         writer.Put((ushort)count);
-        for (var i = 0; i < count; i++)
-            Entries[i].Serialize(writer);
+        if (list != null)
+        {
+            for (var i = 0; i < count; i++)
+                list[i].Serialize(writer);
+        }
+        else
+        {
+            for (var i = 0; i < count; i++)
+                Entries[i].Serialize(writer);
+        }
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -25,6 +39,8 @@ public struct AISnapshotChunkRpc : IRpcMessage
         Reset = reader.GetBool();
         var count = reader.GetUShort();
         Entries = count > 0 ? new AISnapshotEntry[count] : Array.Empty<AISnapshotEntry>();
+        EntryList = null;
+        EntryCount = count;
         for (var i = 0; i < count; i++)
         {
             Entries[i].Deserialize(reader);
@@ -64,6 +80,8 @@ public struct AISnapshotEntry
     public string[] WeaponSlots;
     public int[] WeaponItemTypeIds;
     public ItemSnapshot[] WeaponItemSnapshots;
+    public string ActiveWeaponSlot;
+    public int ActiveWeaponTypeId;
     public int[] BuffWeaponTypeIds;
     public int[] BuffIds;
 
@@ -98,6 +116,8 @@ public struct AISnapshotEntry
         WriteArray(writer, EquipmentSlots, EquipmentItemTypeIds);
         WriteArray(writer, WeaponSlots, WeaponItemTypeIds);
         WriteSnapshotArray(writer, WeaponItemSnapshots);
+        writer.Put(ActiveWeaponSlot ?? string.Empty);
+        writer.Put(ActiveWeaponTypeId);
         WriteIntArray(writer, BuffWeaponTypeIds, BuffIds);
     }
 
@@ -132,6 +152,8 @@ public struct AISnapshotEntry
         ReadArray(reader, out EquipmentSlots, out EquipmentItemTypeIds);
         ReadArray(reader, out WeaponSlots, out WeaponItemTypeIds);
         WeaponItemSnapshots = ReadSnapshotArray(reader);
+        ActiveWeaponSlot = reader.GetString();
+        ActiveWeaponTypeId = reader.GetInt();
         ReadIntArray(reader, out BuffWeaponTypeIds, out BuffIds);
     }
 

@@ -20,6 +20,11 @@ public static class RPCAI
         COOPManager.AI?.Server_HandleActivationRequest(context, message);
     }
 
+    public static void HandleSpawnerTriggerRequest(RpcContext context, AISpawnerTriggerRequestRpc message)
+    {
+        AISpawnerTriggerNet.Server_HandleTriggerRequest(context, message);
+    }
+
     public static void HandleActivationState(RpcContext context, AIActivationStateRpc message)
     {
         if (context.IsServer) return;

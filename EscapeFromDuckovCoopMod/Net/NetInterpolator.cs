@@ -40,6 +40,13 @@ public class NetInterpolator : MonoBehaviour
     [Tooltip("Mirror 缓冲倍数，用于计算回看窗口")]
     public float bufferTimeMultiplier = 2f;
 
+    public bool useGlobalAiInterval = true;
+    public bool adaptiveBackTime;
+    public float adaptiveMinBackTime = 0.04f;
+    public float adaptiveMaxBackTime = 0.18f;
+    public float adaptiveIntervalMultiplier = 1.2f;
+    public float adaptiveJitterMultiplier = 3f;
+
     [Tooltip("Mirror 异步纠偏速率（越大越快贴合远端时间线）")]
     public float catchupSpeed = 0.05f;
 
@@ -47,9 +54,12 @@ public class NetInterpolator : MonoBehaviour
 
     [Tooltip("Mirror 异步纠偏上限（秒）")] public float catchupPositiveThreshold = 0.1f;
 
+    public bool driveModelPosition;
+
     private readonly List<Snap> _buf = new(64);
     private Vector3 _lastVel = Vector3.zero;
     private float _smoothedSnapshotInterval = 0.05f;
+    private float _smoothedJitter;
     private double _timeOffset;
     private bool _offsetInitialized;
     private Transform modelRoot; // 驱动朝向
@@ -74,11 +84,17 @@ public class NetInterpolator : MonoBehaviour
         }
 
         if (!modelRoot) modelRoot = root;
+        if (IsLocallyControlledVehicle())
+        {
+            _buf.Clear();
+            enabled = false;
+            return;
+        }
         if (_buf.Count == 0) return;
 
         var localTime = Time.unscaledTimeAsDouble;
         var effectiveSendInterval = ResolveEffectiveSendInterval();
-        var backTime = Math.Max(interpolationBackTime, effectiveSendInterval * bufferTimeMultiplier);
+        var backTime = ResolveBackTime(effectiveSendInterval);
 
         // Mirror SnapshotInterpolation: 根据 drift 轻微调整 timeOffset，使本地时间线贴合远端
         if (_offsetInitialized)
@@ -147,7 +163,7 @@ public class NetInterpolator : MonoBehaviour
 
         try
         {
-            var settings = CoopAISettings.Active;
+            var settings = useGlobalAiInterval ? CoopAISettings.Active : null;
             if (settings != null && !float.IsNaN(settings.StateBroadcastInterval) && !float.IsInfinity(settings.StateBroadcastInterval))
                 interval = Mathf.Lerp(interval, settings.StateBroadcastInterval, 0.35f);
         }
@@ -156,6 +172,19 @@ public class NetInterpolator : MonoBehaviour
         }
 
         return Mathf.Clamp(interval, 0.02f, 1f);
+    }
+
+    private float ResolveBackTime(float effectiveSendInterval)
+    {
+        var fixedBackTime = Mathf.Max(interpolationBackTime, effectiveSendInterval * bufferTimeMultiplier);
+        if (!adaptiveBackTime)
+            return fixedBackTime;
+
+        var adaptive = Mathf.Max(
+            fixedBackTime,
+            _smoothedSnapshotInterval * adaptiveIntervalMultiplier + _smoothedJitter * adaptiveJitterMultiplier);
+
+        return Mathf.Clamp(adaptive, adaptiveMinBackTime, adaptiveMaxBackTime);
     }
 
     public void Init(Transform rootT, Transform modelRootT)
@@ -168,6 +197,14 @@ public class NetInterpolator : MonoBehaviour
     public void Push(Vector3 pos, Quaternion rot, double when = -1, Vector3? velocity = null)
     {
         if (when < 0) when = Time.unscaledTimeAsDouble;
+        if (_buf.Count > 0)
+        {
+            var last = _buf[_buf.Count - 1];
+            var gap = when - last.t;
+            if (gap < -0.01d || gap > 1.0d)
+                ResetTiming(velocity);
+        }
+
         if (!_offsetInitialized)
         {
             _timeOffset = Time.unscaledTimeAsDouble - when;
@@ -186,7 +223,12 @@ public class NetInterpolator : MonoBehaviour
             var prev = _buf[_buf.Count - 1];
             var dt = when - prev.t;
             if (dt > 1e-4)
-                _smoothedSnapshotInterval = Mathf.Lerp(_smoothedSnapshotInterval, (float)dt, 0.2f);
+            {
+                var dtf = (float)dt;
+                var baseline = _smoothedSnapshotInterval > 0f ? _smoothedSnapshotInterval : dtf;
+                _smoothedJitter = Mathf.Lerp(_smoothedJitter, Mathf.Abs(dtf - baseline), 0.2f);
+                _smoothedSnapshotInterval = Mathf.Lerp(baseline, dtf, 0.2f);
+            }
             if (velocity.HasValue)
                 _lastVel = velocity.Value;
             else if (dt > 1e-6)
@@ -205,6 +247,21 @@ public class NetInterpolator : MonoBehaviour
         if (_buf.Count > 64) _buf.RemoveAt(0);
     }
 
+    public void PushArrival(Vector3 pos, Quaternion rot, Vector3? velocity = null)
+    {
+        Push(pos, rot, Time.unscaledTimeAsDouble, velocity);
+    }
+
+    private void ResetTiming(Vector3? velocity)
+    {
+        _buf.Clear();
+        _timeOffset = 0d;
+        _offsetInitialized = false;
+        _smoothedSnapshotInterval = sendInterval;
+        _smoothedJitter = 0f;
+        _lastVel = velocity ?? Vector3.zero;
+    }
+
     private void Apply(Vector3 pos, Quaternion rot, bool hardSnap = false)
     {
         if (!root) return;
@@ -213,15 +270,49 @@ public class NetInterpolator : MonoBehaviour
         if (hardSnap || (root.position - pos).sqrMagnitude > hardSnapDistance * hardSnapDistance)
         {
             root.SetPositionAndRotation(pos, rot);
-            if (modelRoot && modelRoot != root) modelRoot.rotation = rot;
+            ApplyModelTransform(pos, rot);
             return;
         }
 
         // 这里的 pos/rot 已经是快照缓冲后的插值结果；
         // 再做一层 Lerp/Slerp 会让移动看起来像低帧率“走走停停”。
         root.SetPositionAndRotation(pos, rot);
-        if (modelRoot && modelRoot != root)
+        ApplyModelTransform(pos, rot);
+    }
+
+    private void ApplyModelTransform(Vector3 pos, Quaternion rot)
+    {
+        if (root)
+            root.SetPositionAndRotation(pos, rot);
+
+        if (!modelRoot || modelRoot == root)
+            return;
+
+        if (driveModelPosition)
+            modelRoot.SetPositionAndRotation(pos, rot);
+        else
             modelRoot.rotation = rot;
+    }
+
+    private bool IsLocallyControlledVehicle()
+    {
+        var level = LevelManager.Instance;
+        var controlling = level != null ? level.ControllingCharacter : null;
+        if (!controlling || !controlling.isVehicle)
+            return false;
+
+        var own = root ? root.GetComponent<CharacterMainControl>() : null;
+        if (!own)
+            own = GetComponent<CharacterMainControl>() ?? GetComponentInChildren<CharacterMainControl>(true);
+
+        if (!own && root && controlling.transform == root)
+            own = controlling;
+
+        if (!own || own != controlling)
+            return false;
+
+        var vehicleStatus = SendLocalVehicleStatus.Instance;
+        return vehicleStatus == null || vehicleStatus.IsLocalAuthorityForVehicle(own);
     }
 
     private struct Snap

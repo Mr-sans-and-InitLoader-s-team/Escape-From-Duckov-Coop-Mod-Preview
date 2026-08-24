@@ -55,6 +55,12 @@ public static class RPCEnvironment
         LevelDataBoolNet.HandleRpc(context, in message);
     }
 
+    public static void HandleInteractableFinishRequest(RpcContext context, InteractableFinishRequestRpc message)
+    {
+        if (!context.IsServer) return;
+        InteractableEventNet.Server_HandleFinishRequest(context, in message);
+    }
+
     public static void HandleExitSnapshot(RpcContext context, EnvExitSnapshotRpc message)
     {
         if (context.IsServer) return;
@@ -65,5 +71,10 @@ public static class RPCEnvironment
     {
         if (!context.IsServer) return;
         COOPManager.destructible?.Server_HandleHealthReport(context, in message);
+    }
+
+    public static void HandleLotteryBoxState(RpcContext context, LotteryBoxStateRpc message)
+    {
+        LotteryBoxNet.HandleState(context, message);
     }
 }

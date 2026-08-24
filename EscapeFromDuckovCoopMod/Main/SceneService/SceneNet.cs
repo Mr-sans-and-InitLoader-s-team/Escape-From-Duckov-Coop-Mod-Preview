@@ -31,6 +31,8 @@ public class SceneNet : MonoBehaviour
     public bool sceneSaveToFile = true;
 
     public bool allowLocalSceneLoad;
+    private string _allowedLocalSceneLoadId;
+    private float _allowedLocalSceneLoadUntil;
 
     public bool sceneUseLocation;
     public string sceneLocationName;
@@ -89,6 +91,34 @@ public class SceneNet : MonoBehaviour
         Instance = this;
     }
 
+    public void AuthorizeLocalSceneLoad(string sceneId, float seconds = 10f)
+    {
+        allowLocalSceneLoad = true;
+        _allowedLocalSceneLoadId = sceneId ?? string.Empty;
+        _allowedLocalSceneLoadUntil = Time.unscaledTime + Mathf.Max(0.5f, seconds);
+    }
+
+    public bool IsLocalSceneLoadAllowed(string sceneId = null)
+    {
+        if (allowLocalSceneLoad)
+            return true;
+
+        if (Time.unscaledTime > _allowedLocalSceneLoadUntil)
+            return false;
+
+        if (string.IsNullOrEmpty(sceneId) || string.IsNullOrEmpty(_allowedLocalSceneLoadId))
+            return true;
+
+        return string.Equals(_allowedLocalSceneLoadId, sceneId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void ClearLocalSceneLoadAuthorization()
+    {
+        allowLocalSceneLoad = false;
+        _allowedLocalSceneLoadId = null;
+        _allowedLocalSceneLoadUntil = 0f;
+    }
+
     public void TrySendSceneReadyOnce()
     {
         if (!networkStarted) return;
@@ -127,6 +157,7 @@ public class SceneNet : MonoBehaviour
             connectedPeer?.Send(writer, DeliveryMethod.ReliableOrdered);
 
         _sceneReadySidSent = sid;
+        ClearLocalSceneLoadAuthorization();
     }
 
     private void Server_BroadcastBeginSceneLoad()
@@ -195,26 +226,31 @@ public class SceneNet : MonoBehaviour
     {
         _srvLoadInProgress = true;
         // 主机本地执行加载
-        allowLocalSceneLoad = true;
+        AuthorizeLocalSceneLoad(sceneTargetId);
+        var isTeleporterLoad = string.Equals(sceneLocationName, "DoTeleport", StringComparison.Ordinal);
+        var isMapSelectionLoad = string.Equals(sceneLocationName, "OnPointerClick", StringComparison.Ordinal);
         var map = CoopTool.GetMapSelectionEntrylist(sceneTargetId);
-        if (map != null && IsMapSelectionEntry)
+        if (map != null && (IsMapSelectionEntry || isMapSelectionLoad))
         {
             IsMapSelectionEntry = false;
-            allowLocalSceneLoad = false;
-            SceneM.Call_NotifyEntryClicked_ByInvoke(MapSelectionView.Instance, map, null);
+            LevelManager.loadLevelBeaconIndex = map.BeaconIndex;
         }
-        if (sceneLocationName == "DoTeleport" && IsDoteleportMap)
+        if (isTeleporterLoad)
         {
             IsDoteleportMap = false;
-            CoopTool.GoTeleport(sceneTargetId, sceneCurtainGuid);
+            _localSceneLoadLaunched = CoopTool.GoTeleport(sceneTargetId, sceneCurtainGuid);
         }
         else
         {
             TryPerformSceneLoad_Local(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile, sceneUseLocation, sceneLocationName);
         }
 
-        // 若首轮加载触发失败，短暂延后再补尝试，避免主机长时间卡在加载界面
-        FallbackRetryLocalSceneLoad(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile, sceneUseLocation, sceneLocationName).Forget();
+        // 若首轮加载触发失败，短暂延后再补尝试，避免主机长时间卡在加载界面。
+        // 附加场景传送必须只重试 MultiSceneTeleporter.DoTeleport，不能再走主场景加载兜底。
+        if (isTeleporterLoad)
+            FallbackRetryTeleport(sceneTargetId, sceneCurtainGuid).Forget();
+        else
+            FallbackRetryLocalSceneLoad(sceneTargetId, sceneCurtainGuid, sceneNotifyEvac, sceneSaveToFile, sceneUseLocation, sceneLocationName).Forget();
     }
 
     public bool IsServerLoadInProgress()
@@ -378,13 +414,13 @@ public class SceneNet : MonoBehaviour
         _cliHostSpawnPosition = message.HostSpawnPosition;
         _cliHostSpawnRotation = message.HostSpawnRotation;
 
-        allowLocalSceneLoad = true;
+        AuthorizeLocalSceneLoad(sceneTargetId);
 
         var map = CoopTool.GetMapSelectionEntrylist(sceneTargetId);
         if (map != null && sceneLocationName == "OnPointerClick")
         {
-            IsMapSelectionEntry = false;  
-            SceneM.Call_NotifyEntryClicked_ByInvoke(MapSelectionView.Instance, map, null);
+            IsMapSelectionEntry = false;
+            LevelManager.loadLevelBeaconIndex = map.BeaconIndex;
         }
         if (sceneLocationName == "DoTeleport")
         {
@@ -551,6 +587,7 @@ public class SceneNet : MonoBehaviour
         {
             var loader = SceneLoader.Instance;
             var launched = false; // 是否已触发加载
+            AuthorizeLocalSceneLoad(targetSceneId);
 
             // （如果后面你把 loader.LoadScene 恢复了，这里可以先试 loader 路径并把 launched=true）
 
@@ -571,6 +608,13 @@ public class SceneNet : MonoBehaviour
                     Debug.LogWarning("[SCENE] proxy check failed: " + e);
                 }
 
+            if (!launched && loader != null && !string.IsNullOrEmpty(targetSceneId))
+            {
+                loader.LoadScene(targetSceneId, null, true, notifyEvac, true, false, default, save).Forget();
+                launched = true;
+                Debug.Log($"[SCENE] Direct SceneLoader fallback -> {targetSceneId}");
+            }
+
             _localSceneLoadLaunched = launched;
 
             if (!launched) Debug.LogWarning($"[SCENE] Local load fallback failed: no proxy for '{targetSceneId}'");
@@ -586,6 +630,7 @@ public class SceneNet : MonoBehaviour
             {
                 if (IsServer) SendLocalPlayerStatus.Instance.SendPlayerStatusUpdate();
                 else Send_ClientStatus.Instance.SendClientStatusUpdate();
+                LocalPlayerManager.Instance?.RequestFullLoadoutSync();
             }
         }
     }
@@ -689,6 +734,8 @@ public class SceneNet : MonoBehaviour
         sceneSaveToFile = saveToFile;
         sceneUseLocation = useLocation;
         sceneLocationName = locationName ?? "";
+        IsDoteleportMap = string.Equals(sceneLocationName, "DoTeleport", StringComparison.Ordinal);
+        IsMapSelectionEntry = string.Equals(sceneLocationName, "OnPointerClick", StringComparison.Ordinal);
 
         // 参与者（同图优先；拿不到 SceneId 的竞态由客户端再过滤）
         sceneParticipantIds.Clear();
@@ -885,6 +932,9 @@ public class SceneNet : MonoBehaviour
     private async UniTaskVoid FallbackRetryLocalSceneLoad(string targetSceneId, string curtainGuid,
         bool notifyEvac, bool save, bool useLocation, string locationName)
     {
+        if (locationName == "DoTeleport")
+            return;
+
         // 最多重试两次，每次间隔 1s，防止偶发竞态导致首轮加载没有触发
         for (var attempt = 0; attempt < 2; attempt++)
         {
@@ -894,8 +944,23 @@ public class SceneNet : MonoBehaviour
 
             Debug.LogWarning($"[SCENE] retry local load (attempt {attempt + 2}) for '{targetSceneId}'");
 
-            allowLocalSceneLoad = true;
+            AuthorizeLocalSceneLoad(targetSceneId);
             TryPerformSceneLoad_Local(targetSceneId, curtainGuid, notifyEvac, save, useLocation, locationName);
+        }
+    }
+
+    private async UniTaskVoid FallbackRetryTeleport(string targetSceneId, string teleporterName)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            await UniTask.Delay(TimeSpan.FromSeconds(1));
+
+            if (_localSceneLoadLaunched) break;
+
+            Debug.LogWarning($"[SCENE] retry teleporter load (attempt {attempt + 2}) for '{targetSceneId}' via '{teleporterName}'");
+
+            AuthorizeLocalSceneLoad(targetSceneId);
+            _localSceneLoadLaunched = CoopTool.GoTeleport(targetSceneId, teleporterName);
         }
     }
 

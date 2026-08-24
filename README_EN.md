@@ -1,4 +1,4 @@
-# 🦆 Escape From Duckov Coop Mod Preview
+# 🦆 Escape From Duckov Coop Mod
 
 [![License](https://img.shields.io/badge/License-Modified%20AGPL--3.0-blue.svg)](LICENSE.txt)
 [![Steam Workshop](https://img.shields.io/badge/Steam-Workshop-blue.svg)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
@@ -9,7 +9,7 @@ English | **[简体中文](README.md)**
 
 ## 📖 Introduction
 
-**Escape From Duckov Coop Mod Preview** is a multiplayer co-op mod developed for the game Escape From Duckov.
+**Escape From Duckov Coop Mod** is a multiplayer co-op mod developed for the game Escape From Duckov.
 
 This mod enables stable LAN and online co-op gameplay in a game originally designed for single-player, featuring:
 
@@ -160,7 +160,7 @@ For details, see:
 
 Feel free to report bugs or share suggestions through [Issues](../../issues) or [Discussions](../../discussions).
 
-This project is still in preview — community contributions are highly appreciated!
+The mod is now available as a stable release, and community contributions are always appreciated!
 
 ---
 

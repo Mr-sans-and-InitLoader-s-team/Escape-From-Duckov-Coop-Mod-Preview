@@ -431,7 +431,17 @@ public static class CoopTool
                     COOPManager.ResolveBuffAsync(weaponTypeId, buffId)
                         .ContinueWith(b =>
                         {
-                            if (b != null && cmc) cmc.AddBuff(b, null, weaponTypeId);
+                            if (b == null || !cmc) return;
+
+                            try
+                            {
+                                Buff_.ApplyingNetworkBuff = true;
+                                cmc.AddBuff(b, null, weaponTypeId);
+                            }
+                            finally
+                            {
+                                Buff_.ApplyingNetworkBuff = false;
+                            }
                         })
                         .Forget();
 

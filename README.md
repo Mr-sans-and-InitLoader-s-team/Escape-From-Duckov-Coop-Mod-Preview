@@ -4,7 +4,7 @@
 
 **让《逃离鸭科夫》的单人冒险变成可以和朋友一起探索、战斗与撤离的合作体验。**
 
-[![Version](https://img.shields.io/badge/Version-1.3.5-2ea44f?style=flat-square)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
+[![Version](https://img.shields.io/badge/Version-1.3.6-2ea44f?style=flat-square)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
 [![Steam Workshop](https://img.shields.io/badge/Steam-创意工坊-1b2838?style=flat-square&logo=steam)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
 [![Stars](https://img.shields.io/github/stars/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/stargazers)
 [![Forks](https://img.shields.io/github/forks/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/network/members)
@@ -19,7 +19,7 @@
 </div>
 
 > [!IMPORTANT]
-> 当前发布版本为正式版 **v1.3.5**。参与联机的玩家应安装相同版本；更新或测试前建议备份重要存档。
+> 当前发布版本为正式版 **v1.3.6**。参与联机的玩家应安装相同版本；更新或测试前建议备份重要存档。
 
 ## 📖 项目简介
 
@@ -27,7 +27,7 @@
 
 | 项目 | 当前信息 |
 | --- | --- |
-| 模组版本 | **v1.3.5** |
+| 模组版本 | **v1.3.6** |
 | 发布状态 | **正式版** |
 | 发布渠道 | [Steam 创意工坊](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282) |
 | 创意工坊 ID | `3591341282` |

@@ -204,6 +204,16 @@ public class Buff_
         if (!cmc) return;
 
         var buff = await COOPManager.ResolveBuffAsync(weaponTypeId, buffId);
-        if (buff != null) cmc.AddBuff(buff, null, weaponTypeId);
+        if (buff == null || !cmc) return;
+
+        try
+        {
+            ApplyingNetworkBuff = true;
+            cmc.AddBuff(buff, null, weaponTypeId);
+        }
+        finally
+        {
+            ApplyingNetworkBuff = false;
+        }
     }
 }

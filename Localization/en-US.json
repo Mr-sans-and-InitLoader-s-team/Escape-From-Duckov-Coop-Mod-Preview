@@ -145,10 +145,6 @@
       "value": "Cancel Vote"
     },
     {
-      "key": "ui.vote.title",
-      "value": "Map Vote"
-    },
-    {
       "key": "ui.spectator.mode",
       "value": "Spectator Mode: LMB ▶ Next | RMB ◀ Previous | Press F8 to end and view results (failsafe)"
     },
@@ -1183,6 +1179,106 @@
     {
       "key": "ui.sceneVote.alreadyActive",
       "value": "A map vote is already in progress."
+    },
+    {
+      "key": "ui.teleporter.busy",
+      "value": "A departure is already in progress. Finish or cancel it first."
+    },
+    {
+      "key": "ui.teleporter.reason.notReady",
+      "value": "character is not ready"
+    },
+    {
+      "key": "ui.teleporter.reason.destinationMissing",
+      "value": "destination was not found"
+    },
+    {
+      "key": "ui.teleporter.reason.missingCost",
+      "value": "required items or money are missing"
+    },
+    {
+      "key": "ui.teleporter.reason.paymentFailed",
+      "value": "payment failed"
+    },
+    {
+      "key": "ui.teleporter.reason.readyWithdrawn",
+      "value": "withdrew readiness"
+    },
+    {
+      "key": "ui.teleporter.reason.openFailed",
+      "value": "could not open departure confirmation"
+    },
+    {
+      "key": "ui.teleporter.reason.checkFailed",
+      "value": "departure check failed"
+    },
+    {
+      "key": "ui.teleporter.reason.cancelled",
+      "value": "cancelled departure"
+    },
+    {
+      "key": "ui.teleporter.reason.requirementsFailed",
+      "value": "departure requirements were not met"
+    },
+    {
+      "key": "ui.teleporter.reason.disconnected",
+      "value": "disconnected"
+    },
+    {
+      "key": "ui.teleporter.reason.closed",
+      "value": "closed departure confirmation"
+    },
+    {
+      "key": "ui.teleporter.reason.timeout",
+      "value": "timed out waiting for a player"
+    },
+    {
+      "key": "ui.teleporter.cancelledByPlayer",
+      "value": "{0}: {1}. Departure cancelled. Any deducted costs will be refunded."
+    },
+    {
+      "key": "ui.teleporter.cancelled",
+      "value": "Departure cancelled."
+    },
+    {
+      "key": "ui.teleporter.disconnected",
+      "value": "Disconnected. Departure cancelled."
+    },
+    {
+      "key": "ui.teleporter.cancelTimeout",
+      "value": "Cancellation confirmation timed out. Local departure cancelled."
+    },
+    {
+      "key": "ui.streamerMode",
+      "value": "Streamer Mode"
+    },
+    {
+      "key": "ui.vote.notInitialized",
+      "value": "Voting system is not initialized"
+    },
+    {
+      "key": "ui.vote.onlyHostCanCancel",
+      "value": "Only the host can cancel the vote"
+    },
+    {
+      "key": "ui.vote.cancelled",
+      "value": "Vote cancelled"
+    },
+    {
+      "key": "net.steamUnavailable",
+      "value": "Steam is not initialized; P2P cannot start"
+    },
+    {
+      "key": "net.startFailed",
+      "value": "Failed to start networking"
+    },
+    {
+      "key": "ui.steam.protocolMismatch",
+      "value": "All players must use the same version of the native Steam P2P co-op mod"
+    },
+    {
+      "key": "ui.settings.configureOffline",
+      "value": "Please configure this setting in single-player mode."
     }
   ]
 }

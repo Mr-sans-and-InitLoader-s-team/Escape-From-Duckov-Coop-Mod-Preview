@@ -214,7 +214,7 @@ public static class CoopTool
         if (IsServer) return;
 
         var service = Service;
-        if (service == null) return;
+        if (service == null || service.TransportMode != NetworkTransportMode.Direct) return;
 
         var manager = service.netManager;
         if (manager == null || !manager.IsRunning) return;

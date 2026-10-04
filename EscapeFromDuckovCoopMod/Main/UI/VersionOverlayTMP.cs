@@ -27,24 +27,22 @@ namespace EscapeFromDuckovCoopMod
 
         private Canvas _canvas;
         private RectTransform _root;
-        private TextMeshProUGUI _nameText;
-        private TextMeshProUGUI _verText;
+        private static VersionOverlayTMP _instance;
+        private TextMeshProUGUI _label;
         private GradientFlowTMP _flow;
 
         private string _lastName;
         private string _lastVer;
 
-        public static readonly Color32 NewYearRed = new Color32(255, 40, 40, 255);
-        private bool _lastFestivalFlag;
         void Awake()
         {
-            // 单例防重复（跨场景）
-            var existing = FindObjectOfType<VersionOverlayTMP>();
-            if (existing != null && existing != this)
+            if (_instance != null && _instance != this)
             {
-                Destroy(gameObject);
+                enabled = false;
+                Destroy(this); // The shared parent also contains the network managers.
                 return;
             }
+            _instance = this;
 
             DontDestroyOnLoad(gameObject);
             BuildUI();
@@ -74,50 +72,26 @@ namespace EscapeFromDuckovCoopMod
             string name = BuildInfo.Name;
             string ver = BuildInfo.ModVersion;
 
-            bool festival = MModUITheme.UseLunarNewYearTheme;
-
-            if (!force && name == _lastName && ver == _lastVer && festival == _lastFestivalFlag)
+            if (!force && name == _lastName && ver == _lastVer)
                 return;
 
             _lastName = name;
             _lastVer = ver;
-            _lastFestivalFlag = festival;
+            if (_flow != null) _flow.enabled = true;
 
-            if (festival)
+            if (_label != null)
             {
-                // ✅ 节日模式：加前缀 + 全红 + 关闭渐变脚本（不然它会每帧改颜色）
-                if (_flow != null) _flow.enabled = false;
-
-                if (_nameText != null)
-                {
-                    _nameText.color = NewYearRed;
-                    _nameText.text = $"新年快乐! - {name ?? ""}";
-                }
-
-                if (_verText != null)
-                {
-                    _verText.color = NewYearRed;
-                    _verText.text = string.IsNullOrEmpty(ver) ? "" : $" v{ver}";
-                }
+                _label.color = Color.white;
+                _label.text = (name ?? "") + (string.IsNullOrEmpty(ver) ? "" : $" v{ver}");
+                _flow.coloredCharacterCount = (name ?? "").Length;
+                _root.sizeDelta = _label.GetPreferredValues(_label.text);
             }
-            else
-            {
-                // ✅ 平时模式：恢复渐变 + 正常显示
-                if (_flow != null) _flow.enabled = true;
+        }
 
-                if (_nameText != null)
-                {
-                    // 颜色交给 _flow 去染（这里给个默认白色无所谓）
-                    _nameText.color = Color.white;
-                    _nameText.text = name ?? "";
-                }
-
-                if (_verText != null)
-                {
-                    _verText.color = Color.white;
-                    _verText.text = string.IsNullOrEmpty(ver) ? "" : $" v{ver}";
-                }
-            }
+        private void OnDestroy()
+        {
+            if (_instance == this) _instance = null;
+            if (_canvas != null) Destroy(_canvas.gameObject);
         }
 
         private void BuildUI()
@@ -146,45 +120,22 @@ namespace EscapeFromDuckovCoopMod
             var raycaster = canvasGO.AddComponent<GraphicRaycaster>();
             raycaster.enabled = false;
 
-            // 右上角容器
-            var rootGO = new GameObject("VersionRoot");
-            rootGO.transform.SetParent(canvasGO.transform, false);
-
-            _root = rootGO.AddComponent<RectTransform>();
-            _root.anchorMin = new Vector2(1f, 1f);
-            _root.anchorMax = new Vector2(1f, 1f);
-            _root.pivot = new Vector2(1f, 1f);
+            // One text mesh owns both name and version, so the two cannot be
+            // laid out on top of each other during a canvas/layout rebuild.
+            _label = CreateTMP(canvasGO.transform, "VersionText", baseFontSize, new Color32(255, 255, 255, 255));
+            _label.alignment = TextAlignmentOptions.TopRight;
+            _label.richText = false;
+            _root = _label.rectTransform;
+            _root.anchorMin = _root.anchorMax = Vector2.one;
+            _root.pivot = Vector2.one;
             _root.anchoredPosition = new Vector2(-basePadding, -basePadding);
 
-            // 横向排版： [Name][ vX.Y.Z]
-            var hlg = rootGO.AddComponent<HorizontalLayoutGroup>();
-            hlg.childAlignment = TextAnchor.UpperRight;
-            hlg.spacing = 2f;
-            hlg.childForceExpandWidth = false;
-            hlg.childForceExpandHeight = false;
-            hlg.childControlWidth = true;
-            hlg.childControlHeight = true;
-
-            var fitter = rootGO.AddComponent<ContentSizeFitter>();
-            fitter.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
-            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-            // Name（渐变流动）
-            _nameText = CreateTMP(rootGO.transform, "NameText", baseFontSize, new Color32(255, 255, 255, 255));
-            _nameText.alignment = TextAlignmentOptions.TopRight;
-
-            _flow = _nameText.gameObject.AddComponent<GradientFlowTMP>();
+            _flow = _label.gameObject.AddComponent<GradientFlowTMP>();
             _flow.speed = gradientSpeed;
             _flow.pingPong = pingPong;
             _flow.unscaledTime = true;
-            _flow.updateInterval = 0.05f; // 20fps 更新颜色足够顺滑，且更省性能
-
-            // 你想要的彩虹渐变（可自行改色）
+            _flow.updateInterval = 0.05f;
             _flow.gradient = MakeRainbowGradient();
-
-            // Version（纯白）
-            _verText = CreateTMP(rootGO.transform, "VersionText", baseFontSize, new Color32(255, 255, 255, 255));
-            _verText.alignment = TextAlignmentOptions.TopRight;
         }
 
         private static TextMeshProUGUI CreateTMP(Transform parent, string name, float fontSize, Color32 color)
@@ -242,6 +193,8 @@ namespace EscapeFromDuckovCoopMod
         public bool unscaledTime = true;                // 不受 TimeScale 影响
         public float updateInterval = 0.05f;            // 多久更新一次颜色（省性能）
 
+        public int coloredCharacterCount = -1;
+
         private TMP_Text _text;
         private float _timer;
 
@@ -259,15 +212,16 @@ namespace EscapeFromDuckovCoopMod
                 return;
             _timer = 0f;
 
-            _text.ForceMeshUpdate();
+            if (_text.havePropertiesChanged) _text.ForceMeshUpdate();
             var ti = _text.textInfo;
             if (ti == null || ti.characterCount == 0) return;
 
             // 计算整段文字 X 范围，用于归一化（保证跨字符连续平滑）
             float minX = float.MaxValue;
             float maxX = float.MinValue;
+            var colorCount = coloredCharacterCount < 0 ? ti.characterCount : Math.Min(coloredCharacterCount, ti.characterCount);
 
-            for (int i = 0; i < ti.characterCount; i++)
+            for (int i = 0; i < colorCount; i++)
             {
                 var ch = ti.characterInfo[i];
                 if (!ch.isVisible) continue;
@@ -305,13 +259,14 @@ namespace EscapeFromDuckovCoopMod
                     {
                         float nx = (verts[vi + k].x - minX) / width;      // 0..1
                         float tt = Mathf.Repeat(nx + offset01, 1f);       // 加时间偏移 -> 流动
-                        cols[vi + k] = (Color32)gradient.Evaluate(tt);
+                        cols[vi + k] = i < colorCount ? (Color32)gradient.Evaluate(tt) : new Color32(255, 255, 255, 255);
                     }
                 }
 
-                meshInfo.mesh.colors32 = cols;
-                _text.UpdateGeometry(meshInfo.mesh, m);
             }
+            // Only upload colors; never resubmit mesh geometry from unused or
+            // previously generated material slots after a TMP layout rebuild.
+            _text.UpdateVertexData(TMP_VertexDataUpdateFlags.Colors32);
         }
     }
 }

@@ -129,10 +129,15 @@ public class ModBehaviourF : MonoBehaviour
 
         gameObject.AddComponent<DamageStatsTracker>();
         gameObject.AddComponent<DamageStatsUI>();
+        gameObject.AddComponent<KazooSyncDriver>();
     }
 
     private void Update()
     {
+        // Transport callbacks and scene-gate replies must keep running while the
+        // previous level is gone and the new LevelManager is not initialized yet.
+        if (networkStarted) netManager?.PollEvents();
+        TeleporterTravel.Tick();
         if (LevelManager.Instance == null)
         {
             return;
@@ -188,7 +193,6 @@ public class ModBehaviourF : MonoBehaviour
         if (networkStarted)
         {
 
-            netManager.PollEvents();
             SceneNet.Instance.TrySendSceneReadyOnce();
             if (!isinit2)
             {
@@ -273,15 +277,7 @@ public class ModBehaviourF : MonoBehaviour
 
             
 
-            if (NetService.Instance.netManager != null)
-            {
-                if (!SteamP2PLoader.Instance._isOptimized && SteamP2PLoader.Instance.UseSteamP2P)
-                {
-                    NetService.Instance.netManager.UpdateTime = 1;
-                    SteamP2PLoader.Instance._isOptimized = true;
-                    Debug.Log("[SteamP2P扩展] ✓ LiteNetLib网络线程已优化 (1ms 更新周期)");
-                }
-            }
+
         }
 
         LocalPlayerManager.Instance.UpdatePlayerStatuses();
@@ -452,6 +448,8 @@ public class ModBehaviourF : MonoBehaviour
 
     private void LevelManager_OnAfterLevelInitialized()
     {
+        LocalPlayerManager.Instance?.RequestFullLoadoutSync();
+        ColdBuffSync.PublishAllLocal();
         if (IsServer && networkStarted)
             SceneNet.Instance.Server_SceneGateAsync().Forget();
         if (!IsServer)
@@ -594,7 +592,7 @@ public class ModBehaviourF : MonoBehaviour
             case Op.PLAYER_DEAD_LOOT_SPAWN:
             {
                 if (!IsServer) break;
-                COOPManager.LootNet.Server_HandlePlayerDeathWithInventory(reader);
+                COOPManager.LootNet.Server_HandlePlayerDeathWithInventory(peer, reader);
                 break;
             }
 
@@ -636,14 +634,10 @@ public class ModBehaviourF : MonoBehaviour
                 {
                     if (IsServer)
                     {
-                        var pid = reader.GetString();
+                        _ = reader.GetString(); // 兼容原消息格式；身份使用实际连接。
                         var sid = reader.GetString();
 
-                        // 若主机还没确定 gate 的 sid，就用第一次 READY 的 sid
-                        if (string.IsNullOrEmpty(SceneNet.Instance._srvGateSid))
-                            SceneNet.Instance._srvGateSid = sid;
-
-                        if (sid == SceneNet.Instance._srvGateSid) SceneNet.Instance._srvGateReadyPids.Add(pid);
+                        SceneNet.Instance.Server_HandleGateReady(peer, sid);
                     }
 
                     break;
@@ -660,12 +654,7 @@ public class ModBehaviourF : MonoBehaviour
                             SceneNet.Instance._cliGateSid = sid;
                             SceneNet.Instance._cliSceneGateReleased = true;
                         }
-                        else
-                        {
-                            Debug.LogWarning($"[GATE] release sid mismatch: srv={sid}, cli={SceneNet.Instance._cliGateSid} — accepting");
-                            SceneNet.Instance._cliGateSid = sid; // 对齐后仍放行
-                            SceneNet.Instance._cliSceneGateReleased = true;
-                        }
+                        // A delayed release for the old level must not open the new gate.
                     }
 
                     break;

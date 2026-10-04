@@ -134,6 +134,8 @@ public static class CreateRemoteCharacter
             cmc.gameObject.SetActive(false);
             remoteCharacters[peer] = instance;
             cmc.gameObject.SetActive(true);
+            RemoteLoadoutReplay.ForHost(peer, instance);
+            ColdBuffSync.ApplyPending(Service.GetPlayerId(peer), cmc);
 
             COOPManager.FriendlyFire?.OnRemoteCharacterCreated(cmc);
             ModApiEvents.RaisePlayerSpawned(cmc, NetService.Instance?.GetPlayerId(peer), false);
@@ -281,6 +283,8 @@ public static class CreateRemoteCharacter
         cmc.gameObject.SetActive(false);
         clientRemoteCharacters[playerId] = instance;
         cmc.gameObject.SetActive(true);
+        RemoteLoadoutReplay.ForClient(playerId, instance);
+        ColdBuffSync.ApplyPending(playerId, cmc);
 
             COOPManager.FriendlyFire?.OnRemoteCharacterCreated(cmc);
             ModApiEvents.RaisePlayerSpawned(cmc, playerId, false);

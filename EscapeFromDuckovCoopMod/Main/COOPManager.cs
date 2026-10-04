@@ -115,10 +115,7 @@ public class COOPManager
 
         if (item == null)
         {
-            var socket = characterModel.HelmatSocket;
-            for (var i = socket.childCount - 1; i >= 0; i--) Object.Destroy(socket.GetChild(i).gameObject);
-            characterModel.CustomFace.hairSocket.gameObject.SetActive(true);
-            characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(true);
+            ClearHeadEquipmentModel(characterModel, "Helmat");
             return;
         }
 
@@ -150,10 +147,7 @@ public class COOPManager
 
         if (item == null)
         {
-            var socket = characterModel.HelmatSocket;
-            for (var i = socket.childCount - 1; i >= 0; i--) Object.Destroy(socket.GetChild(i).gameObject);
-            characterModel.CustomFace.hairSocket.gameObject.SetActive(true);
-            characterModel.CustomFace.mouthPart.socket.gameObject.SetActive(true);
+            ClearHeadEquipmentModel(characterModel, "Headset");
             return;
         }
 
@@ -172,6 +166,23 @@ public class COOPManager
             itemAgent.transform.SetParent(faceMaskSocket, false);
             itemAgent.transform.localRotation = Quaternion.identity;
             itemAgent.transform.localPosition = Vector3.zero;
+        }
+    }
+
+    private static void ClearHeadEquipmentModel(CharacterModel model, string slotName)
+    {
+        // Helmets and headsets share HelmatSocket. Removing one must not remove
+        // the other, including when an empty slot is replayed after a scene load.
+        var slots = model.characterMainControl.CharacterItem.Slots;
+        var slot = slots[slotName];
+        var agent = slot?.Content?.ActiveAgent;
+        if (agent != null && agent.transform.IsChildOf(model.HelmatSocket))
+            Object.Destroy(agent.gameObject);
+        if (slot != null) Traverse.Create(slot).Field<Item>("content").Value = null;
+        if (slots["Helmat"]?.Content == null && slots["Headset"]?.Content == null)
+        {
+            model.CustomFace.hairSocket.gameObject.SetActive(true);
+            model.CustomFace.mouthPart.socket.gameObject.SetActive(true);
         }
     }
 

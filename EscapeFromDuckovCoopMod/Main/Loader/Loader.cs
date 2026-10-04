@@ -32,6 +32,7 @@ public class ModBehaviour : Duckov.Modding.ModBehaviour
         COOPManager.InitManager();
         go.AddComponent<ModBehaviourF>();
         Loader();
+        CoopLogSystem.WriteNetworkDiagnostic($"[COOP] Loaded from {typeof(ModBehaviour).Assembly.Location} | UI build: single-overlay-white-theme");
     }
 
     public void Loader()

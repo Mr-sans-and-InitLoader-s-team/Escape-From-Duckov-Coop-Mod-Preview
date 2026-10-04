@@ -91,7 +91,7 @@ public static class CoopAudioSync
         "hit_organic_normal",
         "killmarker",
         "hitmarker",
-        "Kazoo" //虽然有针对卡祖笛的同步处理但效果不尽人意所以封存起来，待有人能解开这个卡祖笛同步诅咒
+        "Kazoo" // 持续音由 KazooSync 管理开始/参数/停止，禁止通过一次性音效重复播放。
     };
 
     private static bool ShouldBlockUi(string eventName, bool hasEmitter)

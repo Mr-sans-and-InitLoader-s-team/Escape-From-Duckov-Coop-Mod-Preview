@@ -268,18 +268,18 @@
     { "key": "ui.waiting.weather", "value": "天気: {0}" },
     { "key": "ui.waiting.weatherUnknown", "value": "天気: 不明" },
     { "key": "ui.waiting.loadingPlayers", "value": "プレイヤーリストを取得中..." },
-    { "key": "ui.settings.friendlyFirePlayers", "value": "Friendly Fire (Players)" },
+    { "key": "ui.settings.friendlyFirePlayers", "value": "プレイヤーへの同士討ち" },
     { "key": "ui.settings.friendlyFirePlayers.desc", "value": "Host only. Sets player proxies neutral so friendly fire is possible; disabling restores Player team." },
-    { "key": "ui.settings.themeMode", "value": "UI Theme" },
-    { "key": "ui.settings.themeMode.desc", "value": "Switches the co-op panel theme locally." },
-    { "key": "ui.settings.theme.white", "value": "White" },
-    { "key": "ui.settings.theme.black", "value": "Black" },
-    { "key": "ui.settings.theme.spring", "value": "Spring" },
-    { "key": "ui.settings.theme.summer", "value": "Summer" },
-    { "key": "ui.difficulty.spawnBonus", "value": "Enemy Spawn Bonus (additive)" },
-    { "key": "ui.difficulty.spawnBonus.desc", "value": "Adds to the base enemy spawn multiplier (e.g., +1 doubles spawns)." },
-    { "key": "ui.difficulty.forceBoss", "value": "Force Boss Spawn" },
-    { "key": "ui.difficulty.forceBoss.desc", "value": "Only enable on Impossible or custom difficulties." },
+    { "key": "ui.settings.themeMode", "value": "UI テーマ" },
+    { "key": "ui.settings.themeMode.desc", "value": "この端末の協力プレイパネルのテーマを変更します。" },
+    { "key": "ui.settings.theme.white", "value": "白" },
+    { "key": "ui.settings.theme.black", "value": "黒" },
+    { "key": "ui.settings.theme.spring", "value": "春節" },
+    { "key": "ui.settings.theme.summer", "value": "夏" },
+    { "key": "ui.difficulty.spawnBonus", "value": "敵の出現倍率への加算" },
+    { "key": "ui.difficulty.spawnBonus.desc", "value": "基本の敵出現倍率に加算します（例：+1 で出現数が2倍）。" },
+    { "key": "ui.difficulty.forceBoss", "value": "ボスを必ず出現させる" },
+    { "key": "ui.difficulty.forceBoss.desc", "value": "最高難易度またはカスタム難易度でのみ有効にしてください。" },
     { "key": "vehicle.control.title", "value": "車両制御" },
     { "key": "vehicle.control.current", "value": "操作者: {0}" },
     { "key": "vehicle.control.unassigned", "value": "割り当て待ち" },
@@ -294,6 +294,106 @@
     { "key": "vehicle.control.tip.requested", "value": "車両操作権を申請しました。現在の操作者が F2 で承認するのを待っています" },
     { "key": "vehicle.control.tip.incomingRequest", "value": "{0} が車両操作権を申請しています。F2 で承認" },
     { "key": "ui.teleporter.openInterfaceFirst", "value": "先にテレポーター画面を開いてください。" },
-    { "key": "ui.sceneVote.alreadyActive", "value": "すでにマップ投票が進行中です。" }
+    { "key": "ui.sceneVote.alreadyActive", "value": "すでにマップ投票が進行中です。" },
+    {
+      "key": "ui.teleporter.busy",
+      "value": "出発手続きが進行中です。先に完了するかキャンセルしてください。"
+    },
+    {
+      "key": "ui.teleporter.reason.notReady",
+      "value": "キャラクターの準備ができていません"
+    },
+    {
+      "key": "ui.teleporter.reason.destinationMissing",
+      "value": "目的地が見つかりません"
+    },
+    {
+      "key": "ui.teleporter.reason.missingCost",
+      "value": "必要なアイテムまたはお金が不足しています"
+    },
+    {
+      "key": "ui.teleporter.reason.paymentFailed",
+      "value": "費用の支払いに失敗しました"
+    },
+    {
+      "key": "ui.teleporter.reason.readyWithdrawn",
+      "value": "準備を取り消しました"
+    },
+    {
+      "key": "ui.teleporter.reason.openFailed",
+      "value": "出発確認画面を開けません"
+    },
+    {
+      "key": "ui.teleporter.reason.checkFailed",
+      "value": "出発条件の確認に失敗しました"
+    },
+    {
+      "key": "ui.teleporter.reason.cancelled",
+      "value": "出発をキャンセルしました"
+    },
+    {
+      "key": "ui.teleporter.reason.requirementsFailed",
+      "value": "出発条件を満たしていません"
+    },
+    {
+      "key": "ui.teleporter.reason.disconnected",
+      "value": "接続が切れました"
+    },
+    {
+      "key": "ui.teleporter.reason.closed",
+      "value": "出発確認画面を閉じました"
+    },
+    {
+      "key": "ui.teleporter.reason.timeout",
+      "value": "プレイヤーの応答待ちがタイムアウトしました"
+    },
+    {
+      "key": "ui.teleporter.cancelledByPlayer",
+      "value": "{0}：{1}。出発を中止しました。支払い済みの費用は返還されます。"
+    },
+    {
+      "key": "ui.teleporter.cancelled",
+      "value": "出発をキャンセルしました。"
+    },
+    {
+      "key": "ui.teleporter.disconnected",
+      "value": "接続が切れたため、出発をキャンセルしました。"
+    },
+    {
+      "key": "ui.teleporter.cancelTimeout",
+      "value": "キャンセル確認がタイムアウトしました。この端末の出発を中止しました。"
+    },
+    {
+      "key": "ui.streamerMode",
+      "value": "配信者モード"
+    },
+    {
+      "key": "ui.vote.notInitialized",
+      "value": "投票システムが初期化されていません"
+    },
+    {
+      "key": "ui.vote.onlyHostCanCancel",
+      "value": "投票をキャンセルできるのはホストだけです"
+    },
+    {
+      "key": "ui.vote.cancelled",
+      "value": "投票をキャンセルしました"
+    },
+    {
+      "key": "net.steamUnavailable",
+      "value": "Steam が初期化されていないため、P2P を開始できません"
+    },
+    {
+      "key": "net.startFailed",
+      "value": "ネットワークの起動に失敗しました"
+    },
+    {
+      "key": "ui.steam.protocolMismatch",
+      "value": "全員が同じバージョンのネイティブ Steam P2P 協力プレイ Mod を使用する必要があります"
+    },
+    {
+      "key": "ui.settings.configureOffline",
+      "value": "この設定はシングルプレイで変更してください。"
+    }
   ]
 }

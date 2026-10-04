@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -123,30 +123,36 @@ namespace EscapeFromDuckovCoopMod;
         _srvHookedItems.Clear();
     }
 
-    public void Server_HandlePlayerDeathWithInventory(NetPacketReader reader)
+    public void Server_HandlePlayerDeathWithInventory(CoopPeer sender, NetPacketReader reader)
     {
-        var pos = reader.GetV3cm();
-
-        var itemCount = reader.GetInt();
-        var itemSnapshots = new List<ItemSnapshot>();
-        
-        for (int i = 0; i < itemCount; i++)
+        if (!IsServer || !networkStarted || sender == null || HealthM.Instance == null) return;
+        try
         {
-            try
+            var lifeId = reader.GetString();
+            // Health reports and death inventory use the same reliable ordered
+            // channel. A living player, duplicate, or old life has no spawn permit.
+            if (!HealthM.Instance.Server_CanSpawnDeathLoot(sender, lifeId)) return;
+            var pos = reader.GetV3cm();
+            if (float.IsNaN(pos.x) || float.IsInfinity(pos.x) || float.IsNaN(pos.y) ||
+                float.IsInfinity(pos.y) || float.IsNaN(pos.z) || float.IsInfinity(pos.z)) return;
+            var itemCount = reader.GetInt();
+            if (itemCount < 0 || itemCount > reader.AvailableBytes) return;
+            var itemSnapshots = new List<ItemSnapshot>(itemCount);
+            for (var i = 0; i < itemCount; i++)
             {
-                var snap = ItemTool.ReadItemSnapshot(reader);
-                itemSnapshots.Add(snap);
+                var snapshot = ItemTool.ReadItemSnapshot(reader);
+                if (snapshot.TypeId <= 0) return;
+                itemSnapshots.Add(snapshot);
             }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[DEATH] Error reading item {i}: {ex}");
-            }
+            if (reader.AvailableBytes != 0) return;
+            // Consume before entering the asynchronous item creation path.
+            if (!HealthM.Instance.Server_ConsumeDeathLoot(sender, lifeId)) return;
+            Server_SpawnDeadPlayerLoot(pos, itemSnapshots);
         }
-        
-        Debug.Log($"[DEATH] Read {itemSnapshots.Count} item snapshots from client");
-        
-        // NOW spawn with the pre-read data
-        Server_SpawnDeadPlayerLoot(pos, itemSnapshots);
+        catch (Exception ex)
+        {
+            Debug.LogError($"[DEATH] Rejected invalid inventory report from {sender.EndPoint}: {ex}");
+        }
     }
 
     private async void Server_SpawnDeadPlayerLoot(Vector3 position, List<ItemSnapshot> itemSnapshots)

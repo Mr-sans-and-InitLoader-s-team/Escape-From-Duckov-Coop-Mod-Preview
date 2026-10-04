@@ -368,7 +368,7 @@ public class MModUILayoutBuilder
         _components.IpInputField.onValueChanged.AddListener((value) => _ui.manualIP = value);
 
         var streamerRow = _ui.CreateHorizontalGroup(connectCard.transform, "StreamerModeRow");
-        _ui.CreateText("StreamerLabel", streamerRow.transform, "主播模式", 13, MModUI.ModernColors.TextSecondary);
+        _ui.CreateText("StreamerLabel", streamerRow.transform, CoopLocalization.Get("ui.streamerMode"), 13, MModUI.ModernColors.TextSecondary);
         _components.StreamerModeToggle = _ui.CreateModernToggle("StreamerModeToggle", streamerRow.transform, _ui.StreamerMode);
         var streamerRowLayout = streamerRow.GetComponent<LayoutElement>();
         streamerRowLayout.minHeight = 30;

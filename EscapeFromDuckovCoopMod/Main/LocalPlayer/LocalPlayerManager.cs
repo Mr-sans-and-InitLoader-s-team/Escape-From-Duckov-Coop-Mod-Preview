@@ -50,6 +50,7 @@ public class LocalPlayerManager : MonoBehaviour
     private float _nextLoadoutSyncTime;
     private int _loadoutSyncRequestSeq;
     private int _loggedLoadoutSyncRequestSeq;
+    private readonly LoadoutContextTracker _loadoutContext = new();
 
     private NetService Service => NetService.Instance;
     private bool IsServer => Service != null && Service.IsServer;
@@ -71,6 +72,7 @@ public class LocalPlayerManager : MonoBehaviour
 
     public void InitializeLocalPlayer()
     {
+        _loadoutContext.Update(false, null, null);
         var bool1 = ComputeIsInGame(out var ids);
         var selfId = Service != null
             ? Service.GetSelfNetworkId()
@@ -341,8 +343,10 @@ public class LocalPlayerManager : MonoBehaviour
         var bool1 = ComputeIsInGame(out var ids);
         var currentIsInGame = bool1;
         var levelManager = LevelManager.Instance;
+        var loadoutContextChanged = _loadoutContext.Update(currentIsInGame, ids, levelManager != null ? levelManager.MainCharacter : null);
+        Service.localPlayerStatus.SceneId = ids;
 
-        if (Service.localPlayerStatus.IsInGame != currentIsInGame)
+        if (Service.localPlayerStatus.IsInGame != currentIsInGame || loadoutContextChanged)
         {
             Service.localPlayerStatus.IsInGame = currentIsInGame;
             Service.localPlayerStatus.LastIsInGame = currentIsInGame;
@@ -495,6 +499,7 @@ public class LocalPlayerManager : MonoBehaviour
         }
 
         // 防重入：本地本轮只补发一次 OnDead
+        if (!h.IsDead) return;
         if (_cliSelfDeathFired)
         {
             return;

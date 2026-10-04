@@ -629,60 +629,6 @@ public class WeaponHandle
 
     public void Client_HandleMeleeSwing(in MeleeSwingBroadcastRpc message)
     {
-        if (!networkStarted) return;
-        if (NetService.Instance.IsSelfId(message.PlayerId)) return;
-
-        CharacterMainControl cmc = null;
-        if (clientRemoteCharacters.TryGetValue(message.PlayerId, out var who))
-            cmc = who.GetComponent<CharacterMainControl>();
-        else if (message.AiId != 0)
-            cmc = COOPManager.AI?.TryGetCharacter(message.AiId);
-        //兜底我擦老
-        if (!cmc)
-        {
-            var closestDist = float.MaxValue;
-
-            foreach (var kvp in clientRemoteCharacters)
-            {
-                var go = kvp.Value;
-                if (!go) continue;
-
-                var candidate = go.GetComponent<CharacterMainControl>();
-                if (!candidate) continue;
-
-                var dist = (candidate.transform.position - message.SnapshotPosition).sqrMagnitude;
-                if (dist < closestDist)
-                {
-                    closestDist = dist;
-                    cmc = candidate;
-                }
-            }
-
-            if (!cmc)
-            {
-                foreach (var candidate in GameObject.FindObjectsByType<CharacterMainControl>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
-                {
-                    if (!candidate || candidate.IsMainCharacter()) continue;
-
-                    var dist = (candidate.transform.position - message.SnapshotPosition).sqrMagnitude;
-                    if (dist < closestDist)
-                    {
-                        closestDist = dist;
-                        cmc = candidate;
-                    }
-                }
-            }
-        }
-
-        if (!cmc) return;
-
-        var anim = cmc.characterModel.GetComponent<CharacterAnimationControl_MagicBlend>();
-        if (anim != null) anim.OnAttack();
-
-        var anim2 = cmc.characterModel.GetComponent<CharacterAnimationControl>();
-        if (anim2) anim2.OnAttack();
-
-        var model = cmc.characterModel;
-        if (model) MeleeFx.SpawnSlashFx(model);
+        RemoteMeleePlayback.Play(Service, in message);
     }
 }

@@ -145,10 +145,6 @@
                              "value":  "Отменить голосование"
                          },
                          {
-                             "key":  "ui.vote.title",
-                             "value":  "Голосование за карту"
-                         },
-                         {
                              "key":  "ui.spectator.mode",
                              "value":  "Режим наблюдателя: ЛКМ ▶ Следующий | ПКМ ◀ Предыдущий | Нажмите F8, чтобы завершить и увидеть результаты (защита)"
                          },
@@ -1183,6 +1179,106 @@
                          {
                              "key":  "ui.sceneVote.alreadyActive",
                              "value":  "Голосование за карту уже запущено."
+                         },
+                         {
+                           "key": "ui.teleporter.busy",
+                           "value": "Отправление уже начато. Сначала завершите или отмените его."
+                         },
+                         {
+                           "key": "ui.teleporter.reason.notReady",
+                           "value": "персонаж ещё не готов"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.destinationMissing",
+                           "value": "пункт назначения не найден"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.missingCost",
+                           "value": "не хватает необходимых предметов или денег"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.paymentFailed",
+                           "value": "не удалось оплатить отправление"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.readyWithdrawn",
+                           "value": "отменил готовность"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.openFailed",
+                           "value": "не удалось открыть подтверждение отправления"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.checkFailed",
+                           "value": "не удалось проверить условия отправления"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.cancelled",
+                           "value": "отменил отправление"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.requirementsFailed",
+                           "value": "условия отправления не выполнены"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.disconnected",
+                           "value": "соединение разорвано"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.closed",
+                           "value": "закрыл окно подтверждения отправления"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.timeout",
+                           "value": "истекло время ожидания ответа игрока"
+                         },
+                         {
+                           "key": "ui.teleporter.cancelledByPlayer",
+                           "value": "{0}: {1}. Отправление отменено. Уже списанные средства и предметы будут возвращены."
+                         },
+                         {
+                           "key": "ui.teleporter.cancelled",
+                           "value": "Отправление отменено."
+                         },
+                         {
+                           "key": "ui.teleporter.disconnected",
+                           "value": "Соединение разорвано. Отправление отменено."
+                         },
+                         {
+                           "key": "ui.teleporter.cancelTimeout",
+                           "value": "Истекло время ожидания подтверждения отмены. Локальное отправление отменено."
+                         },
+                         {
+                           "key": "ui.streamerMode",
+                           "value": "Режим стримера"
+                         },
+                         {
+                           "key": "ui.vote.notInitialized",
+                           "value": "Система голосования не инициализирована"
+                         },
+                         {
+                           "key": "ui.vote.onlyHostCanCancel",
+                           "value": "Только хост может отменить голосование"
+                         },
+                         {
+                           "key": "ui.vote.cancelled",
+                           "value": "Голосование отменено"
+                         },
+                         {
+                           "key": "net.steamUnavailable",
+                           "value": "Steam не инициализирован; невозможно запустить P2P"
+                         },
+                         {
+                           "key": "net.startFailed",
+                           "value": "Не удалось запустить сеть"
+                         },
+                         {
+                           "key": "ui.steam.protocolMismatch",
+                           "value": "Все игроки должны использовать одну версию кооперативного мода с нативным Steam P2P"
+                         },
+                         {
+                           "key": "ui.settings.configureOffline",
+                           "value": "Измените эту настройку в одиночной игре."
                          }
                      ]
 }

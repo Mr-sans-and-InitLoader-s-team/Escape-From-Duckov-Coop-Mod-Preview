@@ -31,8 +31,8 @@ public class SceneNet : MonoBehaviour
     public bool sceneSaveToFile = true;
 
     public bool allowLocalSceneLoad;
-    private string _allowedLocalSceneLoadId;
-    private float _allowedLocalSceneLoadUntil;
+    private readonly LocalSceneLoadPermit _localLoadPermit = new();
+    private int _clientGateGeneration;
 
     public bool sceneUseLocation;
     public string sceneLocationName;
@@ -44,6 +44,8 @@ public class SceneNet : MonoBehaviour
     public string _cliGateSid;
     public string _srvGateSid;
     public bool IsMapSelectionEntry;
+    private string _teleporterToken;
+    private int _teleporterBeaconIndex = -1;
 
     public bool IsDoteleportMap; //附加地图投票判断
 
@@ -91,37 +93,27 @@ public class SceneNet : MonoBehaviour
         Instance = this;
     }
 
-    public void AuthorizeLocalSceneLoad(string sceneId, float seconds = 10f)
+    public void AuthorizeLocalSceneLoad(string sceneId, float seconds = 10f, bool throughSettlement = false)
     {
         allowLocalSceneLoad = true;
-        _allowedLocalSceneLoadId = sceneId ?? string.Empty;
-        _allowedLocalSceneLoadUntil = Time.unscaledTime + Mathf.Max(0.5f, seconds);
+        _localLoadPermit.Grant(sceneId, Time.unscaledTime, seconds, throughSettlement);
     }
 
     public bool IsLocalSceneLoadAllowed(string sceneId = null)
     {
-        if (allowLocalSceneLoad)
-            return true;
-
-        if (Time.unscaledTime > _allowedLocalSceneLoadUntil)
-            return false;
-
-        if (string.IsNullOrEmpty(sceneId) || string.IsNullOrEmpty(_allowedLocalSceneLoadId))
-            return true;
-
-        return string.Equals(_allowedLocalSceneLoadId, sceneId, StringComparison.OrdinalIgnoreCase);
+        return _localLoadPermit.Allows(sceneId, Time.unscaledTime);
     }
 
     private void ClearLocalSceneLoadAuthorization()
     {
         allowLocalSceneLoad = false;
-        _allowedLocalSceneLoadId = null;
-        _allowedLocalSceneLoadUntil = 0f;
+        _localLoadPermit.Clear();
     }
 
     public void TrySendSceneReadyOnce()
     {
         if (!networkStarted) return;
+        if (!IsServer && (connectedPeer == null || connectedPeer.ConnectionState != ConnectionState.Connected)) return;
 
         // 只有真正进入地图（拿到 SceneId）才上报
         if (!LocalPlayerManager.Instance.ComputeIsInGame(out var sid) || string.IsNullOrEmpty(sid)) return;
@@ -156,6 +148,7 @@ public class SceneNet : MonoBehaviour
         else
             connectedPeer?.Send(writer, DeliveryMethod.ReliableOrdered);
 
+        if (!IsServer && connectedPeer.ConnectionState != ConnectionState.Connected) return;
         _sceneReadySidSent = sid;
         ClearLocalSceneLoadAuthorization();
     }
@@ -175,7 +168,9 @@ public class SceneNet : MonoBehaviour
             NotifyEvac = sceneNotifyEvac,
             SaveToFile = sceneSaveToFile,
             UseLocation = sceneUseLocation,
-            LocationName = sceneLocationName ?? string.Empty
+            LocationName = sceneLocationName ?? string.Empty,
+            TeleporterToken = _teleporterToken,
+            BeaconIndex = _teleporterBeaconIndex
         };
 
         if (sceneLocationName == "OnPointerClick" && CoopAISettings.ActiveGeneral.TeleporterSpawnTogether)
@@ -191,6 +186,7 @@ public class SceneNet : MonoBehaviour
             }
         }
 
+        if (!string.IsNullOrEmpty(_teleporterToken) && !TeleporterTravel.AcceptCommit(_teleporterToken)) return;
         CoopTool.SendRpc(in message);
 
         _localSceneLoadLaunched = false;
@@ -225,11 +221,14 @@ public class SceneNet : MonoBehaviour
     private void Host_PerformSceneLoad()
     {
         _srvLoadInProgress = true;
+        _srvSceneGateOpen = false;
+        _srvGateReadyPids.Clear();
+        _srvGateSid = sceneTargetId;
         // 主机本地执行加载
         AuthorizeLocalSceneLoad(sceneTargetId);
         var isTeleporterLoad = string.Equals(sceneLocationName, "DoTeleport", StringComparison.Ordinal);
         var isMapSelectionLoad = string.Equals(sceneLocationName, "OnPointerClick", StringComparison.Ordinal);
-        var map = CoopTool.GetMapSelectionEntrylist(sceneTargetId);
+        var map = TeleporterCost.Resolve(sceneTargetId, _teleporterBeaconIndex);
         if (map != null && (IsMapSelectionEntry || isMapSelectionLoad))
         {
             IsMapSelectionEntry = false;
@@ -295,6 +294,7 @@ public class SceneNet : MonoBehaviour
 
         if (!sceneVoteActive) return;
         if (!sceneReady.ContainsKey(pid)) return; // 不在这轮投票里，丢弃
+        if (!ready && TeleporterTravel.WithdrawReady(pid)) return;
 
         sceneReady[pid] = ready;
 
@@ -311,8 +311,8 @@ public class SceneNet : MonoBehaviour
             if (!sceneReady.TryGetValue(id, out var r) || !r)
                 return;
 
-        // 全员就绪 → 开始加载（主线程执行）
-        Server_ScheduleBeginSceneLoad(0.2f);
+        if (sceneLocationName == "OnPointerClick") TeleporterTravel.VotesReady();
+        else Server_ScheduleBeginSceneLoad(0.2f);
     }
 
     // ===== 客户端：收到“投票开始”（带参与者 pid 列表）=====
@@ -352,7 +352,7 @@ public class SceneNet : MonoBehaviour
         LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
         mySceneId = mySceneId ?? string.Empty;
 
-        if (ver >= 2 && !string.IsNullOrEmpty(hostSceneId) && !string.IsNullOrEmpty(mySceneId))
+        if (sceneLocationName != "OnPointerClick" && ver >= 2 && !string.IsNullOrEmpty(hostSceneId) && !string.IsNullOrEmpty(mySceneId))
             if (!string.Equals(hostSceneId, mySceneId, StringComparison.Ordinal))
             {
                 Debug.Log($"[SCENE] vote: ignore (diff scene) host='{hostSceneId}' me='{mySceneId}'");
@@ -395,12 +395,18 @@ public class SceneNet : MonoBehaviour
 
         sceneVoteActive = true;
         localReady = false;
+        _teleporterToken = message.TeleporterToken;
+        _teleporterBeaconIndex = message.BeaconIndex;
+        if (sceneLocationName == "OnPointerClick" && !string.IsNullOrEmpty(_teleporterToken))
+            TeleporterTravel.BeginLocal(_teleporterToken, sceneTargetId, _teleporterBeaconIndex);
 
         Debug.Log($"[SCENE] 收到投票 v{ver}: target='{sceneTargetId}', hostScene='{hostSceneId}', myScene='{mySceneId}', players={sceneParticipantIds.Count}");
     }
 
     public void Client_OnBeginSceneLoad(SceneBeginLoadRpc message)
     {
+        if (message.LocationName == "OnPointerClick" && !TeleporterTravel.AcceptCommit(message.TeleporterToken)) return;
+        _teleporterBeaconIndex = message.BeaconIndex;
         sceneTargetId = message.SceneId ?? sceneTargetId ?? string.Empty;
         sceneCurtainGuid = string.IsNullOrEmpty(message.CurtainGuid) ? null : message.CurtainGuid;
         sceneNotifyEvac = message.NotifyEvac;
@@ -416,7 +422,7 @@ public class SceneNet : MonoBehaviour
 
         AuthorizeLocalSceneLoad(sceneTargetId);
 
-        var map = CoopTool.GetMapSelectionEntrylist(sceneTargetId);
+        var map = TeleporterCost.Resolve(sceneTargetId, _teleporterBeaconIndex);
         if (map != null && sceneLocationName == "OnPointerClick")
         {
             IsMapSelectionEntry = false;
@@ -490,22 +496,30 @@ public class SceneNet : MonoBehaviour
             _cliForceSpawnAtHost = false;
     }
 
+    public void StartValidatedTeleporterLoad()
+    {
+        if (IsServer && !string.IsNullOrEmpty(_teleporterToken)) Server_ScheduleBeginSceneLoad(0.2f);
+    }
+
+    public void ResetTeleporterVote()
+    {
+        _srvPendingBeginLoad = false;
+        _srvPendingSceneLoad = false;
+        _localSceneLoadLaunched = false;
+        sceneVoteActive = false;
+        sceneParticipantIds.Clear();
+        sceneReady.Clear();
+        localReady = false;
+        IsMapSelectionEntry = false;
+        _teleporterToken = null;
+        _teleporterBeaconIndex = -1;
+        ClearLocalSceneLoadAuthorization();
+        EscapeFromDuckovCoopMod.Utils.SceneTriggerResetter.ResetAllSceneTriggers();
+    }
+
     public void Client_SendReadySet(bool ready)
     {
         if (IsServer || connectedPeer == null) return;
-
-        if (ready && sceneLocationName == "OnPointerClick")
-        {
-            var mapSelectionView = MapSelectionView.Instance;
-            var viewObj = mapSelectionView != null ? mapSelectionView.gameObject : null;
-            var isActive = viewObj != null && viewObj.activeInHierarchy && viewObj.activeSelf && mapSelectionView.isActiveAndEnabled;
-
-            if (!isActive)
-            {
-                MModUI.ShowTip(CoopLocalization.Get("ui.teleporter.openInterfaceFirst"));
-                return;
-            }
-        }
 
         var message = new SceneReadySetRpc
         {
@@ -529,6 +543,7 @@ public class SceneNet : MonoBehaviour
     /// </summary>
     public void CancelVote()
     {
+        if (TeleporterTravel.IsActive) { TeleporterTravel.CancelLocal("ui.teleporter.reason.cancelled"); return; }
         if (!sceneVoteActive)
         {
             Debug.LogWarning("[SCENE] 没有正在进行的投票");
@@ -561,6 +576,7 @@ public class SceneNet : MonoBehaviour
     /// </summary>
     public void Client_OnVoteCancelled()
     {
+        if (TeleporterTravel.IsActive) TeleporterTravel.Reset();
         if (IsServer)
         {
             Debug.LogWarning("[SCENE] 服务器不应该接收客户端的取消投票消息");
@@ -597,6 +613,9 @@ public class SceneNet : MonoBehaviour
                 {
                     if (Traverse.Create(ii).Field<string>("sceneID").Value == targetSceneId)
                     {
+                        // This proxy can await the settlement screen before its
+                        // nested LoadScene call. Human input has no ten-second limit.
+                        AuthorizeLocalSceneLoad(targetSceneId, throughSettlement: true);
                         ii.LoadScene();
                         launched = true;
                         Debug.Log($"[SCENE] Fallback via SceneLoaderProxy -> {targetSceneId}");
@@ -719,8 +738,10 @@ public class SceneNet : MonoBehaviour
 
     public void Host_BeginSceneVote_Simple(string targetSceneId, string curtainGuid,
         bool notifyEvac, bool saveToFile,
-        bool useLocation, string locationName)
+        bool useLocation, string locationName, int beaconIndex = -1)
     {
+        if (_srvPendingBeginLoad || _srvPendingSceneLoad || _srvLoadInProgress || SceneLoader.IsSceneLoading || TeleporterTravel.IsActive)
+            return;
         if (sceneVoteActive)
         {
             MModUI.ShowTip(CoopLocalization.Get("ui.sceneVote.alreadyActive"));
@@ -739,7 +760,20 @@ public class SceneNet : MonoBehaviour
 
         // 参与者（同图优先；拿不到 SceneId 的竞态由客户端再过滤）
         sceneParticipantIds.Clear();
-        sceneParticipantIds.AddRange(CoopTool.BuildParticipantIds_Server());
+        if (IsMapSelectionEntry)
+        {
+            sceneParticipantIds.Add(Service.GetSelfNetworkId());
+            foreach (var peer in netManager.ConnectedPeerList)
+                sceneParticipantIds.Add(Service.GetPlayerId(peer));
+            _teleporterBeaconIndex = beaconIndex;
+            _teleporterToken = TeleporterTravel.BeginHost(sceneTargetId, beaconIndex, sceneParticipantIds);
+        }
+        else
+        {
+            sceneParticipantIds.AddRange(CoopTool.BuildParticipantIds_Server());
+            _teleporterToken = null;
+            _teleporterBeaconIndex = -1;
+        }
 
         sceneVoteActive = true;
         localReady = false;
@@ -760,7 +794,9 @@ public class SceneNet : MonoBehaviour
             UseLocation = sceneUseLocation,
             LocationName = sceneLocationName ?? string.Empty,
             HostSceneId = hostSceneId,
-            ParticipantIds = sceneParticipantIds.Count > 0 ? sceneParticipantIds.ToArray() : Array.Empty<string>()
+            ParticipantIds = sceneParticipantIds.Count > 0 ? sceneParticipantIds.ToArray() : Array.Empty<string>(),
+            TeleporterToken = _teleporterToken,
+            BeaconIndex = _teleporterBeaconIndex
         };
 
         CoopTool.SendRpc(in message);
@@ -774,6 +810,7 @@ public class SceneNet : MonoBehaviour
         bool useLocation, string locationName)
     {
         if (!networkStarted || IsServer || connectedPeer == null) return;
+        if (SceneLoader.IsSceneLoading || (Duckov.Scenes.MultiSceneCore.Instance != null && Duckov.Scenes.MultiSceneCore.Instance.IsLoading)) return;
         if (sceneVoteActive)
         {
             MModUI.ShowTip(CoopLocalization.Get("ui.sceneVote.alreadyActive"));
@@ -819,73 +856,39 @@ public class SceneNet : MonoBehaviour
         }
     }
 
-    public async UniTask Client_SceneGateAsync()
+    public async UniTask Client_SceneGateAsync(string sceneId = null)
     {
         if (!networkStarted || IsServer) return;
-
-        // 1) 等到握手建立（高性能机器上 StartInit 可能早于握手）
-        var connectDeadline = Time.realtimeSinceStartup + 8f;
-        while (connectedPeer == null && Time.realtimeSinceStartup < connectDeadline)
-            await UniTask.Delay(100);
-
-        // 2) 重置释放标记
-        _cliSceneGateReleased = false;
-
-        var sid = _cliGateSid;
-        if (string.IsNullOrEmpty(sid))
-            sid = TryGuessActiveSceneId();
+        var sid = string.IsNullOrEmpty(sceneId) ? TryGuessActiveSceneId() : sceneId;
+        if (string.Equals(sid, SceneInfoCollection.BaseSceneID, StringComparison.OrdinalIgnoreCase)) return;
+        var generation = ++_clientGateGeneration;
         _cliGateSid = sid;
-
-        // 4) 尝试上报 READY（握手稍晚的情况，后面会重试一次）
-        if (connectedPeer != null)
-        {
-            writer.Reset();
-            writer.Put((byte)Op.SCENE_GATE_READY);
-            writer.Put(localPlayerStatus != null ? localPlayerStatus.EndPoint : "");
-            writer.Put(sid ?? "");
-            connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
-        }
-
-        // 5) 若此时仍未连上，后台短暂轮询直到拿到 peer 后补发 READY（最多再等 5s）
-        var retryDeadline = Time.realtimeSinceStartup + 5f;
-        while (connectedPeer == null && Time.realtimeSinceStartup < retryDeadline)
-        {
-            await UniTask.Delay(200);
-            if (connectedPeer != null)
-            {
-                writer.Reset();
-                writer.Put((byte)Op.SCENE_GATE_READY);
-                writer.Put(localPlayerStatus != null ? localPlayerStatus.EndPoint : "");
-                writer.Put(sid ?? "");
-                connectedPeer.Send(writer, DeliveryMethod.ReliableOrdered);
-                break;
-            }
-        }
-
-        WaitingSynchronizationUI.Instance.Show();
-
-        _cliGateDeadline = Time.realtimeSinceStartup + 10f; // 可调超时（防死锁）吃保底
-
-        while (/*!_cliSceneGateReleased &&*/ Time.realtimeSinceStartup < _cliGateDeadline)
-        {
-            try
-            {
-                SceneLoader.LoadingComment = CoopLocalization.Get("scene.waitingForHost");
-            }
-            catch
-            {
-            }
-
-            await UniTask.Delay(100);
-        }
-
-
+        _cliSceneGateReleased = false;
         try
         {
-            SceneLoader.LoadingComment = CoopLocalization.Get("scene.hostReady");
+            var connectDeadline = Time.realtimeSinceStartup + 8f;
+            while (networkStarted && connectedPeer == null && Time.realtimeSinceStartup < connectDeadline)
+                await UniTask.Delay(100, ignoreTimeScale: true);
+            if (!networkStarted || connectedPeer == null || generation != _clientGateGeneration) return;
+
+            var w = new NetDataWriter();
+            w.Put((byte)Op.SCENE_GATE_READY);
+            w.Put(localPlayerStatus?.EndPoint ?? string.Empty);
+            w.Put(sid ?? string.Empty);
+            connectedPeer.Send(w, DeliveryMethod.ReliableOrdered);
+            WaitingSynchronizationUI.Instance?.Show();
+            _cliGateDeadline = Time.realtimeSinceStartup + 10f;
+            while (networkStarted && connectedPeer != null && generation == _clientGateGeneration &&
+                !_cliSceneGateReleased && Time.realtimeSinceStartup < _cliGateDeadline)
+            {
+                SceneLoader.LoadingComment = CoopLocalization.Get("scene.waitingForHost");
+                await UniTask.Delay(100, ignoreTimeScale: true);
+            }
+            CoopLogSystem.WriteNetworkDiagnostic($"[SCENE] Gate scene='{sid}' released={_cliSceneGateReleased} connected={connectedPeer != null}");
         }
-        catch
+        finally
         {
+            if (generation == _clientGateGeneration) WaitingSynchronizationUI.Instance?.Hide();
         }
     }
 
@@ -914,6 +917,15 @@ public class SceneNet : MonoBehaviour
         // 主机不阻塞：之后若有 SCENE_GATE_READY 迟到，就在接收处即刻单独放行 目前不想去写也没啥毛病
     }
 
+    public void Server_HandleGateReady(NetPeer peer, string sid)
+    {
+        if (!IsServer || peer == null || string.IsNullOrEmpty(sid)) return;
+        if (string.IsNullOrEmpty(_srvGateSid)) _srvGateSid = sid;
+        if (!string.Equals(sid, _srvGateSid, StringComparison.OrdinalIgnoreCase)) return;
+        _srvGateReadyPids.Add(Service.GetPlayerId(peer));
+        if (_srvSceneGateOpen) Server_SendGateRelease(peer, sid);
+    }
+
     private void Server_SendGateRelease(NetPeer peer, string sid)
     {
         if (peer == null) return;
@@ -926,7 +938,9 @@ public class SceneNet : MonoBehaviour
 
     private string TryGuessActiveSceneId()
     {
-        return sceneTargetId;
+        var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+        var id = scene.IsValid() ? SceneInfoCollection.GetSceneID(scene.buildIndex) : null;
+        return string.IsNullOrEmpty(id) ? sceneTargetId : id;
     }
 
     private async UniTaskVoid FallbackRetryLocalSceneLoad(string targetSceneId, string curtainGuid,

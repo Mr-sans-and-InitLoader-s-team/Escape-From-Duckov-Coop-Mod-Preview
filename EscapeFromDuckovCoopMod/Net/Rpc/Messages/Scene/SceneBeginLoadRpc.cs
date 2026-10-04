@@ -19,6 +19,8 @@ public struct SceneBeginLoadRpc : IRpcMessage
     public bool ForceSpawnAtHost;
     public Vector3 HostSpawnPosition;
     public Quaternion HostSpawnRotation;
+    public string TeleporterToken;
+    public int BeaconIndex;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -41,6 +43,8 @@ public struct SceneBeginLoadRpc : IRpcMessage
             writer.PutVector3(HostSpawnPosition);
             writer.PutQuaternion(HostSpawnRotation);
         }
+        writer.Put(TeleporterToken ?? string.Empty);
+        writer.Put(BeaconIndex);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -67,5 +71,7 @@ public struct SceneBeginLoadRpc : IRpcMessage
                 HostSpawnRotation = reader.GetQuaternion();
             }
         }
+        TeleporterToken = reader.AvailableBytes > 0 ? reader.GetString() : string.Empty;
+        BeaconIndex = reader.AvailableBytes >= 4 ? reader.GetInt() : -1;
     }
 }

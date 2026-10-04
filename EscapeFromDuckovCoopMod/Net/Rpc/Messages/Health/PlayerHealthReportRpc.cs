@@ -9,6 +9,8 @@ public struct PlayerHealthReportRpc : IRpcMessage
     public float CurrentHealth;
     public bool HasDamage;
     public DamageForwardPayload Damage;
+    public string LifeId;
+    public bool IsDead;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -17,6 +19,8 @@ public struct PlayerHealthReportRpc : IRpcMessage
         writer.Put(HasDamage);
         if (HasDamage)
             Damage.Serialize(writer);
+        writer.Put(LifeId ?? string.Empty);
+        writer.Put(IsDead);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -29,5 +33,7 @@ public struct PlayerHealthReportRpc : IRpcMessage
             Damage = default;
             Damage.Deserialize(reader);
         }
+        LifeId = reader.AvailableBytes > 0 ? reader.GetString() : string.Empty;
+        IsDead = reader.AvailableBytes > 0 && reader.GetBool();
     }
 }

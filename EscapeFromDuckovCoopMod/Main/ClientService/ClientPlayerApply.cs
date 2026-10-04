@@ -81,6 +81,11 @@ public class ClientPlayerApply
             if (!string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var ids))
             {
                 var item = await COOPManager.GetItemAsync(ids);
+                if (!RemoteLoadoutReplay.IsCurrent(playerId, remoteObj, characterModel))
+                {
+                    if (item != null) UnityEngine.Object.Destroy(item.gameObject);
+                    return;
+                }
                 if (item == null) Debug.LogWarning($"无法获取物品: ItemId={itemId}，槽位 {slotHash} 未更新");
                 if (slotHash == 100) COOPManager.ChangeArmorModel(characterModel, item);
                 if (slotHash == 200) COOPManager.ChangeHelmatModel(characterModel, item);
@@ -97,6 +102,11 @@ public class ClientPlayerApply
             if (int.TryParse(itemId, out var ids))
             {
                 var item = await COOPManager.GetItemAsync(ids);
+                if (!RemoteLoadoutReplay.IsCurrent(playerId, remoteObj, characterModel))
+                {
+                    if (item != null) UnityEngine.Object.Destroy(item.gameObject);
+                    return;
+                }
                 if (item != null)
                 {
                     if (slotName == "armorSlot") COOPManager.ChangeArmorModel(characterModel, item);
@@ -123,7 +133,7 @@ public class ClientPlayerApply
         var model = cm ? cm.characterModel : null;
         if (model == null) return;
 
-        var key = $"{playerId}:{slotHash}";
+        var key = $"{model.GetInstanceID()}:{slotHash}";
         var want = itemId ?? string.Empty;
         if (_lastWeaponAppliedByPlayer.TryGetValue(key, out var last) &&
             last == want &&
@@ -149,12 +159,23 @@ public class ClientPlayerApply
 
                 if (item == null)
                     item = await COOPManager.GetItemAsync(typeId);
+                if (!RemoteLoadoutReplay.IsCurrent(playerId, remoteObj, model))
+                {
+                    if (item != null) UnityEngine.Object.Destroy(item.gameObject);
+                    return;
+                }
                 if (item != null)
                 {
                     CoopTool.SafeKillItemAgent(item);
 
                     CoopTool.ClearWeaponSlot(model, socket);
                     await UniTask.NextFrame();
+
+                    if (!RemoteLoadoutReplay.IsCurrent(playerId, remoteObj, model))
+                    {
+                        UnityEngine.Object.Destroy(item.gameObject);
+                        return;
+                    }
 
                     COOPManager.ChangeWeaponModel(model, item, socket);
 

@@ -1,4 +1,4 @@
-using Duckov.Scenes;
+﻿using Duckov.Scenes;
 using System;
 using System.Collections;
 using TMPro;
@@ -213,7 +213,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
         // 旋转加载动画
         if (_loadingAnimation != null && _loadingAnimation.activeSelf)
         {
-            _loadingRotation += 360f * Time.deltaTime; // 每秒旋转360度
+            _loadingRotation += 360f * Time.unscaledDeltaTime; // 每秒旋转360度
             if (_loadingRotation >= 360f) _loadingRotation -= 360f;
             _loadingAnimation.transform.rotation = Quaternion.Euler(0, 0, -_loadingRotation);
         }
@@ -234,7 +234,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
         if (!_countdownRunning || _countdownContainer == null || _countdownText == null) return;
         if (_panel == null || !_panel.activeSelf) return;
 
-        _countdownRemaining -= Time.deltaTime;
+        _countdownRemaining -= Time.unscaledDeltaTime;
         if (_countdownRemaining < 0f)
         {
             _countdownRemaining = 0f;
@@ -263,7 +263,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
         {
             if (pulse.Rect == null || pulse.CanvasGroup == null || pulse.Duration <= 0f) continue;
 
-            pulse.Timer += Time.deltaTime;
+            pulse.Timer += Time.unscaledDeltaTime;
             float progress = (pulse.Timer % pulse.Duration) / pulse.Duration;
             float scale = Mathf.Lerp(pulse.StartScale, pulse.EndScale, progress);
             float alpha = Mathf.Lerp(pulse.StartAlpha, pulse.EndAlpha, progress);
@@ -391,7 +391,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
     private IEnumerator HideAfterDelay(float delay)
     {
-        yield return new WaitForSeconds(delay);
+        yield return new WaitForSecondsRealtime(delay);
         Hide();
     }
 
@@ -831,7 +831,7 @@ public class WaitingSynchronizationUI : MonoBehaviour
 
         while (elapsed < duration)
         {
-            elapsed += Time.deltaTime;
+            elapsed += Time.unscaledDeltaTime;
             float normalizedTime = elapsed / duration;
             _canvasGroup.alpha = Mathf.Lerp(startAlpha, 0f, normalizedTime);
             yield return null;

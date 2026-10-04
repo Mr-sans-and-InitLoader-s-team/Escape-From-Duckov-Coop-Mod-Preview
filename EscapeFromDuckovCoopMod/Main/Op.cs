@@ -87,6 +87,8 @@ public enum Op : byte
     VEHICLE_AUTHORITY_STATE = 190,
     VEHICLE_ITEM_STATE = 191,
     LOTTERY_BOX_STATE = 192,
+    KAZOO_STATE = 193, // 双向：卡祖笛开始、参数、心跳与停止
+    TELEPORTER_FLOW = 194, // 传送机材料检查、出发确认与统一提交
 
     AI_HEALTH_REPORT = 174,
     AI_HEALTH_BROADCAST = 175,

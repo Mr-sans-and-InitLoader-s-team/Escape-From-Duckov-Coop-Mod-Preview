@@ -23,7 +23,7 @@ $logPath = Join-Path $outputRoot 'build.log'
 if ($LASTEXITCODE -ne 0) { Get-Content -LiteralPath $logPath -Tail 40; throw 'Release build failed.' }
 
 $stageRoot = Join-Path $outputRoot 'stage'
-$modRoot = Join-Path $stageRoot '联机Mod1'
+$modRoot = Join-Path $stageRoot 'EscapeFromDuckovCoopMod'
 New-Item -ItemType Directory -Path (Join-Path $modRoot 'Localization') -Force | Out-Null
 # Package by allowlist. Never copy the user's installed mod directory or Config.
 foreach ($name in @('EscapeFromDuckovCoopMod.dll', 'EscapeFromDuckovModApi.dll')) {
@@ -33,6 +33,16 @@ $dllInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $modRoot 'Es
 if ($dllInfo.ProductVersion -ne $version) { throw 'Compiled DLL does not match the package version.' }
 Get-ChildItem -LiteralPath (Join-Path $repoRoot 'Localization') -Filter '*.json' | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $modRoot 'Localization')
+}
+$assetsRoot = Join-Path $repoRoot 'EscapeFromDuckovCoopMod/Assets'
+$requiredAssets = @('bg.png', 'Difficulty_1.png', 'Difficulty_2.png', 'Difficulty_3.png', 'Difficulty_4.png', 'Difficulty_5.png', 'NewYear1.png', 'NewYear2.png', 'NewYear3.png')
+foreach ($name in $requiredAssets) {
+    if (-not (Test-Path -LiteralPath (Join-Path $assetsRoot $name))) { throw "Missing runtime asset: $name" }
+}
+$assetFiles = @(Get-ChildItem -LiteralPath $assetsRoot -Filter '*.png' -File)
+New-Item -ItemType Directory -Path (Join-Path $modRoot 'Assets') | Out-Null
+foreach ($asset in $assetFiles) {
+    Copy-Item -LiteralPath $asset.FullName -Destination (Join-Path $modRoot 'Assets')
 }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'packaging/info.ini') -Destination $modRoot
 foreach ($name in @('LICENSE.txt', 'LICENSE_RESTRICTIONS.txt')) {
@@ -52,8 +62,11 @@ try {
     if ($archive.Entries | Where-Object { $_.FullName -match '(^|/)Config(/|$)|\.pdb$|(^|/)(bin|obj|saves?)(/|$)' }) {
         throw 'Package contains an excluded path.'
     }
+    if ($archive.Entries | Where-Object { $_.FullName -match '[^\x00-\x7F]' }) {
+        throw 'Package paths must use ASCII names.'
+    }
     $fileCount = @($archive.Entries | Where-Object { $_.Name }).Count
-    if ($fileCount -ne 13) { throw "Unexpected package file count: $fileCount" }
+    if ($fileCount -ne 13 + $assetFiles.Count) { throw "Unexpected package file count: $fileCount" }
 }
 finally { $archive.Dispose() }
 $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()

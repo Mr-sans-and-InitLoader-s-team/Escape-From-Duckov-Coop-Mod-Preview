@@ -6,6 +6,15 @@ namespace EscapeFromDuckovCoopMod;
 internal static class CoopLogSystem
 {
     private static bool _installed;
+    private static ILogHandler _networkDiagnosticHandler;
+
+    // Connection lifecycle and explicitly requested F10 reports must remain
+    // available even when the release build suppresses ordinary verbose logs.
+    internal static void WriteNetworkDiagnostic(string message)
+    {
+        var handler = _networkDiagnosticHandler ?? Debug.unityLogger.logHandler;
+        handler?.LogFormat(LogType.Log, null, "{0}", message);
+    }
 
     public static void Install()
     {
@@ -13,6 +22,7 @@ internal static class CoopLogSystem
             return;
 
         _installed = true;
+        _networkDiagnosticHandler = Debug.unityLogger?.logHandler;
 
         if (BuildInfo.RuntimeVerboseLoggingEnabled)
             return;

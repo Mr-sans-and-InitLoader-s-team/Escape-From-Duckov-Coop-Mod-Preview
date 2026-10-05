@@ -52,7 +52,7 @@ public static class Patch_SceneLoaderProxy_Authority
 
         if(__instance.name == "CustomFace" || __instance.name == "SelectDifficulty")
         {
-            MModUI.ShowTip("客户端请在单机进行设置! Please configure the client on a standalone machine!");
+            MModUI.ShowTip(CoopLocalization.Get("ui.settings.configureOffline"));
             return false;
         }
         SceneNet.Instance.Client_RequestBeginSceneVote(targetId, curtainGuid, notifyEvac, save, useLoc, locationName);
@@ -136,6 +136,11 @@ internal static class SceneLoadVoteGuard
         MultiSceneLocation location,
         string source)
     {
+        if (ModBehaviourF.Instance?.networkStarted == true && SceneLoader.IsSceneLoading)
+        {
+            __result = UniTask.CompletedTask;
+            return false;
+        }
         if (!TryStartVote(targetId, curtain, notifyEvac, save, useLocation, location, source))
             return true;
 

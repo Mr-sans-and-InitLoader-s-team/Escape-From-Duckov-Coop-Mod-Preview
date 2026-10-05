@@ -64,7 +64,7 @@ public class MModUI : MonoBehaviour
     private string _manualIP = "127.0.0.1";
     private string _manualPort = "9050";
     private int _port = 9050;
-    private string _status = "未连接";
+    private string _status = CoopLocalization.Get("ui.status.notConnected");
     public bool _streamerMode;
 
     private readonly Dictionary<string, GameObject> _hostEntries = new();
@@ -1965,20 +1965,20 @@ public class MModUI : MonoBehaviour
     {
         if (SceneNet.Instance == null)
         {
-            SetStatusText("[!] 投票系统未初始化", ModernColors.Error);
+            SetStatusText("[!] " + CoopLocalization.Get("ui.vote.notInitialized"), ModernColors.Error);
             return;
         }
 
         // 只有房主才能取消投票
         if (!IsServer)
         {
-            SetStatusText("[!] 只有房主可以取消投票", ModernColors.Error);
+            SetStatusText("[!] " + CoopLocalization.Get("ui.vote.onlyHostCanCancel"), ModernColors.Error);
             return;
         }
 
         // 调用取消投票方法
         SceneNet.Instance.CancelVote();
-        SetStatusText("[OK] 已取消投票", ModernColors.Success);
+        SetStatusText("[OK] " + CoopLocalization.Get("ui.vote.cancelled"), ModernColors.Success);
         Debug.Log("[MModUI] 房主取消了投票");
     }
 

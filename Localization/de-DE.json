@@ -145,10 +145,6 @@
                              "value":  "Abstimmung abbrechen"
                          },
                          {
-                             "key":  "ui.vote.title",
-                             "value":  "Kartenabstimmung"
-                         },
-                         {
                              "key":  "ui.spectator.mode",
                              "value":  "Zuschauermodus: LMB ▶ Nächster | RMB ◀ Vorheriger | F8 drücken, um zu beenden und Ergebnisse anzusehen (Failsafe)"
                          },
@@ -1183,6 +1179,106 @@
                          {
                              "key":  "ui.sceneVote.alreadyActive",
                              "value":  "Es läuft bereits eine Kartenabstimmung."
+                         },
+                         {
+                           "key": "ui.teleporter.busy",
+                           "value": "Eine Abreise läuft bereits. Bitte zuerst abschließen oder abbrechen."
+                         },
+                         {
+                           "key": "ui.teleporter.reason.notReady",
+                           "value": "Charakter ist noch nicht bereit"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.destinationMissing",
+                           "value": "Ziel wurde nicht gefunden"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.missingCost",
+                           "value": "benötigte Gegenstände oder Geld fehlen"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.paymentFailed",
+                           "value": "Bezahlung ist fehlgeschlagen"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.readyWithdrawn",
+                           "value": "hat die Bereitschaft zurückgezogen"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.openFailed",
+                           "value": "Abreisebestätigung konnte nicht geöffnet werden"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.checkFailed",
+                           "value": "Prüfung der Abreisebedingungen ist fehlgeschlagen"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.cancelled",
+                           "value": "hat die Abreise abgebrochen"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.requirementsFailed",
+                           "value": "Abreisebedingungen sind nicht erfüllt"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.disconnected",
+                           "value": "Verbindung wurde getrennt"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.closed",
+                           "value": "hat die Abreisebestätigung geschlossen"
+                         },
+                         {
+                           "key": "ui.teleporter.reason.timeout",
+                           "value": "Zeitüberschreitung beim Warten auf einen Spieler"
+                         },
+                         {
+                           "key": "ui.teleporter.cancelledByPlayer",
+                           "value": "{0}: {1}. Abreise abgebrochen. Bereits bezahlte Kosten werden erstattet."
+                         },
+                         {
+                           "key": "ui.teleporter.cancelled",
+                           "value": "Abreise abgebrochen."
+                         },
+                         {
+                           "key": "ui.teleporter.disconnected",
+                           "value": "Verbindung getrennt. Abreise abgebrochen."
+                         },
+                         {
+                           "key": "ui.teleporter.cancelTimeout",
+                           "value": "Zeitüberschreitung bei der Abbruchbestätigung. Lokale Abreise abgebrochen."
+                         },
+                         {
+                           "key": "ui.streamerMode",
+                           "value": "Streamer-Modus"
+                         },
+                         {
+                           "key": "ui.vote.notInitialized",
+                           "value": "Das Abstimmungssystem ist nicht initialisiert"
+                         },
+                         {
+                           "key": "ui.vote.onlyHostCanCancel",
+                           "value": "Nur der Host kann die Abstimmung abbrechen"
+                         },
+                         {
+                           "key": "ui.vote.cancelled",
+                           "value": "Abstimmung abgebrochen"
+                         },
+                         {
+                           "key": "net.steamUnavailable",
+                           "value": "Steam ist nicht initialisiert; P2P kann nicht gestartet werden"
+                         },
+                         {
+                           "key": "net.startFailed",
+                           "value": "Netzwerk konnte nicht gestartet werden"
+                         },
+                         {
+                           "key": "ui.steam.protocolMismatch",
+                           "value": "Alle Spieler müssen dieselbe Version der Koop-Mod mit nativem Steam P2P verwenden"
+                         },
+                         {
+                           "key": "ui.settings.configureOffline",
+                           "value": "Bitte ändere diese Einstellung im Einzelspielermodus."
                          }
                      ]
 }

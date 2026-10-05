@@ -33,6 +33,11 @@ public class Buff_
     public void Server_HandleBuffReport(NetPeer sender, PlayerBuffReportRpc message)
     {
         if (sender == null || message.BuffId == 0) return;
+        if (ColdBuffSync.IsCold(message.BuffId))
+        {
+            ColdBuffSync.ReceiveReport(sender, message);
+            return;
+        }
 
         if (!string.IsNullOrEmpty(message.TargetPlayerId))
         {
@@ -161,6 +166,11 @@ public class Buff_
     public void Client_HandleBuffBroadcast(PlayerBuffBroadcastRpc message)
     {
         if (string.IsNullOrEmpty(message.PlayerId)) return;
+        if (ColdBuffSync.IsCold(message.BuffId))
+        {
+            ColdBuffSync.ReceiveBroadcast(message);
+            return;
+        }
 
         if (Service != null && Service.IsSelfId(message.PlayerId))
         {

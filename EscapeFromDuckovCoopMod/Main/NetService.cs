@@ -30,7 +30,7 @@ public enum NetworkTransportMode
     SteamP2P
 }
 
-public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
+public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkService
 {
     public static NetService Instance;
     public int port = 9050;
@@ -84,6 +84,7 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
         if (TransportMode == mode)
             return;
 
+        if (networkStarted) StopNetwork();
         TransportMode = mode;
 
         if (SteamP2PLoader.Instance != null)
@@ -96,10 +97,6 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
             SteamLobbyManager.Instance.LeaveLobby();
         }
 
-        if (networkStarted)
-        {
-            StopNetwork();
-        }
     }
 
     public void ConfigureLobbyOptions(SteamLobbyOptions? options)
@@ -148,9 +145,10 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
 
     public string ResolvePeerSteamName(NetPeer peer, string fallback)
     {
-        if (peer != null && SteamManager.Initialized && SteamEndPointMapper.Instance != null)
+        if (peer != null && peer.SteamId != 0 && SteamManager.Initialized)
         {
-            if (SteamEndPointMapper.Instance.TryGetSteamID(peer.EndPoint, out CSteamID steamId))
+            var steamId = new CSteamID(peer.SteamId);
+            if (steamId != CSteamID.Nil)
             {
                 try
                 {
@@ -186,6 +184,7 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
 
         if (!IsServer)
         {
+            if (SceneNet.Instance != null) SceneNet.Instance._sceneReadySidSent = null;
             status = CoopLocalization.Get("net.connectedTo", peer.EndPoint.ToString());
             isConnecting = false;
             Send_ClientStatus.Instance.SendClientStatusUpdate();
@@ -217,10 +216,15 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
         }
 
         ModNetworkApi.NotifyPeerConnected(peer);
+        ColdBuffSync.PublishAllLocal();
     }
 
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
+        TeleporterTravel.PeerDisconnected(peer);
+        ColdBuffSync.Forget(GetPlayerId(peer));
+        HealthM.Instance?.ForgetDeathReports(peer);
+        KazooSync.PeerDisconnected(peer);
         Debug.Log(CoopLocalization.Get("net.disconnected", peer.EndPoint.ToString(), disconnectInfo.Reason.ToString()));
         if (!IsServer)
         {
@@ -249,7 +253,7 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
             {
                 RPCPlayer.ForgetVehicleRider(_st.EndPoint, true);
                 _playerInvincibleUntil.Remove(_st.EndPoint);
-                SceneNet.Instance._cliLastSceneIdByPlayer.Remove(_st.EndPoint);
+                SceneNet.Instance?._cliLastSceneIdByPlayer.Remove(_st.EndPoint);
           
             }
             playerStatuses.Remove(peer);
@@ -262,32 +266,7 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
         }
 
         COOPManager.LootNet?.Server_RemoveViewer(peer);
-
-        if (!SteamP2PLoader.Instance.UseSteamP2P || SteamP2PManager.Instance == null)
-            return;
-        try
-        {
-            Debug.Log($"[Patch_OnPeerDisconnected] LiteNetLib断开: {peer.EndPoint}, 原因: {disconnectInfo.Reason}");
-            if (SteamEndPointMapper.Instance != null &&
-                SteamEndPointMapper.Instance.TryGetSteamID(peer.EndPoint, out CSteamID remoteSteamID))
-            {
-                Debug.Log($"[Patch_OnPeerDisconnected] 关闭Steam P2P会话: {remoteSteamID}");
-                if (SteamNetworking.CloseP2PSessionWithUser(remoteSteamID))
-                {
-                    Debug.Log($"[Patch_OnPeerDisconnected] ✓ 成功关闭P2P会话");
-                }
-                SteamEndPointMapper.Instance.UnregisterSteamID(remoteSteamID);
-                Debug.Log($"[Patch_OnPeerDisconnected] ✓ 已清理映射");
-                if (SteamP2PManager.Instance != null)
-                {
-                    SteamP2PManager.Instance.ClearAcceptedSession(remoteSteamID);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Debug.LogError($"[Patch_OnPeerDisconnected] 异常: {ex}");
-        }
+        SceneM._srvPeerScene.Remove(peer);
 
         COOPManager.AI?.Server_OnPeerDisconnected(peer);
 
@@ -396,45 +375,30 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
     {
         StopNetwork(!keepSteamLobby);
         IsServer = isServer;
-        CoopTool.HideAllTargetObjects(isServer);
         NetDiagnostics.Instance.Reset();
         PerformanceDiagnostics.Instance.Reset();
         writer = new NetDataWriter();
-        netManager = new NetManager(this)
+        if (TransportMode == NetworkTransportMode.SteamP2P && !SteamManager.Initialized)
         {
-            BroadcastReceiveEnabled = true,
-            UpdateTime = 1
-        };
-
-
-        if (IsServer)
-        {
-            var started = netManager.Start(port);
-            if (started)
-            {
-                Debug.Log(CoopLocalization.Get("net.serverStarted", port));
-            }
-            else
-            {
-                Debug.LogError(CoopLocalization.Get("net.serverStartFailed"));
-            }
+            status = CoopLocalization.Get("net.steamUnavailable");
+            Debug.LogError(status);
+            IsServer = false;
+            return;
         }
-        else
+        netManager = TransportMode == NetworkTransportMode.SteamP2P
+            ? new SteamSocketsTransport(this, IsServer, BuildInfo.ModVersion, IsSteamLobbyMember)
+            : new LiteNetTransport(this);
+        if (!netManager.Start(IsServer ? port : 0))
         {
-            var started = netManager.Start();
-            if (started)
-            {
-                Debug.Log(CoopLocalization.Get("net.clientStarted"));
-                if (TransportMode == NetworkTransportMode.Direct)
-                {
-                    CoopTool.SendBroadcastDiscovery();
-                }
-            }
-            else
-            {
-                Debug.LogError(CoopLocalization.Get("net.clientStartFailed"));
-            }
+            status = CoopLocalization.Get("net.startFailed");
+            Debug.LogError(status);
+            netManager.Stop();
+            netManager = null;
+            IsServer = false;
+            return;
         }
+        CoopTool.HideAllTargetObjects(isServer);
+        if (SceneNet.Instance != null) SceneNet.Instance._sceneReadySidSent = null;
 
         _selfNetworkId = ComputeSelfNetworkId();
         networkStarted = true;
@@ -455,6 +419,7 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
         COOPManager.FriendlyFire?.OnNetworkStarted(IsServer);
 
         LocalPlayerManager.Instance.InitializeLocalPlayer();
+        if (!IsServer && TransportMode == NetworkTransportMode.Direct) CoopTool.SendBroadcastDiscovery();
         var main = CharacterMainControl.Main;
         if (main) ModApiEvents.RaisePlayerSpawned(main, GetSelfNetworkId(), true);
         if (IsServer)
@@ -464,72 +429,59 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
         }
 
 
-        // ===== 正确的 Steam P2P 初始化路径：在 P2P 可用时执行 =====
-        bool wantsP2P = TransportMode == NetworkTransportMode.SteamP2P;
-        bool p2pAvailable =
-            wantsP2P &&
-            SteamP2PLoader.Instance != null &&
-            SteamManager.Initialized &&
-            SteamP2PManager.Instance != null &&   // Loader.Init 正常时会挂上
-            SteamP2PLoader.Instance.UseSteamP2P;
+        if (TransportMode == NetworkTransportMode.SteamP2P && IsServer && !keepSteamLobby &&
+            SteamLobbyManager.Instance != null && !SteamLobbyManager.Instance.IsInLobby)
+            SteamLobbyManager.Instance.CreateLobby(LobbyOptions);
+    }
 
-        Debug.Log($"[StartNetwork] WantsP2P={wantsP2P}, P2P可用={p2pAvailable}, UseSteamP2P={SteamP2PLoader.Instance?.UseSteamP2P}, " +
-                  $"SteamInit={SteamManager.Initialized}, IsServer={IsServer}, NetRunning={netManager?.IsRunning}");
+    private bool IsSteamLobbyMember(ulong steamId)
+    {
+        var lobby = SteamLobbyManager.Instance;
+        if (lobby == null || !lobby.IsInLobby || !lobby.IsHost) return false;
+        var count = SteamMatchmaking.GetNumLobbyMembers(lobby.CurrentLobbyId);
+        for (var i = 0; i < count; i++)
+            if (SteamMatchmaking.GetLobbyMemberByIndex(lobby.CurrentLobbyId, i).m_SteamID == steamId)
+                return true;
+        return false;
+    }
 
-        if (p2pAvailable)
+    public void ConnectToSteamHost(CSteamID host)
+    {
+        SetTransportMode(NetworkTransportMode.SteamP2P);
+        StartNetwork(false, keepSteamLobby: true);
+        if (!networkStarted || netManager is not SteamSocketsTransport steam) return;
+        try
         {
-            Debug.Log("[StartNetwork] 联机Mod已启动，初始化Steam P2P组件"); // ← 现在会正常打印
-
-            if (netManager != null)
-            {
-                // 使用 Steam P2P 时让 LiteNetLib 不去占 UDP socket
-                netManager.UseNativeSockets = false;
-                Debug.Log("[StartNetwork] ✓ UseNativeSockets=false（P2P 模式）");
-            }
-
-            // 保险：确保必要组件存在（Loader.Init 一般已创建）
-            if (SteamEndPointMapper.Instance == null)
-                DontDestroyOnLoad(new GameObject("SteamEndPointMapper").AddComponent<SteamEndPointMapper>());
-            if (SteamLobbyManager.Instance == null)
-                DontDestroyOnLoad(new GameObject("SteamLobbyManager").AddComponent<SteamLobbyManager>());
-
-            // 【可选】是否在这里创建 Lobby：建议不要，这会与 OnLobbyCreated 的二次 Start 冲突（见下文）
-            if (!keepSteamLobby && IsServer && SteamLobbyManager.Instance != null && !SteamLobbyManager.Instance.IsInLobby)
-            {
-                SteamLobbyManager.Instance.CreateLobby(LobbyOptions);
-            }
+            isConnecting = true;
+            status = CoopLocalization.Get("net.connectingTo", host.ToString(), "Steam");
+            steam.Connect(host.m_SteamID);
         }
-        else
+        catch (Exception ex)
         {
-            // 回退到纯 UDP
-            if (netManager != null)
-            {
-                netManager.UseNativeSockets = true;
-                if (wantsP2P)
-                {
-                    Debug.LogWarning("[StartNetwork] Steam P2P 不可用，回退 UDP（UseNativeSockets=true）");
-                }
-                else
-                {
-                    Debug.Log("[StartNetwork] 使用直连模式（UseNativeSockets=true）");
-                }
-            }
+            isConnecting = false;
+            status = CoopLocalization.Get("net.connectionFailed");
+            Debug.LogError($"[SteamSockets] Connect failed: {ex}");
         }
-
-
-
     }
 
     public void StopNetwork(bool leaveSteamLobby = true)
     {
+        TeleporterTravel.Reset();
+        SceneNet.Instance?.ResetTeleporterVote();
+        ColdBuffSync.Reset();
+        HealthM.Instance?.ResetDeathReports();
+        KazooSync.Reset();
         if (netManager != null && netManager.IsRunning)
         {
             netManager.Stop();
             Debug.Log(CoopLocalization.Get("net.networkStopped"));
         }
 
+        netManager = null;
         IsServer = false;
         networkStarted = false;
+        isConnecting = false;
+        if (SceneNet.Instance != null) SceneNet.Instance._sceneReadySidSent = null;
         connectedPeer = null;
 
         if (leaveSteamLobby && TransportMode == NetworkTransportMode.SteamP2P && SteamLobbyManager.Instance != null && SteamLobbyManager.Instance.IsInLobby)
@@ -539,6 +491,7 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
 
         playerStatuses.Clear();
         clientPlayerStatuses.Clear();
+        SceneM._srvPeerScene.Clear();
 
         localPlayerStatus = null;
         _selfNetworkId = null;
@@ -769,6 +722,9 @@ public class NetService : MonoBehaviour, INetEventListener, IModNetworkService
 
     private string ComputeSelfNetworkId()
     {
+        if (TransportMode == NetworkTransportMode.SteamP2P && SteamManager.Initialized)
+            return $"Steam:{SteamUser.GetSteamID().m_SteamID}";
+
         if (IsServer)
             return $"Host:{port}";
 

@@ -77,7 +77,7 @@ public sealed class CoopGeneralSettings
     public float ProjectileSyncMaxDistance = 120f;
     public bool TeleporterSpawnTogether = false;
     public bool FriendlyFirePlayers = false;
-    public UIThemeMode UiThemeMode = UIThemeMode.Black;
+    public UIThemeMode UiThemeMode = UIThemeMode.White;
 
     public CoopGeneralSettings Clone() => (CoopGeneralSettings)MemberwiseClone();
 

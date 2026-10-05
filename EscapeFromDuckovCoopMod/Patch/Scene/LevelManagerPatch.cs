@@ -28,25 +28,36 @@ internal static class Patch_Level_StartInit_Gate
         var mod = ModBehaviourF.Instance;
         if (mod == null) return true;
         if (mod.IsServer) return true;
+        var sid = SceneInfoCollection.GetSceneID(__instance.gameObject.scene.buildIndex);
+        if (string.Equals(sid, SceneInfoCollection.BaseSceneID, StringComparison.OrdinalIgnoreCase))
+        {
+            WaitingSynchronizationUI.Instance?.Hide();
+            CoopLogSystem.WriteNetworkDiagnostic("[SCENE] Returning to base: original level initialization, no host gate");
+            return true;
+        }
 
         var needGate = SceneNet.Instance.sceneVoteActive || (mod.networkStarted && !mod.IsServer);
         if (!needGate) return true;
 
-        RunAsync(__instance, context).Forget();
+        RunAsync(__instance, context, sid).Forget();
         return false;
     }
 
-    private static async UniTaskVoid RunAsync(LevelManager self, SceneLoadingContext ctx)
+    private static async UniTaskVoid RunAsync(LevelManager self, SceneLoadingContext ctx, string sceneId)
     {
         var mod = ModBehaviourF.Instance;
         if (mod == null) return;
 
-        await SceneNet.Instance.Client_SceneGateAsync();
+        try { await SceneNet.Instance.Client_SceneGateAsync(sceneId); }
+        catch (Exception e) { Debug.LogError($"[SCENE] Gate failed; continuing original initialization: {e}"); }
 
         try
         {
+            if (!self || !self.gameObject.scene.isLoaded) return;
             var m = AccessTools.Method(typeof(LevelManager), "InitLevel", new[] { typeof(SceneLoadingContext) });
-            if (m != null) m.Invoke(self, new object[] { ctx });
+            if (m == null) throw new MissingMethodException(typeof(LevelManager).FullName, "InitLevel");
+            CoopLogSystem.WriteNetworkDiagnostic($"[SCENE] Gate finished: initializing '{sceneId}'");
+            m.Invoke(self, new object[] { ctx });
         }
         catch (Exception e)
         {
@@ -62,11 +73,8 @@ internal static class Patch_Mapen_OnPointerClick
     {
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true;
-        if (!__instance.ConditionsSatisfied) return true;
-        if (!__instance.Cost.Enough) return true;
-
-        SceneNet.Instance.IsMapSelectionEntry = true;
-        return !SceneLoadVoteGuard.TryStartVote(__instance.SceneID, null, false, false, false, default(MultiSceneLocation), "OnPointerClick");
+        TeleporterTravel.Request(__instance.SceneID, __instance.BeaconIndex);
+        return false;
     }
 }
 
@@ -78,10 +86,7 @@ internal static class Patch_MapSelectionView_NotifyEntryClicked_Authority
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true;
         if (mapSelectionEntry == null) return true;
-        if (!mapSelectionEntry.ConditionsSatisfied) return true;
-        if (!mapSelectionEntry.Cost.Enough) return true;
-
-        SceneNet.Instance.IsMapSelectionEntry = true;
-        return !SceneLoadVoteGuard.TryStartVote(mapSelectionEntry.SceneID, null, false, false, false, default(MultiSceneLocation), "OnPointerClick");
+        TeleporterTravel.Request(mapSelectionEntry.SceneID, mapSelectionEntry.BeaconIndex);
+        return false;
     }
 }

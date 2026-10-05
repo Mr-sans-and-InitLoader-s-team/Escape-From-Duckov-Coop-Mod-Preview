@@ -40,7 +40,9 @@ public static class RpcRegistry
         Register<ChatSendRequestRpc>(RPCChat.HandleChatSend);
         Register<ChatMessageRpc>(RPCChat.HandleChatMessage);
         Register<AudioEventRpc>(RPCAudio.HandleAudioEvent);
+        Register<KazooStateRpc>(KazooSync.Handle);
         Register<SceneVoteStartRpc>(RPCScene.HandleSceneVoteStart);
+        Register<TeleporterFlowRpc>(TeleporterTravel.Handle);
         Register<SceneVoteRequestRpc>(RPCScene.HandleSceneVoteRequest);
         Register<SceneReadySetRpc>(RPCScene.HandleSceneReadySet);
         Register<SceneBeginLoadRpc>(RPCScene.HandleSceneBeginLoad);

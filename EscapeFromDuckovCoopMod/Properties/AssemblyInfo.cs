@@ -28,5 +28,6 @@ using static EscapeFromDuckovCoopMod.BuildInfo;
 [assembly: AssemblyCulture("")]
 [assembly: ComVisible(false)]
 
-[assembly: AssemblyVersion(ModVersion)]
-[assembly: AssemblyFileVersion(ModVersion)]
+[assembly: AssemblyVersion(AssemblyNumericVersion)]
+[assembly: AssemblyFileVersion(AssemblyNumericVersion)]
+[assembly: AssemblyInformationalVersion(ModVersion)]

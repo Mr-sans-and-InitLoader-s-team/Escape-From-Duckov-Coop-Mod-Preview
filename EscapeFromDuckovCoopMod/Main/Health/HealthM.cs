@@ -45,7 +45,8 @@ public class HealthM : MonoBehaviour
     private float _cliNextSendHp;
     private float _cliNextHeartbeat;
 
-    private bool _clientDeathReported = false;
+    private readonly LocalPlayerDeathReport _localDeathReport = new();
+    private readonly PlayerDeathReportGate<CoopPeer> _deathReports = new();
 
     private NetService Service => NetService.Instance;
     private bool IsServer => Service != null && Service.IsServer;
@@ -64,6 +65,9 @@ public class HealthM : MonoBehaviour
     public void NotifyLocalHealthChanged(Health health, DamageInfo? damage)
     {
         if (!networkStarted || health == null) return;
+        // OnHealthChange runs inside Hurt before the game's non-raid death
+        // protection restores 1 HP. Do not publish that intermediate lethal value.
+        if (!health.IsDead && health.CurrentHealth <= 0f) return;
         if (IsServer)
             Server_BroadcastHostSnapshot(health, damage);
         else
@@ -91,14 +95,10 @@ public class HealthM : MonoBehaviour
 
         var (max, cur) = ReadHealth(health);
         if (max <= 0f) return;
+        if (!health.IsDead && cur <= 0f) return;
+        _localDeathReport.Observe(health, health.IsDead, cur);
         var now = Time.time;
         force |= damage.HasValue;
-
-        if (cur > 0f && _clientDeathReported)
-        {
-            // Reset lock when player is alive again (e.g. after respawn)
-            _clientDeathReported = false;
-        }
 
         if (!force)
         {
@@ -111,7 +111,9 @@ public class HealthM : MonoBehaviour
             MaxHealth = max,
             CurrentHealth = cur,
             HasDamage = damage.HasValue,
-            Damage = DamageForwardPayload.FromDamageInfo(damage)
+            Damage = DamageForwardPayload.FromDamageInfo(damage),
+            LifeId = _localDeathReport.LifeId,
+            IsDead = health.IsDead
         };
 
         CoopTool.SendRpc(in rpc);
@@ -119,22 +121,22 @@ public class HealthM : MonoBehaviour
         _cliLastSentHp = (max, cur);
         _cliNextSendHp = now + CLIENT_SEND_INTERVAL;
 
-        if(cur < 0f && !_clientDeathReported)
+        if (_localDeathReport.TryReport(health.IsDead, cur))
         {
-            // Lock to avoid sending multiple death reports before player respawns
-            _clientDeathReported = true;
-            Client_SendDeadLoot();
+            Client_SendDeadLoot(health, _localDeathReport.LifeId);
         }
     }
 
-    private void Client_SendDeadLoot()
+    private void Client_SendDeadLoot(Health health, string lifeId)
     {
+        var main = CharacterMainControl.Main;
+        if (main == null || main.Health != health || !health.IsDead || health.CurrentHealth > 0f) return;
         var w = new NetDataWriter();
         w.Put((byte)Op.PLAYER_DEAD_LOOT_SPAWN);
+        w.Put(lifeId);
 
         Debug.Log($"[Client Report Dead] Writing Op: {(byte)Op.PLAYER_DEAD_LOOT_SPAWN}");
 
-        var main = CharacterMainControl.Main;
         w.PutV3cm(main.transform.position);
         var inventory = CharacterMainControl.Main.CharacterItem.Inventory;
         var equipedItems = new[]
@@ -219,6 +221,8 @@ public class HealthM : MonoBehaviour
     {
         if (!IsServer || sender == null) return;
 
+        _deathReports.Observe(sender, message.LifeId, message.IsDead && message.CurrentHealth <= 0f);
+
         var service = Service;
         var playerId = service?.GetPlayerId(sender);
         if (string.IsNullOrEmpty(playerId)) return;
@@ -237,6 +241,20 @@ public class HealthM : MonoBehaviour
         }
 
         BroadcastPlayerSnapshot(playerId, max, cur, message.HasDamage ? message.Damage : (DamageForwardPayload?)null, sender);
+    }
+
+    public bool Server_CanSpawnDeathLoot(CoopPeer peer, string lifeId) => IsServer && networkStarted &&
+        peer?.ConnectionState == ConnectionState.Connected && _deathReports.CanConsume(peer, lifeId);
+
+    public bool Server_ConsumeDeathLoot(CoopPeer peer, string lifeId) => Server_CanSpawnDeathLoot(peer, lifeId) &&
+        _deathReports.TryConsume(peer, lifeId);
+
+    public void ForgetDeathReports(CoopPeer peer) => _deathReports.Remove(peer);
+
+    public void ResetDeathReports()
+    {
+        _localDeathReport.Reset();
+        _deathReports.Clear();
     }
 
     public void Server_HandlePlayerDamageRequest(NetPeer sender, PlayerDamageRequestRpc message)

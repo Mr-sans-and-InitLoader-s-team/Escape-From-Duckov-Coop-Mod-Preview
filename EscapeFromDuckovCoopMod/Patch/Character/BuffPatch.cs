@@ -113,6 +113,11 @@ internal static class Patch_Character_AddBuff_Broadcast
 
         var buffId = buffPrefab.ID;
         if (buffId == 0) return;
+        if (ColdBuffSync.IsCold(buffId) && (__instance.IsMainCharacter || __instance.GetComponentInChildren<RemoteReplicaTag>(true) != null))
+        {
+            ColdBuffSync.PublishLocal(__instance, buffId);
+            return;
+        }
 
         // 玩家自身 Buff
         if (__instance.IsMainCharacter)
@@ -175,5 +180,14 @@ internal static class Patch_Character_AddBuff_Broadcast
             };
             CoopTool.SendRpc(in rpc);
         }
+    }
+}
+
+[HarmonyPatch(typeof(CharacterBuffManager), nameof(CharacterBuffManager.RemoveBuff), typeof(Buff), typeof(bool))]
+internal static class Patch_ColdBuff_Removed
+{
+    private static void Postfix(CharacterBuffManager __instance, Buff toRemove)
+    {
+        if (toRemove != null) ColdBuffSync.PublishLocal(__instance.Master, toRemove.ID);
     }
 }

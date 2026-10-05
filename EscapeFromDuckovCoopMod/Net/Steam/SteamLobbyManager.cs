@@ -52,6 +52,7 @@ namespace EscapeFromDuckovCoopMod
         private const string LobbyNameKey = "name";
         private const string LobbyHostKey = "host";
         private const string LobbyVersionKey = "version";
+        private const string LobbyProtocolKey = "transport_protocol";
         private const string LobbyModIdentifier = "EscapeFromDuckovCoopMod_v1.0";
 
         private CSteamID _currentLobbyId = CSteamID.Nil;
@@ -149,6 +150,7 @@ namespace EscapeFromDuckovCoopMod
             SteamMatchmaking.AddRequestLobbyListDistanceFilter(ELobbyDistanceFilter.k_ELobbyDistanceFilterWorldwide);
             SteamMatchmaking.AddRequestLobbyListResultCountFilter(50);
             SteamMatchmaking.AddRequestLobbyListStringFilter(LobbyModIdKey, LobbyModIdentifier, ELobbyComparison.k_ELobbyComparisonEqual);
+            SteamMatchmaking.AddRequestLobbyListStringFilter(LobbyProtocolKey, SteamPacketCodec.LobbyProtocol, ELobbyComparison.k_ELobbyComparisonEqual);
             SteamAPICall_t apiCall = SteamMatchmaking.RequestLobbyList();
             _lobbyMatchListCallback.Set(apiCall);
         }
@@ -326,6 +328,7 @@ namespace EscapeFromDuckovCoopMod
             SteamMatchmaking.SetLobbyMemberLimit(_currentLobbyId, maxPlayers);
             SteamMatchmaking.SetLobbyData(_currentLobbyId, LobbyModIdKey, LobbyModIdentifier);
             SteamMatchmaking.SetLobbyData(_currentLobbyId, LobbyVersionKey, BuildInfo.ModVersion);
+            SteamMatchmaking.SetLobbyData(_currentLobbyId, LobbyProtocolKey, SteamPacketCodec.LobbyProtocol);
             SteamMatchmaking.SetLobbyData(_currentLobbyId, LobbyNameKey, lobbyName);
 
             var hostName = SteamFriends.GetPersonaName();
@@ -391,10 +394,13 @@ namespace EscapeFromDuckovCoopMod
                     Debug.Log("[SteamLobby] ✓ 我是客户端，准备连接到主机");
                     _isHost = false;
 
-                    if (SteamEndPointMapper.Instance != null)
+                    if (SteamMatchmaking.GetLobbyData(_currentLobbyId, LobbyProtocolKey) != SteamPacketCodec.LobbyProtocol ||
+                        SteamMatchmaking.GetLobbyData(_currentLobbyId, LobbyVersionKey) != BuildInfo.ModVersion)
                     {
-                        var hostEndPoint = SteamEndPointMapper.Instance.RegisterSteamID(hostId, 27015);
-                        Debug.Log($"[SteamLobby] 主机映射到: {hostEndPoint}");
+                        Debug.LogError("[SteamLobby] 房主的联机版本或 Steam 网络协议不兼容");
+                        MModUI.ShowTip(CoopLocalization.Get("ui.steam.protocolMismatch"));
+                        LeaveLobby();
+                        return;
                     }
 
                     Debug.Log("[SteamLobby] Lobby加入成功，自动连接到主机");
@@ -413,9 +419,21 @@ namespace EscapeFromDuckovCoopMod
         private void OnLobbyChatUpdate(LobbyChatUpdate_t callback)
         {
             CSteamID lobbyId = new CSteamID(callback.m_ulSteamIDLobby);
+            if (lobbyId != _currentLobbyId) return;
             CSteamID userId = new CSteamID(callback.m_ulSteamIDUserChanged);
             EChatMemberStateChange stateChange = (EChatMemberStateChange)callback.m_rgfChatMemberStateChange;
             string userName = SteamFriends.GetFriendPersonaName(userId);
+
+            if ((stateChange & (EChatMemberStateChange.k_EChatMemberStateChangeLeft |
+                EChatMemberStateChange.k_EChatMemberStateChangeDisconnected |
+                EChatMemberStateChange.k_EChatMemberStateChangeKicked |
+                EChatMemberStateChange.k_EChatMemberStateChangeBanned)) != 0)
+            {
+                var peers = NetService.Instance?.netManager?.ConnectedPeerList;
+                if (peers != null)
+                    foreach (var peer in peers)
+                        if (peer.SteamId == userId.m_SteamID) peer.Disconnect();
+            }
 
             switch (stateChange)
             {
@@ -423,19 +441,11 @@ namespace EscapeFromDuckovCoopMod
                     Debug.Log($"[SteamLobby] {userName} (SteamID: {userId.m_SteamID}) 加入了Lobby");
                     // 缓存成员信息
                     _lobbyMembersCache[userId] = userName;
-                    if (SteamEndPointMapper.Instance != null)
-                    {
-                        SteamEndPointMapper.Instance.RegisterSteamID(userId);
-                    }
                     break;
                 case EChatMemberStateChange.k_EChatMemberStateChangeLeft:
                     Debug.Log($"[SteamLobby] {userName} 离开了Lobby");
                     // 移除缓存
                     _lobbyMembersCache.Remove(userId);
-                    if (SteamEndPointMapper.Instance != null)
-                    {
-                        SteamEndPointMapper.Instance.UnregisterSteamID(userId);
-                    }
                     break;
                 case EChatMemberStateChange.k_EChatMemberStateChangeDisconnected:
                     Debug.Log($"[SteamLobby] {userName} 断开连接");

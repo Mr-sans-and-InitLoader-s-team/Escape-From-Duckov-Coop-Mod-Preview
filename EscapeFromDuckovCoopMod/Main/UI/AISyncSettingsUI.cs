@@ -1344,9 +1344,10 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         groupLayout.childForceExpandWidth = false;
 
         var groupSize = buttonGroup.AddComponent<LayoutElement>();
-        groupSize.preferredWidth = 360f;
+        groupSize.preferredWidth = 464f;
         groupSize.preferredHeight = 38f;
 
+        CreateThemeButton(buttonGroup.transform, UIThemeMode.White, getter, setter);
         CreateThemeButton(buttonGroup.transform, UIThemeMode.Black, getter, setter);
         CreateThemeButton(buttonGroup.transform, UIThemeMode.Spring, getter, setter);
         CreateThemeButton(buttonGroup.transform, UIThemeMode.Summer, getter, setter);
@@ -1377,6 +1378,9 @@ public sealed class AISyncSettingsUI : MonoBehaviour
         MModUI.AddControlChrome(buttonObj, MModUI.ModernColors.InputBorder, MModUI.ModernColors.Shadow, new Vector2(0f, -2f));
 
         var text = CreateText("Label", buttonObj.transform, GetThemeModeName(mode), 14, MModUI.ModernColors.TextPrimary, FontStyles.Bold);
+        text.enableAutoSizing = true;
+        text.fontSizeMin = 10f;
+        text.fontSizeMax = 14f;
         text.alignment = TextAlignmentOptions.Center;
         var rect = text.GetComponent<RectTransform>();
         rect.anchorMin = Vector2.zero;

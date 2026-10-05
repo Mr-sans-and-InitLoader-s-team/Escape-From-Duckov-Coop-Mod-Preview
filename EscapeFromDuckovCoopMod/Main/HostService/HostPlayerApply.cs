@@ -50,8 +50,9 @@ public class HostPlayerApply
         if (slotName == null) return;
 
         var want = itemId ?? string.Empty;
-        var key = $"{remoteObj.GetInstanceID()}:{slotName}";
-        if (_lastEquipmentAppliedByRemote.TryGetValue(key, out var last) && last == want)
+        var key = $"{characterModel.GetInstanceID()}:{slotName}";
+        if (_lastEquipmentAppliedByRemote.TryGetValue(key, out var last) && last == want &&
+            (want.Length == 0 || characterModel.GetComponentsInChildren<ItemAgent>(true).Any(agent => agent.Item != null && agent.Item.TypeID.ToString() == want)))
             return;
 
         try
@@ -67,6 +68,11 @@ public class HostPlayerApply
                 return;
 
             var item = await COOPManager.GetItemAsync(typeId);
+            if (!RemoteLoadoutReplay.IsCurrent(peer, remoteObj, characterModel))
+            {
+                if (item != null) UnityEngine.Object.Destroy(item.gameObject);
+                return;
+            }
             if (item == null)
             {
                 Debug.LogWarning($"无法获取物品: ItemId={want}，槽位 {slotHash} 未更新");
@@ -110,7 +116,7 @@ public class HostPlayerApply
         if (model == null) return;
 
         // —— 幂等/去抖：同一 peer、同一槽、同一 item 在 200ms 内重复到达则忽略 ——
-        var key = $"{peer?.Id ?? -1}:{slotHash}";
+        var key = $"{model.GetInstanceID()}:{slotHash}";
         var want = itemId ?? string.Empty;
         if (_lastWeaponAppliedByPeer.TryGetValue(key, out var last) &&
             last == want &&
@@ -137,6 +143,12 @@ public class HostPlayerApply
 
                 if (item == null)
                     item = await COOPManager.GetItemAsync(typeId);
+
+                if (!RemoteLoadoutReplay.IsCurrent(peer, remoteObj, model))
+                {
+                    if (item != null) UnityEngine.Object.Destroy(item.gameObject);
+                    return;
+                }
 
                 if (item != null)
                 {

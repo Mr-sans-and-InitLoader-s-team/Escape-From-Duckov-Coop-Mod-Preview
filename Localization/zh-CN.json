@@ -145,10 +145,6 @@
       "value": "取消投票"
     },
     {
-      "key": "ui.vote.title",
-      "value": "地图投票"
-    },
-    {
       "key": "ui.spectator.mode",
       "value": "观战模式：左键 ▶ 下一个 | 右键 ◀ 上一个 | 按 F8 直接进入结算（防卡死）"
     },
@@ -1183,6 +1179,106 @@
     {
       "key": "ui.sceneVote.alreadyActive",
       "value": "已有地图投票正在进行。"
+    },
+    {
+      "key": "ui.teleporter.busy",
+      "value": "已有出发流程正在进行，请先完成或取消。"
+    },
+    {
+      "key": "ui.teleporter.reason.notReady",
+      "value": "角色尚未就绪"
+    },
+    {
+      "key": "ui.teleporter.reason.destinationMissing",
+      "value": "未找到目的地"
+    },
+    {
+      "key": "ui.teleporter.reason.missingCost",
+      "value": "缺少传送所需物品或货币"
+    },
+    {
+      "key": "ui.teleporter.reason.paymentFailed",
+      "value": "扣除传送费用失败"
+    },
+    {
+      "key": "ui.teleporter.reason.readyWithdrawn",
+      "value": "取消了准备"
+    },
+    {
+      "key": "ui.teleporter.reason.openFailed",
+      "value": "无法打开出发确认界面"
+    },
+    {
+      "key": "ui.teleporter.reason.checkFailed",
+      "value": "出发检查失败"
+    },
+    {
+      "key": "ui.teleporter.reason.cancelled",
+      "value": "取消了出发"
+    },
+    {
+      "key": "ui.teleporter.reason.requirementsFailed",
+      "value": "未满足出发条件"
+    },
+    {
+      "key": "ui.teleporter.reason.disconnected",
+      "value": "连接已断开"
+    },
+    {
+      "key": "ui.teleporter.reason.closed",
+      "value": "关闭了出发确认界面"
+    },
+    {
+      "key": "ui.teleporter.reason.timeout",
+      "value": "等待队员回应超时"
+    },
+    {
+      "key": "ui.teleporter.cancelledByPlayer",
+      "value": "{0}：{1}。本次出发已取消，已扣费用将退回。"
+    },
+    {
+      "key": "ui.teleporter.cancelled",
+      "value": "本次出发已取消。"
+    },
+    {
+      "key": "ui.teleporter.disconnected",
+      "value": "连接已断开，本次出发已取消。"
+    },
+    {
+      "key": "ui.teleporter.cancelTimeout",
+      "value": "等待取消确认超时，本次本地出发已取消。"
+    },
+    {
+      "key": "ui.streamerMode",
+      "value": "主播模式"
+    },
+    {
+      "key": "ui.vote.notInitialized",
+      "value": "投票系统未初始化"
+    },
+    {
+      "key": "ui.vote.onlyHostCanCancel",
+      "value": "只有房主可以取消投票"
+    },
+    {
+      "key": "ui.vote.cancelled",
+      "value": "已取消投票"
+    },
+    {
+      "key": "net.steamUnavailable",
+      "value": "Steam 未初始化，无法启动 P2P"
+    },
+    {
+      "key": "net.startFailed",
+      "value": "网络启动失败"
+    },
+    {
+      "key": "ui.steam.protocolMismatch",
+      "value": "双方需要使用相同版本的原生 Steam P2P 联机 Mod"
+    },
+    {
+      "key": "ui.settings.configureOffline",
+      "value": "请在单机模式下进行此项设置。"
     }
   ]
 }

@@ -400,7 +400,7 @@ public static class CoopTool
         HealthTool.BindHealthToCharacter(h, cmc);
 
         var applyMax = snap.max > 0f ? snap.max : h.MaxHealth > 0f ? h.MaxHealth : 40f;
-        var applyCur = snap.cur > 0f ? snap.cur : applyMax;
+        var applyCur = Mathf.Clamp(snap.cur, 0f, applyMax);
 
         var characterItemInstance = cmc.CharacterItem;
         if (characterItemInstance != null)

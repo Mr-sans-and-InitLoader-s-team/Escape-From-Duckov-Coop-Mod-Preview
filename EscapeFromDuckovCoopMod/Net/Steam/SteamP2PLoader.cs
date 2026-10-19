@@ -20,6 +20,7 @@ public class SteamP2PLoader : MonoBehaviour
         {
             if (NetService.Instance?.netManager is SteamSocketsTransport steam) steam.LogConnections();
             ColdBuffSync.LogLocalState();
+            HealthSyncDiagnostics.LogLocalState();
         }
     }
 }

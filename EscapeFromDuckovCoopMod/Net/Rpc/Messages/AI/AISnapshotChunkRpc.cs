@@ -50,6 +50,8 @@ public struct AISnapshotChunkRpc : IRpcMessage
 
 public struct AISnapshotEntry
 {
+    // Local receipt order survives the deferred snapshot queue; it is not serialized.
+    internal long HealthReceiveOrder;
     public int Id;
     public int SceneBuildIndex;
     public string ScenePath;

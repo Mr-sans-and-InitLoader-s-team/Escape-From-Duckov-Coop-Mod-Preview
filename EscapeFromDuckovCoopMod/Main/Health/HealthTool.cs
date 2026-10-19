@@ -26,6 +26,7 @@ namespace EscapeFromDuckovCoopMod;
 public static class HealthTool
 {
     public static bool _cliHookedSelf;
+    private static Health _hookedSelfHealth;
     public static UnityAction<Health> _cbSelfHpChanged, _cbSelfMaxChanged;
     public static UnityAction<DamageInfo> _cbSelfHurt, _cbSelfDead;
 
@@ -126,10 +127,12 @@ public static class HealthTool
 
     public static void Client_HookSelfHealth()
     {
-        if (_cliHookedSelf) return;
         var main = CharacterMainControl.Main;
         var h = main ? main.GetComponentInChildren<Health>(true) : null;
         if (!h) return;
+        if (_cliHookedSelf && _hookedSelfHealth == h) return;
+        Client_UnhookSelfHealth();
+        _hookedSelfHealth = h;
 
         EnsureSelfHealthInitialized(main, h);
 
@@ -154,8 +157,7 @@ public static class HealthTool
     public static void Client_UnhookSelfHealth()
     {
         if (!_cliHookedSelf) return;
-        var main = CharacterMainControl.Main;
-        var h = main ? main.GetComponentInChildren<Health>(true) : null;
+        var h = _hookedSelfHealth;
         if (h)
         {
             if (_cbSelfHpChanged != null) h.OnHealthChange.RemoveListener(_cbSelfHpChanged);
@@ -165,6 +167,7 @@ public static class HealthTool
         }
 
         _cliHookedSelf = false;
+        _hookedSelfHealth = null;
         _cbSelfHpChanged = _cbSelfMaxChanged = null;
         _cbSelfHurt = _cbSelfDead = null;
     }
@@ -184,7 +187,7 @@ public static class HealthTool
 
     private static void EnsureSelfHealthInitialized(CharacterMainControl cmc, Health h)
     {
-        if (!cmc || !h) return;
+        if (!cmc || !h || h.IsDead) return;
 
         var max = 0f;
         var cur = 0f;

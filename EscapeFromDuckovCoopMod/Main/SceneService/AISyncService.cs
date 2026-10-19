@@ -33,7 +33,7 @@ using Object = UnityEngine.Object;
 
 namespace EscapeFromDuckovCoopMod;
 
-public sealed class AISyncService
+public sealed partial class AISyncService
 {
     private const float VehicleTransformSyncCullDistance = 150f;
     private const float SlowAiSpeedThreshold = 1.2f;
@@ -135,21 +135,13 @@ public sealed class AISyncService
 
     private readonly struct PendingHealthBroadcast
     {
-        public readonly float MaxHealth;
-        public readonly float CurrentHealth;
-        public readonly float BodyArmor;
-        public readonly float HeadArmor;
         public readonly bool IsDead;
         public readonly bool HasDamage;
         public readonly DamageForwardPayload? Damage;
         public readonly float NextSendTime;
 
-        public PendingHealthBroadcast(float maxHealth, float currentHealth, float bodyArmor, float headArmor, bool isDead, bool hasDamage, DamageForwardPayload? damage, float nextSendTime)
+        public PendingHealthBroadcast(bool isDead, bool hasDamage, DamageForwardPayload? damage, float nextSendTime)
         {
-            MaxHealth = maxHealth;
-            CurrentHealth = currentHealth;
-            BodyArmor = bodyArmor;
-            HeadArmor = headArmor;
             IsDead = isDead;
             HasDamage = hasDamage;
             Damage = damage;
@@ -282,6 +274,8 @@ public sealed class AISyncService
             _clientEntryBuffer.Clear();
             _clientReplicaRecoveryTimes.Clear();
             _clientLastDamage.Clear();
+            _clientHealthOrder.Clear();
+            _clientPendingHealth.Clear();
             _clientEntryBufferVersion = -1;
             _clientAnchorFrame = -1;
             _localAuthoritativeVehicleFrame = -1;
@@ -351,6 +345,9 @@ public sealed class AISyncService
     {
         if (!IsServer || entry == null) return;
         if (CheckAndHandleSyncBlock()) return;
+        // Hurt may briefly subtract below zero before the native shelter protection restores 1 HP.
+        // Actual deaths are published by Server_HandleDeath after native death processing.
+        if (current <= 0f) return;
 
         if (max > 0f) entry.MaxHealth = max;
         entry.CurrentHealth = Mathf.Clamp(current, 0f, entry.MaxHealth <= 0f ? float.MaxValue : entry.MaxHealth);
@@ -368,180 +365,17 @@ public sealed class AISyncService
 
         var damagePayload = damage.HasValue ? DamageForwardPayload.FromDamageInfo(damage) : (DamageForwardPayload?)null;
         entry.Status = AIStatus.Dead;
+        entry.ServerDeathHandled = true;
         if (max > 0f) entry.MaxHealth = max;
         entry.CurrentHealth = Mathf.Clamp(current, 0f, entry.MaxHealth <= 0f ? float.MaxValue : entry.MaxHealth);
         entry.BodyArmor = bodyArmor;
         entry.HeadArmor = headArmor;
         RefreshEntryPose(entry);
+        if (damage.HasValue && damage.Value.fromCharacter && damage.Value.fromCharacter.GetComponent<RemoteReplicaTag>())
+            NotifyKillerOfServerDeath(entry);
         BroadcastState(entry);
         QueueHealthBroadcast(entry, damagePayload, true);
         BroadcastDespawn(entry);
-    }
-
-    public void Server_HandleHealthReport(RpcContext context, AIHealthReportRpc message)
-    {
-        if (!IsServer || context.Sender == null) return;
-        if (CheckAndHandleSyncBlock()) return;
-        if (!CoopSyncDatabase.AI.TryGet(message.Id, out var entry) || entry == null) return;
-
-        var damage = message.HasDamage ? message.Damage : (DamageForwardPayload?)null;
-
-        var controller = entry.Controller;
-        var cmc = controller ? controller.CharacterMainControl : null;
-        var health = cmc ? cmc.Health : null;
-        var (serverMax, serverCur, serverBody, serverHead) = ReadHealthSafe(health);
-
-        if (serverMax > 0f)
-            entry.MaxHealth = serverMax;
-
-        var reportedMax = message.MaxHealth > 0f ? message.MaxHealth : entry.MaxHealth;
-        var reportedCurrent = Mathf.Clamp(
-            message.CurrentHealth,
-            0f,
-            reportedMax <= 0f ? float.MaxValue : reportedMax);
-
-        if (!message.HasDamage)
-        {
-            if (message.MaxHealth > 0f && entry.MaxHealth <= 0f)
-                entry.MaxHealth = message.MaxHealth;
-
-            entry.CurrentHealth = health ? Mathf.Min(serverCur, reportedCurrent) : reportedCurrent;
-            entry.BodyArmor = health ? Mathf.Min(serverBody, message.BodyArmor) : message.BodyArmor;
-            entry.HeadArmor = health ? Mathf.Min(serverHead, message.HeadArmor) : message.HeadArmor;
-        }
-        else
-        {
-            if (message.MaxHealth > 0f && entry.MaxHealth <= 0f)
-                entry.MaxHealth = message.MaxHealth;
-
-            entry.CurrentHealth = health ? serverCur : reportedCurrent;
-            entry.BodyArmor = health ? serverBody : message.BodyArmor;
-            entry.HeadArmor = health ? serverHead : message.HeadArmor;
-        }
-
-        if (context.Sender != null && damage.HasValue)
-        {
-            if (!_serverLastDamageByPeer.TryGetValue(context.Sender, out var lastDamageForPeer) || lastDamageForPeer == null)
-            {
-                lastDamageForPeer = new Dictionary<int, DamageForwardPayload>();
-                _serverLastDamageByPeer[context.Sender] = lastDamageForPeer;
-            }
-
-            lastDamageForPeer[message.Id] = damage.Value;
-            _serverLastHitPeer[message.Id] = context.Sender;
-        }
-
-        var clampedCurrent = entry.CurrentHealth;
-        var attacker = ResolveAttacker(context);
-        var wasDead = entry.Status == AIStatus.Dead;
-        var appliedDamage = ApplyDamageToController(entry, damage, attacker);
-        if (appliedDamage)
-        {
-            controller = entry.Controller;
-            cmc = controller ? controller.CharacterMainControl : null;
-            health = cmc ? cmc.Health : null;
-            if (health)
-            {
-                var (max, cur, body, head) = ReadHealthSafe(health);
-                if (max > 0f)
-                    entry.MaxHealth = max;
-                entry.CurrentHealth = cur;
-                entry.BodyArmor = body;
-                entry.HeadArmor = head;
-            }
-            else
-            {
-                entry.CurrentHealth = clampedCurrent;
-            }
-        }
-        else
-        {
-            ApplyHealthToController(entry);
-
-            controller = entry.Controller;
-            cmc = controller ? controller.CharacterMainControl : null;
-            health = cmc ? cmc.Health : null;
-            if (health)
-            {
-                var (max, cur, body, head) = ReadHealthSafe(health);
-                if (max > 0f)
-                    entry.MaxHealth = max;
-                entry.CurrentHealth = cur;
-                entry.BodyArmor = body;
-                entry.HeadArmor = head;
-            }
-        }
-
-        var isDead = message.IsDead || entry.CurrentHealth <= 0.0001f;
-        if (isDead)
-        {
-            var forced = appliedDamage || EnsureServerControllerDeath(entry, damage, attacker);
-            if (forced)
-                entry.ServerDeathHandled = true;
-
-            if (!forced)
-            {
-                ForceDisableServerController(entry);
-            }
-
-            entry.Status = AIStatus.Dead;
-            if (!entry.ServerDeathHandled)
-            {
-                entry.ServerDeathHandled = true;
-                TryForceServerOnDead(entry, damage, attacker);
-            }
-            if (!wasDead)
-                NotifyKillerOfServerDeath(entry);
-            QueueHealthBroadcast(entry, damage, true);
-            if (!wasDead)
-                BroadcastDespawn(entry);
-
-            return;
-        }
-
-        QueueHealthBroadcast(entry, damage, false);
-    }
-
-    private void TryForceServerOnDead(AISyncEntry entry, DamageForwardPayload? damage, CharacterMainControl attacker)
-    {
-        if (entry == null) return;
-
-        var controller = entry.Controller;
-        var cmc = controller ? controller.CharacterMainControl : null;
-        var health = cmc ? cmc.Health : null;
-        if (!cmc || !health) return;
-
-        var receiver = cmc ? cmc.mainDamageReceiver : null;
-        if (!receiver && cmc)
-            receiver = cmc.GetComponentInChildren<DamageReceiver>(true);
-
-        var info = damage?.ToDamageInfo(attacker, receiver) ?? new DamageInfo(attacker)
-        {
-            damageValue = Mathf.Max(1f, entry.CurrentHealth <= 0f ? 1f : entry.CurrentHealth),
-            finalDamage = Mathf.Max(1f, entry.CurrentHealth <= 0f ? 1f : entry.CurrentHealth),
-            damagePoint = cmc.transform.position,
-            damageNormal = Vector3.up
-        };
-
-        if (info.toDamageReceiver == null)
-            info.toDamageReceiver = receiver;
-        if (info.fromCharacter == null)
-            info.fromCharacter = attacker;
-
-        var bak = DeadLootSpawnContext.InOnDead;
-       // DeadLootSpawnContext.InOnDead = cmc;
-        try
-        {
-            IsHostHurt = true;
-            cmc.Health.Hurt(info);
-        }
-        catch
-        {
-        }
-        finally
-        {
-          //  DeadLootSpawnContext.InOnDead = bak;
-        }
     }
 
     public void Server_HandleBuffReport(RpcContext context, AIBuffReportRpc message)
@@ -868,7 +702,9 @@ public sealed class AISyncService
                 _pendingSnapshotQueue.Dequeue();
                 _droppedSnapshotCount++;
             }
-            _pendingSnapshotQueue.Enqueue(snap);
+            var orderedSnapshot = snap;
+            orderedSnapshot.HealthReceiveOrder = _clientHealthOrder.Receive();
+            _pendingSnapshotQueue.Enqueue(orderedSnapshot);
         }
 
         if (_droppedSnapshotCount >= SnapshotDropResyncThreshold)
@@ -913,7 +749,9 @@ public sealed class AISyncService
             return;
 
         var entry = CoopSyncDatabase.AI.GetOrCreate(message.Entry.Id);
-        ApplySnapshot(entry, in message.Entry);
+        var snapshot = message.Entry;
+        snapshot.HealthReceiveOrder = _clientHealthOrder.Receive();
+        ApplySnapshot(entry, in snapshot);
 
         // Avoid applying any pre-existing buff state when initially generating the AI replica.
         // Buff broadcasts that arrive after spawn will still be processed normally.
@@ -1194,7 +1032,8 @@ public sealed class AISyncService
             return;
 
         entry.Activated = false;
-        entry.Status = status;
+        if (entry.Status != AIStatus.Dead)
+            entry.Status = status;
         entry.LastAnimSample = default;
 
         if (_clientReplicas.TryGetValue(id, out var replica))
@@ -1210,7 +1049,11 @@ public sealed class AISyncService
         _clientNextMissingModelWarning.Remove(id);
 
         if (removeEntry)
+        {
             CoopSyncDatabase.AI.RemoveEntry(id);
+            _clientHealthOrder.Remove(id);
+            _clientPendingHealth.Remove(id);
+        }
     }
 
     private void Client_ProcessPendingSnapshots()
@@ -1282,6 +1125,7 @@ public sealed class AISyncService
             Client_TryScheduleSnapshotRecovery(true);
             return;
         }
+        if (entry.Status == AIStatus.Dead) return;
 
         var localAuthVehicle = IsLocalAuthoritativeVehicle(entry);
         var suppressVehicleState = entry.IsVehicle &&
@@ -1295,10 +1139,9 @@ public sealed class AISyncService
             entry.LastKnownVelocity = message.Velocity;
             entry.LastKnownRemoteTime = message.Timestamp;
         }
-        entry.CurrentHealth = message.CurrentHealth;
         SetActiveWeapon(message.Id, GetActiveWeaponSlot(message.Id), message.ActiveWeaponTypeId);
         entry.LastStateReceivedTime = Time.unscaledTime;
-        if (message.StatusOverride != AIStatus.Dormant)
+        if (message.StatusOverride != AIStatus.Dormant && message.StatusOverride != AIStatus.Dead)
             entry.Status = message.StatusOverride;
 
         if (!localAuthVehicle && !suppressVehicleState)
@@ -1321,36 +1164,6 @@ public sealed class AISyncService
 
         if (!suppressVehicleState && _clientReplicas.TryGetValue(message.Id, out var replica))
             replica.ApplyState(entry);
-    }
-
-    public void Client_HandleHealthBroadcast(AIHealthBroadcastRpc message)
-    {
-        if (IsServer) return;
-        if (!CoopSyncDatabase.AI.TryGet(message.Id, out var entry) || entry == null)
-            return;
-
-        if (!IsClientEntryInRange(entry, DeactivationRadius))
-        {
-            Client_DestroyReplica(message.Id, AIStatus.Despawned, false);
-            return;
-        }
-
-        if (message.MaxHealth > 0f)
-            entry.MaxHealth = message.MaxHealth;
-        entry.CurrentHealth = message.CurrentHealth;
-        entry.BodyArmor = message.BodyArmor;
-        entry.HeadArmor = message.HeadArmor;
-        if (message.IsDead)
-        {
-            entry.Status = AIStatus.Dead;
-            if (message.KillerCredit)
-                Client_RaiseQuestKillCredit(message.Id, in message);
-            Client_DestroyReplica(message.Id, AIStatus.Dead, false);
-            return;
-        }
-
-        if (_clientReplicas.TryGetValue(message.Id, out var replica))
-            replica.ApplyHealth(entry.MaxHealth, entry.CurrentHealth, entry.BodyArmor, entry.HeadArmor);
     }
 
     public void Client_HandleBuffBroadcast(AIBuffBroadcastRpc message)
@@ -1449,10 +1262,6 @@ public sealed class AISyncService
                 continue;
             }
 
-            entry.MaxHealth = pending.MaxHealth;
-            entry.CurrentHealth = pending.CurrentHealth;
-            entry.BodyArmor = pending.BodyArmor;
-            entry.HeadArmor = pending.HeadArmor;
             _lastHealthBroadcastTime[id] = now;
             _pendingHealthBroadcasts.Remove(id);
             var damage = pending.HasDamage ? pending.Damage : (DamageForwardPayload?)null;
@@ -2236,10 +2045,6 @@ public sealed class AISyncService
         }
 
         var pending = new PendingHealthBroadcast(
-            entry.MaxHealth,
-            entry.CurrentHealth,
-            entry.BodyArmor,
-            entry.HeadArmor,
             entry.Status == AIStatus.Dead,
             damage.HasValue,
             damage,
@@ -2366,56 +2171,6 @@ public sealed class AISyncService
         }
     }
 
-    private void ApplyHealthToController(AISyncEntry entry)
-    {
-        if (entry == null) return;
-        var controller = entry.Controller;
-        var cmc = controller ? controller.CharacterMainControl : null;
-        var health = cmc ? cmc.Health : null;
-        if (health)
-            HealthM.Instance.ForceSetHealth(
-                health,
-                entry.MaxHealth > 0f ? entry.MaxHealth : Mathf.Max(1f, entry.CurrentHealth),
-                entry.CurrentHealth,
-                true,
-                entry.BodyArmor,
-                entry.HeadArmor);
-    }
-
-    private bool ApplyDamageToController(AISyncEntry entry, DamageForwardPayload? damage, CharacterMainControl attacker)
-    {
-        if (entry == null || !damage.HasValue)
-            return false;
-
-        var controller = entry.Controller;
-        var cmc = controller ? controller.CharacterMainControl : null;
-        var health = cmc ? cmc.Health : null;
-        if (!health)
-            return false;
-
-        var receiver = cmc ? cmc.mainDamageReceiver : null;
-        if (!receiver && cmc)
-            receiver = cmc.GetComponentInChildren<DamageReceiver>(true);
-
-        // 确保传给 AI 的伤害信息里有攻击者和命中点，避免行为树里因空引用而报错
-        var info = damage.Value.ToDamageInfo(attacker ?? cmc, receiver);
-        if (info.toDamageReceiver == null)
-            info.toDamageReceiver = receiver;
-        if (info.fromCharacter == null)
-            info.fromCharacter = attacker ?? cmc;
-
-        try
-        {
-            IsHostHurt = true;
-            health.Hurt(info);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     private CharacterMainControl ResolveAttacker(RpcContext context)
     {
         if ( context.Sender == null)
@@ -2451,87 +2206,6 @@ public sealed class AISyncService
         }
 
         return null;
-    }
-
-    private bool EnsureServerControllerDeath(AISyncEntry entry, DamageForwardPayload? damage, CharacterMainControl attacker)
-    {
-        if (entry == null) return false;
-        var controller = entry.Controller;
-        var cmc = controller ? controller.CharacterMainControl : null;
-        var health = cmc ? cmc.Health : null;
-        if (!health) return false;
-
-        float current;
-        try
-        {
-            current = health.CurrentHealth;
-        }
-        catch
-        {
-            current = 0f;
-        }
-
-        if (current <= 0.0001f)
-            return false;
-
-        DamageInfo info;
-        if (damage.HasValue)
-        {
-            var receiver = cmc ? cmc.mainDamageReceiver : null;
-            if (!receiver && cmc)
-                receiver = cmc.GetComponentInChildren<DamageReceiver>(true);
-
-            info = damage.Value.ToDamageInfo(attacker, receiver);
-            if (info.toDamageReceiver == null)
-                info.toDamageReceiver = receiver;
-            if (info.fromCharacter == null)
-                info.fromCharacter = attacker;
-        }
-        else
-        {
-            info = new DamageInfo(attacker)
-            {
-                damageValue = Mathf.Max(1f, current),
-                finalDamage = Mathf.Max(1f, current),
-                damagePoint = cmc ? cmc.transform.position : Vector3.zero,
-                damageNormal = Vector3.up
-            };
-        }
-
-        try
-        {
-            health.OnDeadEvent?.Invoke(info);
-            RaiseStaticHealthOnDead(health, info);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private void ForceDisableServerController(AISyncEntry entry)
-    {
-        if (entry == null) return;
-        var controller = entry.Controller;
-        if (!controller) return;
-        try
-        {
-            controller.enabled = false;
-        }
-        catch
-        {
-        }
-
-        var cmc = controller.CharacterMainControl;
-        if (!cmc) return;
-        try
-        {
-            cmc.gameObject.SetActive(false);
-        }
-        catch
-        {
-        }
     }
 
     private void SendSnapshotChunk(NetPeer peer, List<AISnapshotEntry> buffer, bool reset)
@@ -2896,16 +2570,20 @@ public sealed class AISyncService
         entry.ScenePath = snapshot.ScenePath;
         entry.Team = snapshot.Team;
         var forceSpawn = IsForceSpawnModel(snapshot.ModelName) || snapshot.IsVehicle;
-        entry.Status = forceSpawn && snapshot.Status != AIStatus.Dead
-            ? AIStatus.Active
-            : snapshot.Status;
+        var applyHealth = _clientHealthOrder.TryApply(entry.Id, snapshot.HealthReceiveOrder);
+        if (applyHealth)
+        {
+            entry.Status = forceSpawn && snapshot.Status != AIStatus.Dead
+                ? AIStatus.Active
+                : snapshot.Status;
+            entry.MaxHealth = snapshot.MaxHealth;
+            entry.CurrentHealth = snapshot.CurrentHealth;
+            entry.BodyArmor = snapshot.BodyArmor;
+            entry.HeadArmor = snapshot.HeadArmor;
+        }
         entry.Activated = forceSpawn || snapshot.Activated;
         if (entry.Status == AIStatus.Dead)
             entry.Activated = false;
-        entry.MaxHealth = snapshot.MaxHealth;
-        entry.CurrentHealth = snapshot.CurrentHealth;
-        entry.BodyArmor = snapshot.BodyArmor;
-        entry.HeadArmor = snapshot.HeadArmor;
         entry.ShowHealthBar = snapshot.ShowHealthBar;
         entry.IsVehicle = snapshot.IsVehicle;
         entry.VehicleAnimationType = snapshot.VehicleAnimationType;
@@ -2970,6 +2648,7 @@ public sealed class AISyncService
         }
         if (entry.Buffs.Count > MaxStoredBuffs)
             entry.Buffs.RemoveRange(0, entry.Buffs.Count - MaxStoredBuffs);
+        Client_ApplyPendingHealth(entry);
     }
 
     void MultiplyCharacterStat(Item characterItemInstance, string statName, float multiplier)
@@ -3070,6 +2749,12 @@ public sealed class AISyncService
             
             ApplyCustomFace(cmc.characterModel, entry.CustomFaceJson);
             await ApplyEquipmentAsync(cmc.characterModel, entry.Equipment, entry.Weapons, entry.WeaponSnapshots, GetActiveWeaponSlot(entry.Id), GetActiveWeaponType(entry.Id));
+            if (!ShouldHaveClientReplica(entry) || !CoopSyncDatabase.AI.TryGet(entry.Id, out var currentEntry) ||
+                !ReferenceEquals(entry, currentEntry))
+            {
+                Object.Destroy(instance);
+                return;
+            }
             TryApplyVehicleSpeedStats(characterItemInstance, entry);
 
            // MultiplyCharacterStat(characterItemInstance, "WalkSpeed", cmc.characterPreset.moveSpeedFactor);
@@ -3202,13 +2887,10 @@ public sealed class AISyncService
               //  Debug.Log($"[AI][CLIENT] Replica {replica.Id} has receiver: {(receiver != null)}");
                 var info = lastDamage;
                // Debug.Log($"[AI][CLIENT] DamageInfo for replica {replica.Id}: DamageValue={info.damageValue}, FinalDamage={info.finalDamage} crit：{info.crit}  fromCharacter:{info.fromCharacter != null} fromWeaponItemID:{info.fromWeaponItemID}");
-                info.damageValue = 99999f;
-                info.finalDamage = 99999f;
                 if (info.toDamageReceiver == null)
                     info.toDamageReceiver = receiver;
                 if (info.fromCharacter == null && CharacterMainControl.Main)
                     info.fromCharacter = CharacterMainControl.Main;
-                Client_RaiseQuestKillCredit(replica.Id, health, info);
                // Debug.Log($"[AI][CLIENT] Invoking OnDeadEvent for replica {replica.Id}");
                 try
                 {
@@ -3548,14 +3230,11 @@ public sealed class AISyncService
 
     public void Client_ReportAiHealth(int id, Health health, DamageInfo? damage)
     {
-        if (IsServer || Service == null || !Service.networkStarted || health == null) return;
+        if (IsServer || Service == null || !Service.networkStarted || health == null || !damage.HasValue) return;
 
         var (max, cur, bodyArmor, headArmor) = ReadHealthSafe(health);
         if (max <= 0f)
             max = Mathf.Max(cur, 1f);
-
-
-        Client_ApplyLocalHealthReport(id, max, cur, bodyArmor, headArmor);
 
         var rpc = new AIHealthReportRpc
         {
@@ -3564,38 +3243,12 @@ public sealed class AISyncService
             CurrentHealth = cur,
             BodyArmor = bodyArmor,
             HeadArmor = headArmor,
-            IsDead = cur <= 0f,
+            IsDead = false,
             HasDamage = damage.HasValue,
             Damage = DamageForwardPayload.FromDamageInfo(damage)
         };
 
         CoopTool.SendRpc(in rpc);
-    }
-
-    private void Client_ApplyLocalHealthReport(int id, float max, float current, float bodyArmor, float headArmor)
-    {
-        if (id == 0) return;
-        var entry = CoopSyncDatabase.AI.GetOrCreate(id);
-        entry.MaxHealth = max;
-        entry.CurrentHealth = Mathf.Clamp(current, 0f, max > 0f ? max : Mathf.Max(1f, current));
-        entry.BodyArmor = bodyArmor;
-        entry.HeadArmor = headArmor;
-        if (entry.CurrentHealth <= 0.0001f)
-            entry.Status = AIStatus.Dead;
-        else if (entry.Status != AIStatus.Active)
-            entry.Status = AIStatus.Active;
-
-        if (_clientReplicas.TryGetValue(id, out var replica))
-        {
-            replica.ApplyHealth(entry.MaxHealth, entry.CurrentHealth, entry.BodyArmor, entry.HeadArmor);
-            if (entry.Status == AIStatus.Dead)
-            {
-                DestroyReplica(replica);
-                _clientReplicas.Remove(id);
-                _clientRequested.Remove(id);
-                _clientPendingBuffs.Remove(id);
-            }
-        }
     }
 
     private CharacterModel ResolveModelPrefab(string modelName)

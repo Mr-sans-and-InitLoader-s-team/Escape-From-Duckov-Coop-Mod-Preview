@@ -204,30 +204,6 @@ internal static class Patch_Health_Hurt_AIdEAD
                 }
             }         
         }
-
-        if (character == null) return;
-
-        var remoteTag = character.GetComponentInChildren<RemoteAIReplicaTag>(true);
-        if (remoteTag == null) return;
-
-        if (!mod.IsServer && __instance.IsDead)
-        {
-            var alreadyDead = false;
-            if (CoopSyncDatabase.AI.TryGet(remoteTag.Id, out var entry) && entry != null)
-            {
-                alreadyDead = entry.Status == AIStatus.Dead || entry.CurrentHealth <= 0.0001f;
-            }
-
-            if (!alreadyDead)
-            {
-                var forced = new DamageInfo
-                {
-                    damageValue = 99999f,
-                    finalDamage = 99999f
-                };
-                COOPManager.AI?.Client_ReportAiHealth(remoteTag.Id, __instance, forced);
-            }
-        }
     }
 }
 
@@ -265,7 +241,7 @@ internal static class Patch_Health_Hurt_RemoteAnti
         }
     }
 
-    private static bool Prefix(Health __instance, ref DamageInfo damageInfo)
+    private static bool Prefix(Health __instance, ref DamageInfo damageInfo, ref bool __result)
     {
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true;
@@ -287,36 +263,19 @@ internal static class Patch_Health_Hurt_RemoteAnti
         if (character == null)
             return true;
 
-        // 客户端侧远端 AI 仍继续本地 Hurt 保留命中特效，同时把伤害上报给主机。
         var remoteAi = character.GetComponentInChildren<RemoteAIReplicaTag>(true);
-        var mainCharacter = LevelManager.Instance != null && LevelManager.Instance.MainCharacter != null
-            ? LevelManager.Instance.MainCharacter
-            : CharacterMainControl.Main;
-        if (remoteAi != null && !mod.IsServer && damageInfo.fromCharacter != null && damageInfo.fromCharacter == mainCharacter)
+        if (remoteAi != null && !mod.IsServer)
         {
-            if (COOPManager.AI != null)
-                COOPManager.AI._clientLastDamage[remoteAi.Id] = damageInfo;
-            //COOPManager.AI?.Client_ReportAiHealth(remoteAi.Id, __instance, damageInfo);
-
-            //// 可选的“本地视觉预测”：在本地运行一次 Hurt 让击中特效/僵直正确，但随后立即恢复血量，避免和主机权威值偏差
-            //var snap = Snapshot(__instance);
-            //try
-            //{
-            //    _simulatingRemoteAiHurt = true;
-            //    __instance.Hurt(damageInfo);
-            //}
-            //catch (Exception ex)
-            //{
-            //    Debug.LogWarning($"[COOP] Remote AI local hurt simulate failed: {ex.Message}");
-            //}
-            //finally
-            //{
-            //    _simulatingRemoteAiHurt = false;
-            //    Restore(__instance, snap);
-            //}
-
-            COOPManager.AI?.Client_ReportAiHealth(remoteAi.Id, __instance, damageInfo);
-            return true;
+            if (damageInfo.fromCharacter == CharacterMainControl.Main && !FakeProjectileRegistry.IsCurrentFake)
+            {
+                if (COOPManager.AI != null)
+                    COOPManager.AI._clientLastDamage[remoteAi.Id] = damageInfo;
+                COOPManager.AI?.Client_ReportAiHealth(remoteAi.Id, __instance, damageInfo);
+                LocalHitKillFx.ClientPlayForPlayer(character, damageInfo, false);
+            }
+            // Only the host runs armor, crit, buffs, HP changes and death processing.
+            __result = false;
+            return false;
         }
 
         if (character.GetComponentInChildren<AICharacterController>(true) != null) return true;

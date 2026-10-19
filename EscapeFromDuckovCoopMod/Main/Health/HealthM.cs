@@ -65,6 +65,8 @@ public class HealthM : MonoBehaviour
     public void NotifyLocalHealthChanged(Health health, DamageInfo? damage)
     {
         if (!networkStarted || health == null) return;
+        var main = CharacterMainControl.Main;
+        if (!main || main.Health != health) return;
         // OnHealthChange runs inside Hurt before the game's non-raid death
         // protection restores 1 HP. Do not publish that intermediate lethal value.
         if (!health.IsDead && health.CurrentHealth <= 0f) return;
@@ -253,8 +255,14 @@ public class HealthM : MonoBehaviour
 
     public void ResetDeathReports()
     {
+        HealthSyncDiagnostics.Reset();
         _localDeathReport.Reset();
         _deathReports.Clear();
+        _srvPlayerSnapshots.Clear();
+        _srvNextBroadcast.Clear();
+        _srvNextDamageRequestBySenderTarget.Clear();
+        _cliLastSentHp = default;
+        _cliNextSendHp = _cliNextHeartbeat = 0f;
     }
 
     public void Server_HandlePlayerDamageRequest(NetPeer sender, PlayerDamageRequestRpc message)
@@ -322,10 +330,9 @@ public class HealthM : MonoBehaviour
         if (IsServer) return;
         var service = Service;
         if (service == null) return;
+        if (!service.IsSelfId(message.PlayerId)) return;
         if (LocalPlayerManager.Instance != null && LocalPlayerManager.Instance.IsLocalInvincible())
             return;
-        // 允许空 PlayerId 或不匹配的转发继续执行，恢复客户端对自身伤害的本地处理
-
         Client_ApplyForwardedDamage(message.Damage).Forget();
     }
 
@@ -368,6 +375,9 @@ public class HealthM : MonoBehaviour
         var playerId = service?.GetPlayerId(peer);
         if (string.IsNullOrEmpty(playerId)) return;
         if (!_srvPlayerSnapshots.TryGetValue(playerId, out var snap)) return;
+        var health = instance.GetComponent<CharacterMainControl>()?.Health;
+        var state = RemoteHealthState.Get(health);
+        if (state?.HasSnapshot == true && state.MaxHealth == snap.max && state.CurrentHealth == snap.cur) return;
        // Debug.Log("Server_ApplyCachedHealth "+ snap.max+" "+snap.cur);
         ApplyHealthAndEnsureBar(instance, snap.max, snap.cur);
     }
@@ -446,6 +456,16 @@ public class HealthM : MonoBehaviour
         bool exactMax = false)
     {
         if (!h) return;
+        if (float.IsNaN(max) || float.IsInfinity(max) || max <= 0f ||
+            float.IsNaN(cur) || float.IsInfinity(cur)) return;
+
+        if (RemoteHealthState.TryApply(h, max, cur))
+        {
+            var replicaCharacter = h.TryGetCharacter();
+            ApplyArmorStats(replicaCharacter ? replicaCharacter.CharacterItem : null, bodyArmor, headArmor);
+            if (ensureBar) EnsureHealthBar(h);
+            return;
+        }
 
         var nowMax = h.MaxHealth;
         var defMax = (int)(HealthTool.FI_defaultMax?.GetValue(h) ?? 0);
@@ -496,30 +516,32 @@ public class HealthM : MonoBehaviour
             h.OnHealthChange?.Invoke(h);
         }
 
-        if (ensureBar)
-        {
-            if (!ShouldShowHealthBar(h))
-            {
-                SuppressHealthBar(h);
-                return;
-            }
+        if (ensureBar) EnsureHealthBar(h);
+    }
 
-            if (NetService.Instance.IsServer)
-            {
-                if (h.TryGetCharacter().aiCharacterController == null)
-                {
-                    h.showHealthBar = true;
-                }
-            }
-            if (!NetService.Instance.IsServer)
+    private void EnsureHealthBar(Health h)
+    {
+        if (!ShouldShowHealthBar(h))
+        {
+            SuppressHealthBar(h);
+            return;
+        }
+
+        if (NetService.Instance.IsServer)
+        {
+            if (h.TryGetCharacter().aiCharacterController == null)
             {
                 h.showHealthBar = true;
             }
-
-            h.RequestHealthBar();
-
-            StartCoroutine(EnsureBarRoutine(h, 2, 0.1f));
         }
+        if (!NetService.Instance.IsServer)
+        {
+            h.showHealthBar = true;
+        }
+
+        h.RequestHealthBar();
+
+        StartCoroutine(EnsureBarRoutine(h, 2, 0.1f));
     }
 
     private static void ApplyArmorStats(Item characterItemInstance, float? bodyArmor, float? headArmor)
@@ -548,7 +570,7 @@ public class HealthM : MonoBehaviour
         if (!go) return;
         
         var cmc = go.GetComponent<CharacterMainControl>();
-        var h = cmc.Health;
+        var h = cmc ? cmc.Health : null;
         if (!cmc || !h) return;
 
         h.autoInit = false;

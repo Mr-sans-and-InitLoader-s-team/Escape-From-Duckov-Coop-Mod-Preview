@@ -32,6 +32,9 @@ public struct AISnapshotChunkRpc : IRpcMessage
             for (var i = 0; i < count; i++)
                 Entries[i].Serialize(writer);
         }
+        // Keep the legacy inline entries intact; optional layers follow the entire chunk.
+        for (var i = 0; i < count; i++)
+            (list != null ? list[i] : Entries[i]).WriteBuffLayers(writer);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -45,11 +48,16 @@ public struct AISnapshotChunkRpc : IRpcMessage
         {
             Entries[i].Deserialize(reader);
         }
+        for (var i = 0; i < count && reader.AvailableBytes > 0; i++)
+            Entries[i].ReadBuffLayers(reader);
     }
 }
 
 public struct AISnapshotEntry
 {
+    // Local receipt order survives the deferred snapshot queue; it is not serialized.
+    internal long HealthReceiveOrder;
+    internal long BuffReceiveOrder;
     public int Id;
     public int SceneBuildIndex;
     public string ScenePath;
@@ -84,6 +92,21 @@ public struct AISnapshotEntry
     public int ActiveWeaponTypeId;
     public int[] BuffWeaponTypeIds;
     public int[] BuffIds;
+    public int[] BuffLayers;
+
+    internal void WriteBuffLayers(NetDataWriter writer)
+    {
+        var count = BuffLayers?.Length ?? 0;
+        writer.Put((ushort)count);
+        for (var i = 0; i < count; i++) writer.Put(BuffLayers[i]);
+    }
+
+    internal void ReadBuffLayers(NetPacketReader reader)
+    {
+        var count = reader.GetUShort();
+        BuffLayers = new int[count];
+        for (var i = 0; i < count; i++) BuffLayers[i] = reader.GetInt();
+    }
 
     public void Serialize(NetDataWriter writer)
     {

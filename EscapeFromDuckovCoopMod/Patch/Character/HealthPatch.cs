@@ -76,6 +76,18 @@ public static class Patch_HSB_Awake_TagRegister
 [HarmonyPatch(typeof(HealthSimpleBase), "OnHurt")]
 public static class Patch_HSB_OnHurt_RedirectNet
 {
+    private static bool Prefix(HealthSimpleBase __instance, DamageInfo dmgInfo)
+    {
+        var mod = ModBehaviourF.Instance;
+        if (mod == null || !mod.networkStarted || mod.IsServer) return true;
+        if (dmgInfo.fromCharacter == CharacterMainControl.Main)
+        {
+            var tag = __instance.GetComponent<NetDestructibleTag>();
+            if (!tag) tag = __instance.gameObject.AddComponent<NetDestructibleTag>();
+            COOPManager.destructible.Client_ReportDestructibleHealth(tag.id, ReadMaxHealthValue(__instance), __instance.HealthValue, false, dmgInfo);
+        }
+        return false;
+    }
     private static float ReadMaxHealthValue(HealthSimpleBase hs)
     {
         return Destructible.ReadMaxHealthValue(hs, 0f);
@@ -89,17 +101,7 @@ public static class Patch_HSB_OnHurt_RedirectNet
         var tag = __instance.GetComponent<NetDestructibleTag>();
         if (!tag) tag = __instance.gameObject.AddComponent<NetDestructibleTag>();
 
-        if (!mod.IsServer)
-        {
-            // 仅转发本机玩家造成的伤害，避免 AI/环境事件反复覆写主机血量
-            if (dmgInfo.fromCharacter == null || dmgInfo.fromCharacter != CharacterMainControl.Main)
-                return;
-
-            var current = __instance != null ? __instance.HealthValue : 0f;
-            if (current > 0f)
-                COOPManager.destructible.Client_ReportDestructibleHealth(tag.id, ReadMaxHealthValue(__instance), current, false, dmgInfo);
-            return;
-        }
+        if (!mod.IsServer) return;
 
         COOPManager.destructible.Server_BroadcastDestructibleHurt(tag.id, __instance.HealthValue, dmgInfo);
     }
@@ -118,14 +120,7 @@ public static class Patch_HSB_Dead_Broadcast
         if (!tag) tag = __instance.gameObject.AddComponent<NetDestructibleTag>();
         if (!tag) return;
 
-        if (!mod.IsServer)
-        {
-            var reported = dmgInfo;
-            reported.damageValue = 999999f;
-            reported.finalDamage = Math.Max(reported.finalDamage, 999999f);
-            COOPManager.destructible.Client_ReportDestructibleHealth(tag.id, Destructible.ReadMaxHealthValue(__instance, 0f), 0f, true, reported);
-            return;
-        }
+        if (!mod.IsServer) return;
 
         COOPManager.destructible.Server_RegisterDestructibleDeath(tag.id);
         COOPManager.destructible.Server_BroadcastDestructibleDead(tag.id, dmgInfo);
@@ -204,30 +199,6 @@ internal static class Patch_Health_Hurt_AIdEAD
                 }
             }         
         }
-
-        if (character == null) return;
-
-        var remoteTag = character.GetComponentInChildren<RemoteAIReplicaTag>(true);
-        if (remoteTag == null) return;
-
-        if (!mod.IsServer && __instance.IsDead)
-        {
-            var alreadyDead = false;
-            if (CoopSyncDatabase.AI.TryGet(remoteTag.Id, out var entry) && entry != null)
-            {
-                alreadyDead = entry.Status == AIStatus.Dead || entry.CurrentHealth <= 0.0001f;
-            }
-
-            if (!alreadyDead)
-            {
-                var forced = new DamageInfo
-                {
-                    damageValue = 99999f,
-                    finalDamage = 99999f
-                };
-                COOPManager.AI?.Client_ReportAiHealth(remoteTag.Id, __instance, forced);
-            }
-        }
     }
 }
 
@@ -265,7 +236,7 @@ internal static class Patch_Health_Hurt_RemoteAnti
         }
     }
 
-    private static bool Prefix(Health __instance, ref DamageInfo damageInfo)
+    private static bool Prefix(Health __instance, ref DamageInfo damageInfo, ref bool __result)
     {
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true;
@@ -287,36 +258,19 @@ internal static class Patch_Health_Hurt_RemoteAnti
         if (character == null)
             return true;
 
-        // 客户端侧远端 AI 仍继续本地 Hurt 保留命中特效，同时把伤害上报给主机。
         var remoteAi = character.GetComponentInChildren<RemoteAIReplicaTag>(true);
-        var mainCharacter = LevelManager.Instance != null && LevelManager.Instance.MainCharacter != null
-            ? LevelManager.Instance.MainCharacter
-            : CharacterMainControl.Main;
-        if (remoteAi != null && !mod.IsServer && damageInfo.fromCharacter != null && damageInfo.fromCharacter == mainCharacter)
+        if (remoteAi != null && !mod.IsServer)
         {
-            if (COOPManager.AI != null)
-                COOPManager.AI._clientLastDamage[remoteAi.Id] = damageInfo;
-            //COOPManager.AI?.Client_ReportAiHealth(remoteAi.Id, __instance, damageInfo);
-
-            //// 可选的“本地视觉预测”：在本地运行一次 Hurt 让击中特效/僵直正确，但随后立即恢复血量，避免和主机权威值偏差
-            //var snap = Snapshot(__instance);
-            //try
-            //{
-            //    _simulatingRemoteAiHurt = true;
-            //    __instance.Hurt(damageInfo);
-            //}
-            //catch (Exception ex)
-            //{
-            //    Debug.LogWarning($"[COOP] Remote AI local hurt simulate failed: {ex.Message}");
-            //}
-            //finally
-            //{
-            //    _simulatingRemoteAiHurt = false;
-            //    Restore(__instance, snap);
-            //}
-
-            COOPManager.AI?.Client_ReportAiHealth(remoteAi.Id, __instance, damageInfo);
-            return true;
+            if (damageInfo.fromCharacter == CharacterMainControl.Main && !FakeProjectileRegistry.IsCurrentFake)
+            {
+                if (COOPManager.AI != null)
+                    COOPManager.AI._clientLastDamage[remoteAi.Id] = damageInfo;
+                COOPManager.AI?.Client_ReportAiHealth(remoteAi.Id, __instance, damageInfo);
+                LocalHitKillFx.ClientPlayForPlayer(character, damageInfo, false);
+            }
+            // Only the host runs armor, crit, buffs, HP changes and death processing.
+            __result = false;
+            return false;
         }
 
         if (character.GetComponentInChildren<AICharacterController>(true) != null) return true;

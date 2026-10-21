@@ -113,6 +113,11 @@ internal static class Patch_Character_AddBuff_Broadcast
 
         var buffId = buffPrefab.ID;
         if (buffId == 0) return;
+        if (ColdBuffSync.IsCold(buffId) && (__instance.IsMainCharacter || __instance.GetComponentInChildren<RemoteReplicaTag>(true) != null))
+        {
+            ColdBuffSync.PublishLocal(__instance, buffId);
+            return;
+        }
 
         // 玩家自身 Buff
         if (__instance.IsMainCharacter)
@@ -126,7 +131,8 @@ internal static class Patch_Character_AddBuff_Broadcast
                 var rpc = new PlayerBuffReportRpc
                 {
                     WeaponTypeId = overrideWeaponID,
-                    BuffId = buffId
+                    BuffId = buffId,
+                    Layers = __instance.GetBuffManager().Buffs.FirstOrDefault(b => b && b.ID == buffId)?.CurrentLayers ?? 0
                 };
                 CoopTool.SendRpc(in rpc);
             }
@@ -175,5 +181,37 @@ internal static class Patch_Character_AddBuff_Broadcast
             };
             CoopTool.SendRpc(in rpc);
         }
+    }
+}
+
+[HarmonyPatch(typeof(CharacterBuffManager), nameof(CharacterBuffManager.RemoveBuff), typeof(Buff), typeof(bool))]
+internal static class Patch_ColdBuff_Removed
+{
+    private static void Postfix(CharacterBuffManager __instance, Buff toRemove)
+    {
+        if (toRemove != null) ColdBuffSync.PublishLocal(__instance.Master, toRemove.ID);
+    }
+}
+
+[HarmonyPatch(typeof(CharacterBuffManager), nameof(CharacterBuffManager.RemoveBuff), typeof(Buff), typeof(bool))]
+internal static class Patch_PlayerBuff_Removed
+{
+    private static void Postfix(CharacterBuffManager __instance, Buff toRemove)
+    {
+        if (Buff_.ApplyingNetworkBuff || !toRemove || !__instance.Master || !__instance.Master.IsMainCharacter) return;
+        if (ColdBuffSync.IsCold(toRemove.ID)) return;
+        COOPManager.Buff?.PublishLocalRemoval(toRemove.ID);
+    }
+}
+
+[HarmonyPatch(typeof(CharacterBuffManager), nameof(CharacterBuffManager.RemoveBuff), typeof(Buff), typeof(bool))]
+internal static class Patch_AIBuff_Removed
+{
+    private static void Postfix(CharacterBuffManager __instance, Buff toRemove)
+    {
+        if (Buff_.ApplyingNetworkBuff || !toRemove || !__instance.Master) return;
+        var target = __instance.Master;
+        if (target.IsMainCharacter || target.GetComponentInChildren<RemoteReplicaTag>(true) != null) return;
+        COOPManager.AI?.Server_HandleBuffApplied(target, toRemove.fromWeaponID, toRemove.ID, true);
     }
 }

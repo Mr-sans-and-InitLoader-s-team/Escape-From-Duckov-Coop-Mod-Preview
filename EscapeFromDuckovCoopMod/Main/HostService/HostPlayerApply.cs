@@ -26,6 +26,7 @@ public class HostPlayerApply
     private readonly Dictionary<string, string> _lastEquipmentAppliedByRemote = new();
     private readonly Dictionary<string, string> _lastWeaponAppliedByPeer = new();
     private readonly Dictionary<string, float> _lastWeaponAppliedTimeByPeer = new();
+    private readonly WeaponReplayOrder _weaponOrder = new();
     private NetService Service => NetService.Instance;
 
     private bool IsServer => Service != null && Service.IsServer;
@@ -50,8 +51,9 @@ public class HostPlayerApply
         if (slotName == null) return;
 
         var want = itemId ?? string.Empty;
-        var key = $"{remoteObj.GetInstanceID()}:{slotName}";
-        if (_lastEquipmentAppliedByRemote.TryGetValue(key, out var last) && last == want)
+        var key = $"{characterModel.GetInstanceID()}:{slotName}";
+        if (_lastEquipmentAppliedByRemote.TryGetValue(key, out var last) && last == want &&
+            (want.Length == 0 || characterModel.GetComponentsInChildren<ItemAgent>(true).Any(agent => agent.Item != null && agent.Item.TypeID.ToString() == want)))
             return;
 
         try
@@ -67,6 +69,11 @@ public class HostPlayerApply
                 return;
 
             var item = await COOPManager.GetItemAsync(typeId);
+            if (!RemoteLoadoutReplay.IsCurrent(peer, remoteObj, characterModel))
+            {
+                if (item != null) UnityEngine.Object.Destroy(item.gameObject);
+                return;
+            }
             if (item == null)
             {
                 Debug.LogWarning($"无法获取物品: ItemId={want}，槽位 {slotHash} 未更新");
@@ -109,9 +116,9 @@ public class HostPlayerApply
         var model = cm ? cm.characterModel : null;
         if (model == null) return;
 
-        // —— 幂等/去抖：同一 peer、同一槽、同一 item 在 200ms 内重复到达则忽略 ——
-        var key = $"{peer?.Id ?? -1}:{slotHash}";
-        var want = itemId ?? string.Empty;
+        // 同一角色连续重复的持握状态才去抖，不能跳过切换到其他槽位后的切回。
+        var key = $"{model.GetInstanceID()}";
+        var want = $"{slotHash}:{itemId ?? string.Empty}";
         if (_lastWeaponAppliedByPeer.TryGetValue(key, out var last) &&
             last == want &&
             _lastWeaponAppliedTimeByPeer.TryGetValue(key, out var ts) &&
@@ -128,6 +135,8 @@ public class HostPlayerApply
             if (typeId == 0 && !string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var parsed))
                 typeId = parsed;
 
+            var modelId = model.GetInstanceID();
+            var receipt = _weaponOrder.Receive(modelId, (int)socket, typeId != 0);
             if (typeId != 0)
             {
                 // 准备 Item，挂载前先杀残留 agent
@@ -138,6 +147,12 @@ public class HostPlayerApply
                 if (item == null)
                     item = await COOPManager.GetItemAsync(typeId);
 
+                if (!RemoteLoadoutReplay.IsCurrent(peer, remoteObj, model) || !_weaponOrder.IsCurrent(modelId, receipt))
+                {
+                    if (item != null) UnityEngine.Object.Destroy(item.gameObject);
+                    return;
+                }
+
                 if (item != null)
                 {
 
@@ -146,6 +161,9 @@ public class HostPlayerApply
                     try
                     {
                         await UniTask.NextFrame(); // 让挂载真正生效，避免同帧取不到组件
+
+                        if (!RemoteLoadoutReplay.IsCurrent(peer, remoteObj, model) || !_weaponOrder.IsCurrent(modelId, receipt))
+                            return;
 
                         var gun = model ? model.GetComponentInChildren<ItemAgent_Gun>(true) : null;
                         var mz = gun && gun.muzzle ? gun.muzzle : null;

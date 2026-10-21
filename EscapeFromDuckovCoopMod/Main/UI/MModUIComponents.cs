@@ -65,9 +65,11 @@ public class MModUIComponents
     public Transform HostListContent;
     public Transform PlayerListContent;
     public Transform SteamLobbyListContent;
+    internal CoopLobbyModeBadge SteamCoopModeBadge;
 
     // 按钮
     public Button ModeToggleButton;
+    public Button CoopModeSelectButton;
     public Button SteamCreateLeaveButton;
     public TMP_Text SteamCreateLeaveButtonText;
 

@@ -24,6 +24,12 @@ public static class CustomFace
     public static readonly Dictionary<string, string> _cliPendingFace = new();
     private static NetService Service => NetService.Instance;
 
+    internal static void ResetCache()
+    {
+        _cliPendingFace.Clear();
+        if (LocalPlayerManager.Instance != null) LocalPlayerManager.Instance._lastGoodFaceJson = null;
+    }
+
     //补充外观
     public static void Client_ApplyFaceIfAvailable(string playerId, GameObject instance, string faceOverride = null)
     {
@@ -43,15 +49,13 @@ public static class CustomFace
             if (string.IsNullOrEmpty(face))
                 return;
 
-            // 反序列化成结构体（struct 永远非 null）
-            var data = JsonUtility.FromJson<CustomFaceSettingData>(face);
-
             // 找到 CustomFaceInstance 并应用
             var cm = instance != null ? instance.GetComponentInChildren<CharacterModel>(true) : null;
             var cf = cm != null ? cm.CustomFace : null;
             if (cf != null)
             {
-                HardApplyCustomFace(cf, data);
+                var appearance = cf.GetComponent<RemoteFaceAppearance>() ?? cf.gameObject.AddComponent<RemoteFaceAppearance>();
+                appearance.Apply(face);
                 _cliPendingFace[playerId] = face; // 记住成功涂过的 JSON
             }
         }

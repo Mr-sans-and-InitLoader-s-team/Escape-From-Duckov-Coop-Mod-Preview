@@ -21,7 +21,7 @@ using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
 
-public class Buff_
+public partial class Buff_
 {
     [System.ThreadStatic] internal static bool ApplyingNetworkBuff;
 
@@ -33,6 +33,13 @@ public class Buff_
     public void Server_HandleBuffReport(NetPeer sender, PlayerBuffReportRpc message)
     {
         if (sender == null || message.BuffId == 0) return;
+        if (ColdBuffSync.IsCold(message.BuffId))
+        {
+            ColdBuffSync.ReceiveReport(sender, message);
+            return;
+        }
+
+        if (message.Removed && !string.IsNullOrEmpty(message.TargetPlayerId)) return;
 
         if (!string.IsNullOrEmpty(message.TargetPlayerId))
         {
@@ -48,8 +55,8 @@ public class Buff_
         var playerId = service?.GetPlayerId(sender);
         if (string.IsNullOrEmpty(playerId)) return;
 
-        ApplyBuffOnServerProxy(playerId, message.WeaponTypeId, message.BuffId);
-        BroadcastBuff(playerId, message.WeaponTypeId, message.BuffId, sender);
+        ApplyBuffOnServerProxy(playerId, message.WeaponTypeId, message.BuffId, message.Removed, message.Layers);
+        BroadcastBuff(playerId, message.WeaponTypeId, message.BuffId, sender, message.Removed, message.Layers);
     }
 
     private async UniTaskVoid Server_ApplyRequestedPlayerBuff(
@@ -77,43 +84,36 @@ public class Buff_
 
         if (!target) return;
 
-        var buff = await COOPManager.ResolveBuffAsync(weaponTypeId, buffId);
-        if (buff == null || !target) return;
-
-        try
-        {
-            ApplyingNetworkBuff = true;
-            target.AddBuff(buff, null, weaponTypeId);
-        }
-        finally
-        {
-            ApplyingNetworkBuff = false;
-        }
-
-        BroadcastBuff(targetPlayerId, weaponTypeId, buffId, sender);
+        if (await ApplyBuffToCharacter(targetPlayerId, target, weaponTypeId, buffId, false))
+            BroadcastBuff(targetPlayerId, weaponTypeId, buffId, sender);
     }
 
-    public void Server_BroadcastHostBuff(int weaponTypeId, int buffId)
+    public void Server_BroadcastHostBuff(int weaponTypeId, int buffId) => Server_BroadcastHostBuff(weaponTypeId, buffId, false,
+        CharacterMainControl.Main.GetBuffManager().Buffs.FirstOrDefault(b => b && b.ID == buffId)?.CurrentLayers ?? 0);
+
+    private void Server_BroadcastHostBuff(int weaponTypeId, int buffId, bool removed, int? layers = null)
     {
         var playerId = Service?.GetPlayerId(null);
         if (string.IsNullOrEmpty(playerId)) return;
 
-        BroadcastBuff(playerId, weaponTypeId, buffId, null);
+        BroadcastBuff(playerId, weaponTypeId, buffId, null, removed, layers);
     }
 
-    private void BroadcastBuff(string playerId, int weaponTypeId, int buffId, NetPeer exclude)
+    private void BroadcastBuff(string playerId, int weaponTypeId, int buffId, NetPeer exclude, bool removed = false, int? layers = null)
     {
         var rpc = new PlayerBuffBroadcastRpc
         {
             PlayerId = playerId,
             WeaponTypeId = weaponTypeId,
-            BuffId = buffId
+            BuffId = buffId,
+            Removed = removed,
+            Layers = layers
         };
 
         CoopTool.SendRpc(in rpc, exclude);
     }
 
-    private void ApplyBuffOnServerProxy(string playerId, int weaponTypeId, int buffId)
+    private void ApplyBuffOnServerProxy(string playerId, int weaponTypeId, int buffId, bool removed, int? layers = null)
     {
         var service = Service;
         var remotes = service?.remoteCharacters;
@@ -128,21 +128,7 @@ public class Buff_
             var cmc = kv.Value ? kv.Value.GetComponent<CharacterMainControl>() : null;
             if (!cmc) return;
 
-            COOPManager.ResolveBuffAsync(weaponTypeId, buffId)
-                .ContinueWith(buff =>
-                {
-                    if (buff == null || !cmc) return;
-                    try
-                    {
-                        ApplyingNetworkBuff = true;
-                        cmc.AddBuff(buff, null, weaponTypeId);
-                    }
-                    finally
-                    {
-                        ApplyingNetworkBuff = false;
-                    }
-                })
-                .Forget();
+            ApplyBuffToCharacter(playerId, cmc, weaponTypeId, buffId, removed, layers).Forget();
             return;
         }
     }
@@ -161,59 +147,40 @@ public class Buff_
     public void Client_HandleBuffBroadcast(PlayerBuffBroadcastRpc message)
     {
         if (string.IsNullOrEmpty(message.PlayerId)) return;
-
-        if (Service != null && Service.IsSelfId(message.PlayerId))
+        if (ColdBuffSync.IsCold(message.BuffId))
         {
-            ApplyBuffToLocalPlayer(message.WeaponTypeId, message.BuffId).Forget();
+            ColdBuffSync.ReceiveBroadcast(message);
             return;
         }
 
-        ApplyBuffProxy_Client(message.PlayerId, message.WeaponTypeId, message.BuffId).Forget();
+        if (Service != null && Service.IsSelfId(message.PlayerId))
+        {
+            ApplyBuffToCharacter(message.PlayerId, CharacterMainControl.Main, message.WeaponTypeId, message.BuffId, message.Removed, message.Layers).Forget();
+            return;
+        }
+
+        ApplyBuffProxy_Client(message.PlayerId, message.WeaponTypeId, message.BuffId, message.Removed, message.Layers).Forget();
     }
 
-    private static async UniTaskVoid ApplyBuffToLocalPlayer(int weaponTypeId, int buffId)
-    {
-        var buff = await COOPManager.ResolveBuffAsync(weaponTypeId, buffId);
-        var main = CharacterMainControl.Main;
-        if (buff == null || !main) return;
+    public UniTask ApplyBuffProxy_Client(string playerId, int weaponTypeId, int buffId) =>
+        ApplyBuffProxy_Client(playerId, weaponTypeId, buffId, false);
 
-        try
-        {
-            ApplyingNetworkBuff = true;
-            main.AddBuff(buff, null, weaponTypeId);
-        }
-        finally
-        {
-            ApplyingNetworkBuff = false;
-        }
-    }
-
-    public async UniTask ApplyBuffProxy_Client(string playerId, int weaponTypeId, int buffId)
+    private async UniTask ApplyBuffProxy_Client(string playerId, int weaponTypeId, int buffId, bool removed, int? layers = null)
     {
         if (NetService.Instance.IsSelfId(playerId)) return; // 不应该给本地自己用这个分支
         if (!clientRemoteCharacters.TryGetValue(playerId, out var go) || go == null)
         {
-            // 远端主机克隆还没生成？先记下来，等 CreateRemoteCharacterForClient 时补发
+            var order = _replayOrder.Receive(playerId, buffId, removed || layers.HasValue);
             if (!CoopTool._cliPendingProxyBuffs.TryGetValue(playerId, out var list))
-                list = CoopTool._cliPendingProxyBuffs[playerId] = new List<(int, int)>();
-            list.Add((weaponTypeId, buffId));
+                list = CoopTool._cliPendingProxyBuffs[playerId] = new();
+            if (removed || layers.HasValue) list.RemoveAll(buff => buff.buffId == buffId);
+            if (layers != 0 && (!removed || layers.HasValue)) list.Add((weaponTypeId, buffId, layers, removed, order));
             return;
         }
 
         var cmc = go.GetComponent<CharacterMainControl>();
         if (!cmc) return;
 
-        var buff = await COOPManager.ResolveBuffAsync(weaponTypeId, buffId);
-        if (buff == null || !cmc) return;
-
-        try
-        {
-            ApplyingNetworkBuff = true;
-            cmc.AddBuff(buff, null, weaponTypeId);
-        }
-        finally
-        {
-            ApplyingNetworkBuff = false;
-        }
+        await ApplyBuffToCharacter(playerId, cmc, weaponTypeId, buffId, removed, layers);
     }
 }

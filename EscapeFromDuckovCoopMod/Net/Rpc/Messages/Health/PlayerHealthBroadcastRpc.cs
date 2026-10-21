@@ -10,6 +10,7 @@ public struct PlayerHealthBroadcastRpc : IRpcMessage
     public float CurrentHealth;
     public bool HasDamage;
     public DamageForwardPayload Damage;
+    public PlayerBuffState[] Buffs;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -19,6 +20,7 @@ public struct PlayerHealthBroadcastRpc : IRpcMessage
         writer.Put(HasDamage);
         if (HasDamage)
             Damage.Serialize(writer);
+        PlayerBuffState.Write(writer, Buffs);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -32,5 +34,6 @@ public struct PlayerHealthBroadcastRpc : IRpcMessage
             Damage = default;
             Damage.Deserialize(reader);
         }
+        Buffs = PlayerBuffState.Read(reader);
     }
 }

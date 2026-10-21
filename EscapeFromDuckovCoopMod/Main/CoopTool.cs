@@ -25,7 +25,7 @@ namespace EscapeFromDuckovCoopMod;
 
 public static class CoopTool
 {
-    public static readonly Dictionary<string, List<(int weaponTypeId, int buffId)>> _cliPendingProxyBuffs = new();
+    public static readonly Dictionary<string, List<(int weaponTypeId, int buffId, int? layers, bool removed, long order)>> _cliPendingProxyBuffs = new();
 
     // 客户端：远端克隆未生成前收到的远端HP缓存
     public static readonly Dictionary<string, (float max, float cur)> _cliPendingRemoteHp = new();
@@ -88,6 +88,8 @@ public static class CoopTool
     // 只清“目标插槽”，避免每次都清三处带来的频繁销毁/创建
     public static void ClearWeaponSlot(CharacterModel model, HandheldSocketTypes socket)
     {
+        var held = model ? model.characterMainControl?.CurrentHoldItemAgent : null;
+        if (held && held.handheldSocket != socket) return;
         COOPManager.ChangeWeaponModel(model, null, socket);
     }
 
@@ -139,6 +141,19 @@ public static class CoopTool
     public static void SendRpc<T>(in T message, NetPeer excludePeer = null)
         where T : struct, IRpcMessage
     {
+        if (Service == null) return;
+        SendRpcWithDelivery(in message, RpcRegistry.GetDescriptor<T>().Delivery, excludePeer);
+    }
+
+    internal static void SendUnreliableRpc<T>(in T message, NetPeer excludePeer = null)
+        where T : struct, IRpcMessage
+    {
+        SendRpcWithDelivery(in message, DeliveryMethod.Unreliable, excludePeer);
+    }
+
+    private static void SendRpcWithDelivery<T>(in T message, DeliveryMethod delivery, NetPeer excludePeer)
+        where T : struct, IRpcMessage
+    {
         var service = Service;
         if (service == null) return;
 
@@ -164,7 +179,7 @@ public static class CoopTool
                 {
                     var peer = peers[i];
                     if (peer == null || peer == excludePeer) continue;
-                    peer.Send(writer, descriptor.Delivery);
+                    peer.Send(writer, delivery);
                     NetDiagnostics.Instance.RecordOutbound(descriptor.Op, payloadBytes);
                 }
             }
@@ -175,7 +190,7 @@ public static class CoopTool
 
                 if (service.connectedPeer != null)
                 {
-                    service.connectedPeer.Send(writer, descriptor.Delivery);
+                    service.connectedPeer.Send(writer, delivery);
                     NetDiagnostics.Instance.RecordOutbound(descriptor.Op, payloadBytes);
                 }
             }
@@ -214,7 +229,7 @@ public static class CoopTool
         if (IsServer) return;
 
         var service = Service;
-        if (service == null) return;
+        if (service == null || service.TransportMode != NetworkTransportMode.Direct) return;
 
         var manager = service.netManager;
         if (manager == null || !manager.IsRunning) return;
@@ -400,7 +415,7 @@ public static class CoopTool
         HealthTool.BindHealthToCharacter(h, cmc);
 
         var applyMax = snap.max > 0f ? snap.max : h.MaxHealth > 0f ? h.MaxHealth : 40f;
-        var applyCur = snap.cur > 0f ? snap.cur : applyMax;
+        var applyCur = Mathf.Clamp(snap.cur, 0f, applyMax);
 
         var characterItemInstance = cmc.CharacterItem;
         if (characterItemInstance != null)
@@ -426,24 +441,9 @@ public static class CoopTool
 
         if (_cliPendingProxyBuffs.TryGetValue(playerId, out var pendings) && pendings != null && pendings.Count > 0)
         {
-            if (cmc)
-                foreach (var (weaponTypeId, buffId) in pendings)
-                    COOPManager.ResolveBuffAsync(weaponTypeId, buffId)
-                        .ContinueWith(b =>
-                        {
-                            if (b == null || !cmc) return;
-
-                            try
-                            {
-                                Buff_.ApplyingNetworkBuff = true;
-                                cmc.AddBuff(b, null, weaponTypeId);
-                            }
-                            finally
-                            {
-                                Buff_.ApplyingNetworkBuff = false;
-                            }
-                        })
-                        .Forget();
+            if (cmc && COOPManager.Buff != null)
+            foreach (var (weaponTypeId, buffId, layers, removed, order) in pendings)
+                    COOPManager.Buff.ApplyPendingProxyBuff(playerId, cmc, weaponTypeId, buffId, layers, removed, order).Forget();
 
             _cliPendingProxyBuffs.Remove(playerId);
         }
@@ -502,7 +502,7 @@ public static class CoopTool
 
         foreach (var t in allTransforms)
         {
-            if (t.name == "CustomFace" || t.name == "SelectDifficulty")
+            if (t.name == "SelectDifficulty")
             {
                 t.gameObject.SetActive(t1);
                 Debug.Log($"Hide: {t.name} on path: {t.gameObject.name}");

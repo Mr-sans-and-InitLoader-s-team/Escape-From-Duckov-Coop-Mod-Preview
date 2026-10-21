@@ -28,6 +28,10 @@ public class Spectator : MonoBehaviour
     public int _spectateIdx = -1;
     public float _spectateNextSwitchTime;
     public DamageInfo _lastDeathInfo;
+    private bool _deathClosurePending;
+    private Health _settlementRequestedHealth;
+    private UniTask _deathClosureTask;
+    public bool IsLocalDeathPending => _deathClosurePending || CharacterMainControl.Main?.Health?.IsDead == true;
     private NetService Service => NetService.Instance;
 
     private bool IsServer => Service != null && Service.IsServer;
@@ -48,6 +52,9 @@ public class Spectator : MonoBehaviour
     public bool TryEnterSpectatorOnDeath(DamageInfo dmgInfo)
     {
         var main = CharacterMainControl.Main;
+        var skipSpectator = main && _settlementRequestedHealth == main.Health;
+        _settlementRequestedHealth = null;
+        if (skipSpectator) return false;
        // if (!LevelManager.LevelInited || main == null) return false;
 
         BuildSpectateList(main);
@@ -59,10 +66,7 @@ public class Spectator : MonoBehaviour
         _spectatorActive = true;
         _spectateIdx = 0;
 
-        if (GameCamera.Instance)
-        {
-            LevelManager.Instance.SetControllingCharacter(_spectateList[_spectateIdx]);
-        }
+        RefreshCameraTarget();
        
 
         if (SceneNet.Instance.sceneVoteActive)
@@ -202,14 +206,27 @@ public class Spectator : MonoBehaviour
     {
         if (_spectateList.Count == 0) return;
         _spectateIdx = (_spectateIdx + 1) % _spectateList.Count;
-        if (GameCamera.Instance) LevelManager.Instance.SetControllingCharacter(_spectateList[_spectateIdx]);
+        RefreshCameraTarget();
     }
 
     public void SpectatePrev()
     {
         if (_spectateList.Count == 0) return;
         _spectateIdx = (_spectateIdx - 1 + _spectateList.Count) % _spectateList.Count;
-        if (GameCamera.Instance) LevelManager.Instance.SetControllingCharacter(_spectateList[_spectateIdx]);
+        RefreshCameraTarget();
+    }
+
+    public void RefreshCameraTarget(CharacterMainControl previous = null)
+    {
+        if (_spectateList.Count == 0) return;
+        var previousIndex = previous ? _spectateList.IndexOf(previous) : -1;
+        if (previousIndex >= 0) _spectateIdx = previousIndex;
+        else if (_spectateIdx < 0 || _spectateIdx >= _spectateList.Count) _spectateIdx = 0;
+
+        var camera = GameCamera.Instance;
+        var target = _spectateList[_spectateIdx];
+        // Changing the controlling character also hands local input to the remote replica.
+        if (camera && camera.target != target) camera.SetTarget(target);
     }
 
     public void EndSpectatorAndShowClosure(bool force = false)
@@ -217,17 +234,43 @@ public class Spectator : MonoBehaviour
         _spectatorEndOnVotePending = false;
 
         if (!_spectatorActive && !force) return;
+        if (!_spectatorActive && !_deathClosurePending)
+        {
+            var health = CharacterMainControl.Main?.Health;
+            if (!health || !health.IsDead) return;
+            _settlementRequestedHealth = health;
+        }
         _spectatorActive = false;
-        _skipSpectatorForNextClosure = true;
+    }
 
+    public UniTask BeginDeathClosure(DamageInfo damage, float duration)
+    {
+        if (_deathClosurePending) return _deathClosureTask;
+        TryEnterSpectatorOnDeath(damage);
+        _deathClosureTask = WaitForDeathClosure(damage, duration).Preserve();
+        return _deathClosureTask;
+    }
+
+    private async UniTask WaitForDeathClosure(DamageInfo damage, float duration)
+    {
+        _deathClosurePending = true;
         try
         {
-            var t = AccessTools.TypeByName("Duckov.UI.ClosureView");
-            var mi = AccessTools.Method(t, "ShowAndReturnTask", new[] { typeof(DamageInfo), typeof(float) });
-            if (mi != null) ((UniTask)mi.Invoke(null, new object[] { _lastDeathInfo, 0.5f })).Forget();
+            await UniTask.WaitUntil(() => !_spectatorActive || !networkStarted);
+            _spectatorActive = false;
+            _spectatorEndOnVotePending = false;
+            var camera = GameCamera.Instance;
+            var main = CharacterMainControl.Main;
+            if (camera && main && camera.target != main) camera.SetTarget(main);
+            _skipSpectatorForNextClosure = true;
+            // Keep the native CharacterDieTask awaiting this settlement before it returns to base.
+            await Duckov.UI.ClosureView.ShowAndReturnTask(damage, duration);
         }
-        catch
+        finally
         {
+            _deathClosurePending = false;
+            _settlementRequestedHealth = null;
+            _skipSpectatorForNextClosure = false;
         }
     }
 }

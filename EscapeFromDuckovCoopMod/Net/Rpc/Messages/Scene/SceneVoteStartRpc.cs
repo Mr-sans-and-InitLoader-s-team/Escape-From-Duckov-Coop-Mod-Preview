@@ -17,6 +17,8 @@ public struct SceneVoteStartRpc : IRpcMessage
     public string LocationName;
     public string HostSceneId;
     public string[] ParticipantIds;
+    public string TeleporterToken;
+    public int BeaconIndex;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -36,10 +38,10 @@ public struct SceneVoteStartRpc : IRpcMessage
 
         var count = ParticipantIds?.Length ?? 0;
         writer.Put(count);
-        if (count <= 0 || ParticipantIds == null) return;
-
-        for (var i = 0; i < ParticipantIds.Length; i++)
+        for (var i = 0; i < count; i++)
             writer.Put(ParticipantIds[i] ?? string.Empty);
+        writer.Put(TeleporterToken ?? string.Empty);
+        writer.Put(BeaconIndex);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -65,5 +67,7 @@ public struct SceneVoteStartRpc : IRpcMessage
         ParticipantIds = new string[count];
         for (var i = 0; i < count; i++)
             ParticipantIds[i] = reader.GetString() ?? string.Empty;
+        TeleporterToken = reader.AvailableBytes > 0 ? reader.GetString() : string.Empty;
+        BeaconIndex = reader.AvailableBytes >= 4 ? reader.GetInt() : -1;
     }
 }

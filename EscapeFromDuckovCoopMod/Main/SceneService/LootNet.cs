@@ -1,4 +1,4 @@
-// Escape-From-Duckov-Coop-Mod-Preview
+﻿// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -23,6 +23,7 @@ using ItemStatsSystem;
 using ItemStatsSystem.Items;
 using Duckov.Scenes;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -37,6 +38,11 @@ namespace EscapeFromDuckovCoopMod;
     private readonly HashSet<Item> _srvPlayerPlaced = new();
     private readonly Dictionary<int, bool> _cliLootVisibility = new();
     private readonly Dictionary<Item, string> _cliSlotOrigins = new();
+    private readonly LootPutReceipts _cliPutReceipts = new();
+    private readonly HashSet<Inventory> _cliInitializedLoot = new(new InventoryRefEq());
+
+    internal bool Client_WaitingForLootState(Inventory inv) => !IsServer && networkStarted && inv &&
+        !_cliInitializedLoot.Contains(inv) && LootSearchWorldGate.IsWorldLootByInventory(inv);
 
     private sealed class InventoryRefEq : IEqualityComparer<Inventory>
     {
@@ -58,7 +64,8 @@ namespace EscapeFromDuckovCoopMod;
 
     public bool ApplyingLootState => _applyingLootState;
 
-    private static bool IsQuestTagged(Item item) => ItemTool.HasQuestTag(item);
+    private static bool IsQuestTagged(Item item, Inventory inventory = null) =>
+        !SharedHomeStorage.IsShared(inventory ?? item?.InInventory) && ItemTool.HasQuestTag(item);
 
     public void Client_RecordSlotOrigin(Item item, string slotKey)
     {
@@ -79,11 +86,14 @@ namespace EscapeFromDuckovCoopMod;
 
     public void Reset()
     {
+        CorpseRecovery.ResetNetwork();
         _applyingLootState = false;
         _serverApplyingLoot = false;
         _nextLootToken = 1;
 
         _cliPendingPut.Clear();
+        _cliPutReceipts.Clear();
+        _cliInitializedLoot.Clear();
         _cliSwapByVictim.Clear();
         _cliActiveLoot.Clear();
         _srvPlayerPlaced.Clear();
@@ -123,33 +133,40 @@ namespace EscapeFromDuckovCoopMod;
         _srvHookedItems.Clear();
     }
 
-    public void Server_HandlePlayerDeathWithInventory(NetPacketReader reader)
+    public void Server_HandlePlayerDeathWithInventory(CoopPeer sender, NetPacketReader reader)
     {
-        var pos = reader.GetV3cm();
-
-        var itemCount = reader.GetInt();
-        var itemSnapshots = new List<ItemSnapshot>();
-        
-        for (int i = 0; i < itemCount; i++)
+        if (!IsServer || !networkStarted || sender == null || HealthM.Instance == null) return;
+        try
         {
-            try
+            var lifeId = reader.GetString();
+            // Health reports and death inventory use the same reliable ordered
+            // channel. A living player, duplicate, or old life has no spawn permit.
+            if (!HealthM.Instance.Server_CanSpawnDeathLoot(sender, lifeId)) return;
+            var pos = reader.GetV3cm();
+            if (float.IsNaN(pos.x) || float.IsInfinity(pos.x) || float.IsNaN(pos.y) ||
+                float.IsInfinity(pos.y) || float.IsNaN(pos.z) || float.IsInfinity(pos.z)) return;
+            var itemCount = reader.GetInt();
+            if (itemCount < 0 || itemCount > reader.AvailableBytes) return;
+            var itemSnapshots = new List<ItemSnapshot>(itemCount);
+            for (var i = 0; i < itemCount; i++)
             {
-                var snap = ItemTool.ReadItemSnapshot(reader);
-                itemSnapshots.Add(snap);
+                var snapshot = ItemTool.ReadItemSnapshot(reader);
+                if (snapshot.TypeId <= 0) return;
+                itemSnapshots.Add(snapshot);
             }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[DEATH] Error reading item {i}: {ex}");
-            }
+            var recordId = reader.AvailableBytes > 0 ? reader.GetString() : string.Empty;
+            if (reader.AvailableBytes != 0) return;
+            // Consume before entering the asynchronous item creation path.
+            if (!HealthM.Instance.Server_ConsumeDeathLoot(sender, lifeId)) return;
+            Server_SpawnDeadPlayerLoot(pos, itemSnapshots, sender, recordId);
         }
-        
-        Debug.Log($"[DEATH] Read {itemSnapshots.Count} item snapshots from client");
-        
-        // NOW spawn with the pre-read data
-        Server_SpawnDeadPlayerLoot(pos, itemSnapshots);
+        catch (Exception ex)
+        {
+            Debug.LogError($"[DEATH] Rejected invalid inventory report from {sender.EndPoint}: {ex}");
+        }
     }
 
-    private async void Server_SpawnDeadPlayerLoot(Vector3 position, List<ItemSnapshot> itemSnapshots)
+    private async void Server_SpawnDeadPlayerLoot(Vector3 position, List<ItemSnapshot> itemSnapshots, NetPeer owner, string recordId)
     {
         try
         {            
@@ -163,6 +180,8 @@ namespace EscapeFromDuckovCoopMod;
             
             // Spawn the loot container
             var lootObj = GameObject.Instantiate(prefab.gameObject, position, Quaternion.identity);
+            lootObj.SetActive(false);
+            var scene = SceneManager.GetActiveScene();
 
             var lootBox = lootObj.GetComponent<InteractableLootbox>();
             if (!lootBox)
@@ -191,6 +210,12 @@ namespace EscapeFromDuckovCoopMod;
                 {
                     var snap = itemSnapshots[i];
                     var tmpItem = await ItemAssetsCollection.InstantiateAsync(snap.TypeId);
+                    if (!networkStarted || !IsServer || SceneManager.GetActiveScene() != scene || !inventory)
+                    {
+                        if (tmpItem) GameObject.Destroy(tmpItem.gameObject);
+                        if (lootObj) GameObject.Destroy(lootObj);
+                        return;
+                    }
                     ItemTool.ApplySnapshot(tmpItem, snap);
                     inventory.AddItem(tmpItem);
                 }
@@ -226,6 +251,9 @@ namespace EscapeFromDuckovCoopMod;
             }
             
             Debug.Log($"[DEATH] Loot container spawned successfully!");
+            DeadLootBox.Instance?.Server_OnDeadLootboxSpawned(lootBox, null, true, Service.GetPlayerId(owner));
+            CorpseRecovery.RegisterServerBody(lootBox, owner, recordId);
+            lootObj.SetActive(true);
             
         }
         catch (Exception ex)
@@ -268,6 +296,7 @@ namespace EscapeFromDuckovCoopMod;
     public bool Client_ShouldSendLootChange(Inventory inv)
     {
         if (IsServer || inv == null) return false;
+        if (SharedHomeStorage.IsShared(inv) && !SharedHomeStorage.CanTransfer) return false;
         return _cliActiveLoot.Contains(inv);
     }
 
@@ -289,6 +318,7 @@ namespace EscapeFromDuckovCoopMod;
     public void Server_BroadcastHostSlotChange(Inventory inv, int slot)
     {
         if (!IsServer || inv == null) return;
+        if (SharedHomeStorage.Sorting && SharedHomeStorage.IsShared(inv)) return;
 
         var lm = LootManagerInstance;
         if (lm == null) return;
@@ -309,7 +339,7 @@ namespace EscapeFromDuckovCoopMod;
         BroadcastLootDelta(inv, slot, typeId, stack, cleared);
     }
 
-    private static void ResetInspectionFlags(Inventory inv, Item item, bool placedByPlayer = false)
+    private static void ResetInspectionFlags(Inventory inv, Item item, bool placedByPlayer = false, bool? inspectedLocally = null)
     {
         if (inv == null || item == null) return;
 
@@ -342,10 +372,7 @@ namespace EscapeFromDuckovCoopMod;
         {
             // 保留已经鉴定过的物品，未鉴定的保持迷雾，只是停止检查动画
             item.Inspecting = false;
-            if (!item.Inspected)
-            {
-                item.Inspected = false;
-            }
+            if (inspectedLocally.HasValue) item.Inspected = inspectedLocally.Value;
         }
         else
         {
@@ -439,7 +466,7 @@ namespace EscapeFromDuckovCoopMod;
         viewers.Add(peer);
     }
 
-    private void Server_EnsureInventoryHook(Inventory inv)
+    internal void Server_EnsureInventoryHook(Inventory inv)
     {
         if (!IsServer || inv == null) return;
         if (!LootboxDetectUtil.IsLootboxInventory(inv) || LootboxDetectUtil.IsPrivateInventory(inv)) return;
@@ -660,6 +687,7 @@ namespace EscapeFromDuckovCoopMod;
 
     public void Client_ApplyLootboxState(LootStateRpc rpc)
     {
+        if (rpc.Id.LootUid == SharedHomeStorage.LootUid && !SharedHomeSave.OverlayActive) return;
         var lm = LootManagerInstance;
         if (IsServer || lm == null) return;
 
@@ -708,9 +736,10 @@ namespace EscapeFromDuckovCoopMod;
                     if (exist != null && IsQuestTagged(exist))
                         continue;
 
+                    var inspectedLocally = exist && exist.Inspected;
                     if (exist != null && exist.TypeID == targetSnap.TypeId && ItemTool.ApplySnapshot(exist, targetSnap))
                     {
-                        ResetInspectionFlags(inv, exist);
+                        ResetInspectionFlags(inv, exist, inspectedLocally: inspectedLocally);
                     }
                     else
                     {
@@ -720,8 +749,8 @@ namespace EscapeFromDuckovCoopMod;
                             var item = ItemTool.BuildItemFromSnapshot(targetSnap);
                             if (item)
                             {
+                                ResetInspectionFlags(inv, item, inspectedLocally: false);
                                 inv.AddAt(item, i);
-                                ResetInspectionFlags(inv, item);
                             }
                         }
                         catch (Exception ex)
@@ -757,9 +786,10 @@ namespace EscapeFromDuckovCoopMod;
                     if (exist != null && IsQuestTagged(exist))
                         return;
 
+                    var inspectedLocally = exist && exist.Inspected;
                     if (exist != null && exist.TypeID == targetSnap.TypeId && ItemTool.ApplySnapshot(exist, targetSnap))
                     {
-                        ResetInspectionFlags(inv, exist);
+                        ResetInspectionFlags(inv, exist, inspectedLocally: inspectedLocally);
                     }
                     else
                     {
@@ -769,8 +799,8 @@ namespace EscapeFromDuckovCoopMod;
                             var item = ItemTool.BuildItemFromSnapshot(targetSnap);
                             if (item)
                             {
+                                ResetInspectionFlags(inv, item, inspectedLocally: false);
                                 inv.AddAt(item, rpc.Slot);
-                                ResetInspectionFlags(inv, item);
                             }
                         }
                         catch (Exception ex)
@@ -783,6 +813,8 @@ namespace EscapeFromDuckovCoopMod;
         }
         finally
         {
+            _cliPutReceipts.Apply(inv, rpc.IsSnapshot ? null : rpc.Slot);
+            if (rpc.IsSnapshot) _cliInitializedLoot.Add(inv);
             _applyingLootState = false;
         }
     }
@@ -895,7 +927,7 @@ namespace EscapeFromDuckovCoopMod;
                 return;
             }
 
-            if (IsQuestTagged(item))
+            if (IsQuestTagged(item, inv))
             {
                 UnityEngine.Object.Destroy(item.gameObject);
                 Server_SendLootDeny(peer, "quest_item");
@@ -919,6 +951,8 @@ namespace EscapeFromDuckovCoopMod;
                     var add = Mathf.Min(space, item.StackCount);
                     candidate.StackCount += add;
                     Server_HookItemSlots(candidate);
+                    _srvPlayerPlaced.Add(candidate);
+                    ResetInspectionFlags(inv, candidate, true);
                     BroadcastLootDelta(inv, i, candidate.TypeID, candidate.StackCount, false);
                     SendLootPutOk(peer, rpc.Token, inv, i, candidate.StackCount);
                     item.StackCount -= add;
@@ -1001,6 +1035,7 @@ namespace EscapeFromDuckovCoopMod;
     {
         var lm = LootManagerInstance;
         if (!IsServer || inv == null || lm == null) return;
+        CorpseRecovery.QueueSnapshot(inv);
 
         Item item = null;
         try
@@ -1086,7 +1121,8 @@ namespace EscapeFromDuckovCoopMod;
             Id = lm.BuildLootIdentifier(inv),
             Token = token,
             Slot = slot,
-            Stack = stack
+            Stack = stack,
+            TypeId = inv.GetItemAt(slot)?.TypeID ?? 0
         };
 
         CoopTool.SendRpcTo(peer, in rpc);
@@ -1114,11 +1150,29 @@ namespace EscapeFromDuckovCoopMod;
         if (IsServer || lm == null) return;
         var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
         if (inv && _cliVersions.TryGetValue(inv, out var v)) _cliVersions[inv] = v; // keep version aligned
+        _cliPendingPut.TryGetValue(rpc.Token, out var placed);
         _cliPendingPut.Remove(rpc.Token);
 
         if (!inv) return;
+        var typeId = rpc.TypeId > 0 ? rpc.TypeId : !ReferenceEquals(placed, null) ? placed.TypeID : 0;
+        _cliPutReceipts.Remember(inv, rpc.Slot, typeId);
         var item = inv.GetItemAt(rpc.Slot);
-        if (item) item.StackCount = Mathf.Max(1, rpc.Stack);
+        var applying = _applyingLootState;
+        _applyingLootState = true;
+        try
+        {
+            if (placed && !ReferenceEquals(placed, item) && ReferenceEquals(placed.InInventory, inv))
+            {
+                placed.Detach();
+                placed.DestroyTree();
+            }
+            if (item && (typeId == 0 || item.TypeID == typeId))
+            {
+                item.StackCount = Mathf.Max(1, rpc.Stack);
+                ResetInspectionFlags(inv, item, placedByPlayer: true);
+            }
+        }
+        finally { _applyingLootState = applying; }
     }
 
     public void Client_OnLootTakeOk(LootTakeOkRpc rpc)

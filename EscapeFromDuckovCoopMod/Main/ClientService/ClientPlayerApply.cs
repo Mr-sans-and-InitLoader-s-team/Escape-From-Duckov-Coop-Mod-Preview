@@ -24,6 +24,7 @@ public class ClientPlayerApply
 
     private readonly Dictionary<string, string> _lastWeaponAppliedByPlayer = new();
     private readonly Dictionary<string, float> _lastWeaponAppliedTimeByPlayer = new();
+    private readonly WeaponReplayOrder _weaponOrder = new();
     private NetService Service => NetService.Instance;
 
     private bool IsServer => Service != null && Service.IsServer;
@@ -81,6 +82,11 @@ public class ClientPlayerApply
             if (!string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var ids))
             {
                 var item = await COOPManager.GetItemAsync(ids);
+                if (!RemoteLoadoutReplay.IsCurrent(playerId, remoteObj, characterModel))
+                {
+                    if (item != null) UnityEngine.Object.Destroy(item.gameObject);
+                    return;
+                }
                 if (item == null) Debug.LogWarning($"无法获取物品: ItemId={itemId}，槽位 {slotHash} 未更新");
                 if (slotHash == 100) COOPManager.ChangeArmorModel(characterModel, item);
                 if (slotHash == 200) COOPManager.ChangeHelmatModel(characterModel, item);
@@ -97,6 +103,11 @@ public class ClientPlayerApply
             if (int.TryParse(itemId, out var ids))
             {
                 var item = await COOPManager.GetItemAsync(ids);
+                if (!RemoteLoadoutReplay.IsCurrent(playerId, remoteObj, characterModel))
+                {
+                    if (item != null) UnityEngine.Object.Destroy(item.gameObject);
+                    return;
+                }
                 if (item != null)
                 {
                     if (slotName == "armorSlot") COOPManager.ChangeArmorModel(characterModel, item);
@@ -123,8 +134,8 @@ public class ClientPlayerApply
         var model = cm ? cm.characterModel : null;
         if (model == null) return;
 
-        var key = $"{playerId}:{slotHash}";
-        var want = itemId ?? string.Empty;
+        var key = $"{model.GetInstanceID()}";
+        var want = $"{slotHash}:{itemId ?? string.Empty}";
         if (_lastWeaponAppliedByPlayer.TryGetValue(key, out var last) &&
             last == want &&
             _lastWeaponAppliedTimeByPlayer.TryGetValue(key, out var ts) &&
@@ -141,6 +152,8 @@ public class ClientPlayerApply
             if (typeId == 0 && !string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var parsed))
                 typeId = parsed;
 
+            var modelId = model.GetInstanceID();
+            var receipt = _weaponOrder.Receive(modelId, (int)socket, typeId != 0);
             if (typeId != 0)
             {
                 var item = snapshot.TypeId != 0
@@ -149,12 +162,23 @@ public class ClientPlayerApply
 
                 if (item == null)
                     item = await COOPManager.GetItemAsync(typeId);
+                if (!RemoteLoadoutReplay.IsCurrent(playerId, remoteObj, model) || !_weaponOrder.IsCurrent(modelId, receipt))
+                {
+                    if (item != null) UnityEngine.Object.Destroy(item.gameObject);
+                    return;
+                }
                 if (item != null)
                 {
                     CoopTool.SafeKillItemAgent(item);
 
                     CoopTool.ClearWeaponSlot(model, socket);
                     await UniTask.NextFrame();
+
+                    if (!RemoteLoadoutReplay.IsCurrent(playerId, remoteObj, model) || !_weaponOrder.IsCurrent(modelId, receipt))
+                    {
+                        if (item) UnityEngine.Object.Destroy(item.gameObject);
+                        return;
+                    }
 
                     COOPManager.ChangeWeaponModel(model, item, socket);
 
@@ -173,7 +197,7 @@ public class ClientPlayerApply
         }
         catch (Exception ex)
         {
-            Debug.LogError($"更新武器失败(客户端): {playerId}, Slot={socket}, ItemId={itemId}, 错误: {ex.Message}");
+            Debug.LogError($"更新武器失败(客户端): {playerId}, Slot={socket}, ItemId={itemId}, 错误: {ex}");
         }
     }
 }

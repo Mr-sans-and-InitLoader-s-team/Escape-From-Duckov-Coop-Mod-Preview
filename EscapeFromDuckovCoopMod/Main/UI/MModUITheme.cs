@@ -13,15 +13,12 @@ public enum UIThemeMode
 
 internal static class MModUITheme
 {
-    internal static UIThemeMode CurrentMode { get; private set; } = UIThemeMode.Black;
+    internal static UIThemeMode CurrentMode { get; private set; } = UIThemeMode.White;
 
     internal static UIThemeMode NormalizeMode(UIThemeMode mode)
     {
         if (!Enum.IsDefined(typeof(UIThemeMode), mode))
-            return UIThemeMode.Black;
-
-        if (mode == UIThemeMode.White)
-            return UIThemeMode.Black;
+            return UIThemeMode.White;
 
         return mode;
     }

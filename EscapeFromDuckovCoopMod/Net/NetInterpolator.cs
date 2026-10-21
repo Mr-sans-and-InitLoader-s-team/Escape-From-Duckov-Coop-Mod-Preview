@@ -16,6 +16,9 @@
 
 namespace EscapeFromDuckovCoopMod;
 
+// GameCamera follows the target in its default-order LateUpdate. Finish the
+// remote pose first so the camera and rendered actor use the same frame.
+[DefaultExecutionOrder(-100)]
 public class NetInterpolator : MonoBehaviour
 {
     public const string MirrorVersionUsed = "73.3.0";
@@ -62,6 +65,7 @@ public class NetInterpolator : MonoBehaviour
     private float _smoothedJitter;
     private double _timeOffset;
     private bool _offsetInitialized;
+    private double _lastRealtimeArrival = double.NegativeInfinity;
     private Transform modelRoot; // 驱动朝向
 
     private Transform root; // 驱动位置
@@ -137,19 +141,12 @@ public class NetInterpolator : MonoBehaviour
             var dt = renderT - last.t;
 
             // 是否允许本帧预测：与其直接“停住等待下一包”，优先做短时预测避免电影帧感。
-            var allow = dt <= maxExtrapolate;
-
-            if (allow)
-            {
-                var vel = last.vel.sqrMagnitude > 0.0001f ? last.vel : _lastVel;
-                Apply(last.pos + vel * (float)dt, last.rot);
-                _lastVel = vel;
-            }
-            else
-            {
-                Apply(last.pos, last.rot);
-                _lastVel = last.vel;
-            }
+            var predictionTime = Math.Min(dt, Math.Max(0f, maxExtrapolate));
+            var vel = last.vel.sqrMagnitude > 0.0001f ? last.vel : _lastVel;
+            // Once prediction expires, hold its endpoint. Returning to last.pos
+            // would jump backwards every time a moving target misses a packet.
+            Apply(last.pos + vel * (float)predictionTime, last.rot);
+            _lastVel = vel;
 
             if (_buf.Count > 2) _buf.RemoveRange(0, _buf.Count - 2);
         }
@@ -249,6 +246,15 @@ public class NetInterpolator : MonoBehaviour
 
     public void PushArrival(Vector3 pos, Quaternion rot, Vector3? velocity = null)
     {
+        _lastRealtimeArrival = Time.unscaledTimeAsDouble;
+        Push(pos, rot, Time.unscaledTimeAsDouble, velocity);
+    }
+
+    public void PushStatus(Vector3 pos, Quaternion rot, Vector3? velocity = null)
+    {
+        // Full status/loadout messages carry no pose timestamp and can arrive
+        // behind the live position stream. Use them only to seed or recover it.
+        if (_buf.Count > 0 && Time.unscaledTimeAsDouble - _lastRealtimeArrival < 1d) return;
         Push(pos, rot, Time.unscaledTimeAsDouble, velocity);
     }
 

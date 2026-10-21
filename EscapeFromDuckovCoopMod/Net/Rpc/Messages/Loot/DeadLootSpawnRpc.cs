@@ -13,6 +13,7 @@ public struct DeadLootSpawnRpc : IRpcMessage
     public bool UseTombPrefab;
     public string PlayerId;
     public string PrefabName;
+    public string OwnerId;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -23,6 +24,7 @@ public struct DeadLootSpawnRpc : IRpcMessage
         writer.Put(UseTombPrefab);
         writer.Put(PlayerId ?? string.Empty);
         writer.Put(PrefabName ?? string.Empty);
+        writer.Put(OwnerId ?? string.Empty);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -34,5 +36,6 @@ public struct DeadLootSpawnRpc : IRpcMessage
         UseTombPrefab = reader.GetBool();
         PlayerId = reader.GetString();
         PrefabName = reader.GetString();
+        OwnerId = reader.AvailableBytes > 0 ? reader.GetString() : PlayerId;
     }
 }

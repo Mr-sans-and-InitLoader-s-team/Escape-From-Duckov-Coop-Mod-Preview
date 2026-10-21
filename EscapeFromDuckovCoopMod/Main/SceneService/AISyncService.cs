@@ -33,7 +33,7 @@ using Object = UnityEngine.Object;
 
 namespace EscapeFromDuckovCoopMod;
 
-public sealed class AISyncService
+public sealed partial class AISyncService
 {
     private const float VehicleTransformSyncCullDistance = 150f;
     private const float SlowAiSpeedThreshold = 1.2f;
@@ -51,7 +51,8 @@ public sealed class AISyncService
     private const float PerfLogInterval = 5f;
     private const int MaxReplicaSpawnsPerFrame = 1;
     private const int ClientEntryCheckBudgetCap = 64;
-    private const int MaxSnapshotChunkEntriesRuntime = 16;
+    private const int MaxSnapshotChunkEntriesRuntime = 4;
+    private const int MaxReliableQueueBeforeSnapshot = 64;
 
     private AISyncTuningSettings Settings => CoopAISettings.Active;
 
@@ -92,7 +93,8 @@ public sealed class AISyncService
     private readonly Queue<int> _clientReplicaSpawnQueue = new();
     private readonly HashSet<int> _clientReplicaSpawnQueued = new();
     private readonly HashSet<int> _clientReplicaSpawning = new();
-    private readonly Dictionary<int, List<(int weaponTypeId, int buffId)>> _clientPendingBuffs = new();
+    private int _clientReplicaSpawnGeneration;
+    private readonly Dictionary<int, List<(int weaponTypeId, int buffId, int? layers, bool refresh)>> _clientPendingBuffs = new();
     private readonly Dictionary<int, float> _lastHealthBroadcastTime = new();
     private readonly Dictionary<int, PendingHealthBroadcast> _pendingHealthBroadcasts = new();
     private readonly Dictionary<int, int> _lastSnapshotSignatures = new();
@@ -106,7 +108,7 @@ public sealed class AISyncService
     private readonly List<AISnapshotEntry> _snapshotBuffer = new();
     private readonly List<AISyncEntry> _clientEntryBuffer = new();
     private readonly Queue<AISnapshotEntry> _pendingSnapshotQueue = new();
-    private readonly Queue<AIStateUpdateRpc> _pendingStateUpdates = new();
+    private readonly Queue<int> _pendingStateUpdates = new();
     private readonly Dictionary<int, AIStateUpdateRpc> _latestPendingStateById = new();
     private readonly List<int> _pendingHealthFlush = new();
     private readonly List<int> _serverBuffQueueKeys = new();
@@ -135,21 +137,13 @@ public sealed class AISyncService
 
     private readonly struct PendingHealthBroadcast
     {
-        public readonly float MaxHealth;
-        public readonly float CurrentHealth;
-        public readonly float BodyArmor;
-        public readonly float HeadArmor;
         public readonly bool IsDead;
         public readonly bool HasDamage;
         public readonly DamageForwardPayload? Damage;
         public readonly float NextSendTime;
 
-        public PendingHealthBroadcast(float maxHealth, float currentHealth, float bodyArmor, float headArmor, bool isDead, bool hasDamage, DamageForwardPayload? damage, float nextSendTime)
+        public PendingHealthBroadcast(bool isDead, bool hasDamage, DamageForwardPayload? damage, float nextSendTime)
         {
-            MaxHealth = maxHealth;
-            CurrentHealth = currentHealth;
-            BodyArmor = bodyArmor;
-            HeadArmor = headArmor;
             IsDead = isDead;
             HasDamage = hasDamage;
             Damage = damage;
@@ -159,6 +153,7 @@ public sealed class AISyncService
 
     private string _lastSnapshotSceneId;
     private bool _snapshotRequested;
+    private bool _awaitingSnapshotResponse;
     private float _nextSnapshotRefreshTime;
     private float _nextVehicleSnapshotRefreshTime;
     private float _lastSnapshotReceiveTime;
@@ -238,6 +233,11 @@ public sealed class AISyncService
 
     public void Reset()
     {
+        _serverSnapshotChunks.Clear();
+        ResetNativeAreas();
+        _clientBuffOrder.Clear();
+        _aiBuffReplayOrder.Clear();
+        _clientBuffLayers.Clear();
         if (IsServer)
         {
             foreach (var watcher in _serverWatchers.Values)
@@ -266,8 +266,10 @@ public sealed class AISyncService
             _clientReplicaSpawnQueue.Clear();
             _clientReplicaSpawnQueued.Clear();
             _clientReplicaSpawning.Clear();
+            _clientReplicaSpawnGeneration++;
             _lastSnapshotSceneId = null;
             _snapshotRequested = false;
+            _awaitingSnapshotResponse = false;
             _nextSnapshotRefreshTime = 0f;
             _nextVehicleSnapshotRefreshTime = 0f;
             _lastSnapshotReceiveTime = 0f;
@@ -275,6 +277,7 @@ public sealed class AISyncService
             _lastSnapshotRecoveryTime = 0f;
             _pendingSnapshotQueue.Clear();
             _pendingStateUpdates.Clear();
+            _latestPendingStateById.Clear();
             _pendingSnapshotReset = false;
             _droppedSnapshotCount = 0;
             _droppedStateCount = 0;
@@ -282,6 +285,8 @@ public sealed class AISyncService
             _clientEntryBuffer.Clear();
             _clientReplicaRecoveryTimes.Clear();
             _clientLastDamage.Clear();
+            _clientHealthOrder.Clear();
+            _clientPendingHealth.Clear();
             _clientEntryBufferVersion = -1;
             _clientAnchorFrame = -1;
             _localAuthoritativeVehicleFrame = -1;
@@ -331,6 +336,7 @@ public sealed class AISyncService
         entry.LastKnownPosition = entry.SpawnPosition;
         entry.LastKnownRotation = entry.SpawnRotation;
         entry.LastKnownVelocity = Vector3.zero;
+        if (HasNativeArea(entry.CharacterPresetKey)) BroadcastSpawn(entry, null);
         ModApiEvents.RaiseServerRegisterAI(controller, entry);
     }
 
@@ -351,6 +357,9 @@ public sealed class AISyncService
     {
         if (!IsServer || entry == null) return;
         if (CheckAndHandleSyncBlock()) return;
+        // Hurt may briefly subtract below zero before the native shelter protection restores 1 HP.
+        // Actual deaths are published by Server_HandleDeath after native death processing.
+        if (current <= 0f) return;
 
         if (max > 0f) entry.MaxHealth = max;
         entry.CurrentHealth = Mathf.Clamp(current, 0f, entry.MaxHealth <= 0f ? float.MaxValue : entry.MaxHealth);
@@ -368,180 +377,17 @@ public sealed class AISyncService
 
         var damagePayload = damage.HasValue ? DamageForwardPayload.FromDamageInfo(damage) : (DamageForwardPayload?)null;
         entry.Status = AIStatus.Dead;
+        entry.ServerDeathHandled = true;
         if (max > 0f) entry.MaxHealth = max;
         entry.CurrentHealth = Mathf.Clamp(current, 0f, entry.MaxHealth <= 0f ? float.MaxValue : entry.MaxHealth);
         entry.BodyArmor = bodyArmor;
         entry.HeadArmor = headArmor;
         RefreshEntryPose(entry);
+        if (damage.HasValue && damage.Value.fromCharacter && damage.Value.fromCharacter.GetComponent<RemoteReplicaTag>())
+            NotifyKillerOfServerDeath(entry);
         BroadcastState(entry);
         QueueHealthBroadcast(entry, damagePayload, true);
         BroadcastDespawn(entry);
-    }
-
-    public void Server_HandleHealthReport(RpcContext context, AIHealthReportRpc message)
-    {
-        if (!IsServer || context.Sender == null) return;
-        if (CheckAndHandleSyncBlock()) return;
-        if (!CoopSyncDatabase.AI.TryGet(message.Id, out var entry) || entry == null) return;
-
-        var damage = message.HasDamage ? message.Damage : (DamageForwardPayload?)null;
-
-        var controller = entry.Controller;
-        var cmc = controller ? controller.CharacterMainControl : null;
-        var health = cmc ? cmc.Health : null;
-        var (serverMax, serverCur, serverBody, serverHead) = ReadHealthSafe(health);
-
-        if (serverMax > 0f)
-            entry.MaxHealth = serverMax;
-
-        var reportedMax = message.MaxHealth > 0f ? message.MaxHealth : entry.MaxHealth;
-        var reportedCurrent = Mathf.Clamp(
-            message.CurrentHealth,
-            0f,
-            reportedMax <= 0f ? float.MaxValue : reportedMax);
-
-        if (!message.HasDamage)
-        {
-            if (message.MaxHealth > 0f && entry.MaxHealth <= 0f)
-                entry.MaxHealth = message.MaxHealth;
-
-            entry.CurrentHealth = health ? Mathf.Min(serverCur, reportedCurrent) : reportedCurrent;
-            entry.BodyArmor = health ? Mathf.Min(serverBody, message.BodyArmor) : message.BodyArmor;
-            entry.HeadArmor = health ? Mathf.Min(serverHead, message.HeadArmor) : message.HeadArmor;
-        }
-        else
-        {
-            if (message.MaxHealth > 0f && entry.MaxHealth <= 0f)
-                entry.MaxHealth = message.MaxHealth;
-
-            entry.CurrentHealth = health ? serverCur : reportedCurrent;
-            entry.BodyArmor = health ? serverBody : message.BodyArmor;
-            entry.HeadArmor = health ? serverHead : message.HeadArmor;
-        }
-
-        if (context.Sender != null && damage.HasValue)
-        {
-            if (!_serverLastDamageByPeer.TryGetValue(context.Sender, out var lastDamageForPeer) || lastDamageForPeer == null)
-            {
-                lastDamageForPeer = new Dictionary<int, DamageForwardPayload>();
-                _serverLastDamageByPeer[context.Sender] = lastDamageForPeer;
-            }
-
-            lastDamageForPeer[message.Id] = damage.Value;
-            _serverLastHitPeer[message.Id] = context.Sender;
-        }
-
-        var clampedCurrent = entry.CurrentHealth;
-        var attacker = ResolveAttacker(context);
-        var wasDead = entry.Status == AIStatus.Dead;
-        var appliedDamage = ApplyDamageToController(entry, damage, attacker);
-        if (appliedDamage)
-        {
-            controller = entry.Controller;
-            cmc = controller ? controller.CharacterMainControl : null;
-            health = cmc ? cmc.Health : null;
-            if (health)
-            {
-                var (max, cur, body, head) = ReadHealthSafe(health);
-                if (max > 0f)
-                    entry.MaxHealth = max;
-                entry.CurrentHealth = cur;
-                entry.BodyArmor = body;
-                entry.HeadArmor = head;
-            }
-            else
-            {
-                entry.CurrentHealth = clampedCurrent;
-            }
-        }
-        else
-        {
-            ApplyHealthToController(entry);
-
-            controller = entry.Controller;
-            cmc = controller ? controller.CharacterMainControl : null;
-            health = cmc ? cmc.Health : null;
-            if (health)
-            {
-                var (max, cur, body, head) = ReadHealthSafe(health);
-                if (max > 0f)
-                    entry.MaxHealth = max;
-                entry.CurrentHealth = cur;
-                entry.BodyArmor = body;
-                entry.HeadArmor = head;
-            }
-        }
-
-        var isDead = message.IsDead || entry.CurrentHealth <= 0.0001f;
-        if (isDead)
-        {
-            var forced = appliedDamage || EnsureServerControllerDeath(entry, damage, attacker);
-            if (forced)
-                entry.ServerDeathHandled = true;
-
-            if (!forced)
-            {
-                ForceDisableServerController(entry);
-            }
-
-            entry.Status = AIStatus.Dead;
-            if (!entry.ServerDeathHandled)
-            {
-                entry.ServerDeathHandled = true;
-                TryForceServerOnDead(entry, damage, attacker);
-            }
-            if (!wasDead)
-                NotifyKillerOfServerDeath(entry);
-            QueueHealthBroadcast(entry, damage, true);
-            if (!wasDead)
-                BroadcastDespawn(entry);
-
-            return;
-        }
-
-        QueueHealthBroadcast(entry, damage, false);
-    }
-
-    private void TryForceServerOnDead(AISyncEntry entry, DamageForwardPayload? damage, CharacterMainControl attacker)
-    {
-        if (entry == null) return;
-
-        var controller = entry.Controller;
-        var cmc = controller ? controller.CharacterMainControl : null;
-        var health = cmc ? cmc.Health : null;
-        if (!cmc || !health) return;
-
-        var receiver = cmc ? cmc.mainDamageReceiver : null;
-        if (!receiver && cmc)
-            receiver = cmc.GetComponentInChildren<DamageReceiver>(true);
-
-        var info = damage?.ToDamageInfo(attacker, receiver) ?? new DamageInfo(attacker)
-        {
-            damageValue = Mathf.Max(1f, entry.CurrentHealth <= 0f ? 1f : entry.CurrentHealth),
-            finalDamage = Mathf.Max(1f, entry.CurrentHealth <= 0f ? 1f : entry.CurrentHealth),
-            damagePoint = cmc.transform.position,
-            damageNormal = Vector3.up
-        };
-
-        if (info.toDamageReceiver == null)
-            info.toDamageReceiver = receiver;
-        if (info.fromCharacter == null)
-            info.fromCharacter = attacker;
-
-        var bak = DeadLootSpawnContext.InOnDead;
-       // DeadLootSpawnContext.InOnDead = cmc;
-        try
-        {
-            IsHostHurt = true;
-            cmc.Health.Hurt(info);
-        }
-        catch
-        {
-        }
-        finally
-        {
-          //  DeadLootSpawnContext.InOnDead = bak;
-        }
     }
 
     public void Server_HandleBuffReport(RpcContext context, AIBuffReportRpc message)
@@ -552,12 +398,12 @@ public sealed class AISyncService
 
         var cmc = TryGetCharacter(entry.Id);
         if (cmc)
-            ApplyBuffProxy(cmc, message.WeaponTypeId, message.BuffId);
-
-        BroadcastAIBuff(entry, message.WeaponTypeId, message.BuffId);
+            ApplyReportedBuff(entry, cmc, message.WeaponTypeId, message.BuffId).Forget();
+        else
+            EnqueueServerBuff(entry.Id, message.WeaponTypeId, message.BuffId);
     }
 
-    public void Server_HandleBuffApplied(CharacterMainControl target, int weaponTypeId, int buffId)
+    public void Server_HandleBuffApplied(CharacterMainControl target, int weaponTypeId, int buffId, bool removed = false)
     {
         if (!IsServer || target == null || buffId == 0) return;
         if (CheckAndHandleSyncBlock()) return;
@@ -567,13 +413,14 @@ public sealed class AISyncService
 
         if (!CoopSyncDatabase.AI.TryGet(controller, out var entry) || entry == null) return;
 
-        BroadcastAIBuff(entry, weaponTypeId, buffId);
+        BroadcastAIBuff(entry, weaponTypeId, buffId, removed);
     }
 
     public void Server_Update(float deltaTime)
     {
         if (!IsServer || Service == null || !Service.networkStarted) return;
         if (CheckAndHandleSyncBlock()) return;
+        Server_FlushSnapshotChunks();
 
         if (_serverPendingBuffs.Count > 0)
             ProcessServerBuffQueue();
@@ -619,7 +466,8 @@ public sealed class AISyncService
             var position = controller.transform.position;
             var rotation = modelTransform ? modelTransform.rotation : controller.transform.rotation;
             var positionDelta = position - entry.LastKnownPosition;
-            var velocity = positionDelta / safeDeltaTime;
+            var sampleDeltaTime = Mathf.Max(now - entry.LastStateSentTime, safeDeltaTime);
+            var velocity = positionDelta / sampleDeltaTime;
             var activeWeaponChanged = RefreshActiveWeapon(entry, cmc);
 
             if (watchers == null || watchers.Count == 0)
@@ -708,6 +556,8 @@ public sealed class AISyncService
     {
         if (!IsServer || context.Sender == null) return;
         if (CheckAndHandleSyncBlock()) return;
+        if (_serverSnapshotChunks.ContainsKey(context.Sender)) return;
+        if (Service.netManager.GetReliableQueueLength(context.Sender) >= MaxReliableQueueBeforeSnapshot) return;
 
         try
         {
@@ -717,7 +567,7 @@ public sealed class AISyncService
             var radiusSqr = message.Radius * message.Radius;
             var reset = message.ForceFull;
 
-            foreach (var entry in CoopSyncDatabase.AI.Entries)
+            foreach (var entry in Server_SnapshotEntries())
             {
                 if (entry == null) continue;
                 if (message.VehiclesOnly && !entry.IsVehicle) continue;
@@ -725,7 +575,7 @@ public sealed class AISyncService
                 if (hasRadius)
                 {
                     var distanceSqr = (GetEntryAnchor(entry) - center).sqrMagnitude;
-                    if (distanceSqr > radiusSqr) continue;
+                    if (distanceSqr > radiusSqr && !HasNativeArea(entry.CharacterPresetKey)) continue;
                 }
 
                 var snapshot = BuildSnapshotEntry(entry);
@@ -790,9 +640,16 @@ public sealed class AISyncService
     public void Server_OnPeerDisconnected(NetPeer peer)
     {
         if (!IsServer || peer == null) return;
+        _serverSnapshotChunks.Remove(peer);
 
         foreach (var watchers in _serverWatchers.Values)
             watchers?.Remove(peer);
+    }
+
+    internal void Client_RefreshSnapshot()
+    {
+        _snapshotRequested = false;
+        Client_RequestSnapshotIfNeeded();
     }
 
     public void Client_RequestSnapshotIfNeeded()
@@ -841,7 +698,11 @@ public sealed class AISyncService
             VehiclesOnly = vehiclesOnly
         };
         CoopTool.SendRpc(in request);
-        _lastSnapshotRequestTime = Time.unscaledTime;
+        if (!vehiclesOnly)
+        {
+            _lastSnapshotRequestTime = Time.unscaledTime;
+            _awaitingSnapshotResponse = true;
+        }
     }
 
     public void Client_HandleSnapshotChunk(AISnapshotChunkRpc message)
@@ -850,6 +711,7 @@ public sealed class AISyncService
         if (CheckAndHandleSyncBlock()) return;
 
         _lastSnapshotReceiveTime = Time.unscaledTime;
+        _awaitingSnapshotResponse = false;
         if (message.Reset)
         {
             _pendingSnapshotReset = true;
@@ -860,7 +722,7 @@ public sealed class AISyncService
 
         foreach (var snap in message.Entries)
         {
-            if (!IsClientEntryInRange(in snap, GetClientSnapshotRange(snap.IsVehicle)))
+            if (!IsClientEntryInRange(in snap, GetClientSnapshotRange(snap.IsVehicle)) && !HasNativeArea(snap.CharacterPresetKey))
                 continue;
 
             if (_pendingSnapshotQueue.Count >= MaxPendingSnapshotQueue)
@@ -868,7 +730,10 @@ public sealed class AISyncService
                 _pendingSnapshotQueue.Dequeue();
                 _droppedSnapshotCount++;
             }
-            _pendingSnapshotQueue.Enqueue(snap);
+            var orderedSnapshot = snap;
+            orderedSnapshot.HealthReceiveOrder = _clientHealthOrder.Receive();
+            orderedSnapshot.BuffReceiveOrder = _clientBuffOrder.Receive();
+            _pendingSnapshotQueue.Enqueue(orderedSnapshot);
         }
 
         if (_droppedSnapshotCount >= SnapshotDropResyncThreshold)
@@ -883,16 +748,15 @@ public sealed class AISyncService
         if (IsServer) return;
         if (CheckAndHandleSyncBlock()) return;
 
-        var entry = CoopSyncDatabase.AI.GetOrCreate(message.Id);
+        // Activation has no model or actor kind; distant vehicle metadata may be intentionally omitted.
+        if (!CoopSyncDatabase.AI.TryGet(message.Id, out var entry) || entry == null) return;
+        entry.Activated = message.Activated;
 
-        if (!IsClientEntryInRange(entry, GetClientSnapshotRange(entry.IsVehicle)))
+        if (!IsClientEntryInRange(entry, entry.IsVehicle ? VehicleReplicaKeepAliveDistance : DeactivationRadius))
         {
-            Client_DestroyReplica(message.Id, AIStatus.Despawned, false);
-            entry.Activated = false;
+            Client_ReleaseReplica(message.Id);
             return;
         }
-
-        entry.Activated = message.Activated;
 
         if (entry.Activated)
         {
@@ -900,7 +764,7 @@ public sealed class AISyncService
         }
         else
         {
-            Client_DestroyReplica(message.Id, AIStatus.Despawned, false);
+            Client_ReleaseReplica(message.Id);
         }
     }
 
@@ -909,16 +773,14 @@ public sealed class AISyncService
         if (IsServer) return;
         if (CheckAndHandleSyncBlock()) return;
 
-        if (!IsClientEntryInRange(in message.Entry, GetClientSnapshotRange(message.Entry.IsVehicle)))
+        if (!IsClientEntryInRange(in message.Entry, GetClientSnapshotRange(message.Entry.IsVehicle)) && !HasNativeArea(message.Entry.CharacterPresetKey))
             return;
 
         var entry = CoopSyncDatabase.AI.GetOrCreate(message.Entry.Id);
-        ApplySnapshot(entry, in message.Entry);
-
-        // Avoid applying any pre-existing buff state when initially generating the AI replica.
-        // Buff broadcasts that arrive after spawn will still be processed normally.
-        entry.Buffs.Clear();
-        _clientPendingBuffs.Remove(entry.Id);
+        var snapshot = message.Entry;
+        snapshot.HealthReceiveOrder = _clientHealthOrder.Receive();
+        snapshot.BuffReceiveOrder = _clientBuffOrder.Receive();
+        ApplySnapshot(entry, in snapshot);
 
         _clientRequested.Remove(entry.Id);
 
@@ -933,7 +795,7 @@ public sealed class AISyncService
         if (!CoopSyncDatabase.AI.TryGet(message.Id, out var entry) || entry == null)
             return;
 
-        Client_DestroyReplica(message.Id, message.Status, false);
+        Client_DestroyReplica(message.Id, message.Status);
     }
 
     public void Client_HandleState(AIStateUpdateRpc message)
@@ -943,19 +805,34 @@ public sealed class AISyncService
         if (!CoopSyncDatabase.AI.TryGet(message.Id, out var entry) || entry == null)
             return;
 
+        if ((!entry.IsVehicle && message.Timestamp <= entry.LastKnownRemoteTime) ||
+            (_latestPendingStateById.TryGetValue(message.Id, out var pending) && message.Timestamp <= pending.Timestamp))
+            return;
+
         var anchor = message.Position != Vector3.zero ? message.Position : GetEntryAnchor(entry);
         var stateRange = entry.IsVehicle ? VehicleReplicaKeepAliveDistance : DeactivationRadius;
         if (!IsClientWithinRange(anchor, stateRange))
         {
-            Client_DestroyReplica(message.Id, AIStatus.Despawned, false);
+            entry.LastKnownPosition = message.Position;
+            entry.LastKnownRotation = message.Rotation;
+            entry.LastKnownVelocity = message.Velocity;
+            entry.LastKnownRemoteTime = message.Timestamp;
+            entry.LastStateReceivedTime = Time.unscaledTime;
+            Client_ReleaseReplica(message.Id);
             return;
         }
-        if (_pendingStateUpdates.Count >= MaxPendingStateQueue)
+
+        // Keep one pending pose per AI so a slow frame cannot build a history backlog.
+        if (!_latestPendingStateById.ContainsKey(message.Id))
         {
-            _pendingStateUpdates.Dequeue();
-            _droppedStateCount++;
+            if (_pendingStateUpdates.Count >= MaxPendingStateQueue)
+            {
+                _latestPendingStateById.Remove(_pendingStateUpdates.Dequeue());
+                _droppedStateCount++;
+            }
+            _pendingStateUpdates.Enqueue(message.Id);
         }
-        _pendingStateUpdates.Enqueue(message);
+        _latestPendingStateById[message.Id] = message;
 
         if (_droppedStateCount >= StateDropResyncThreshold)
         {
@@ -987,7 +864,7 @@ public sealed class AISyncService
             _nextVehicleSnapshotRefreshTime = now + VehicleSnapshotRefreshInterval;
         }
 
-        if (_snapshotRequested && now - _lastSnapshotRequestTime >= SnapshotRequestTimeout && now - _lastSnapshotReceiveTime >= SnapshotRequestTimeout)
+        if (_awaitingSnapshotResponse && now - _lastSnapshotRequestTime >= SnapshotRequestTimeout)
         {
             var forceFull = _lastSnapshotReceiveTime <= 0f;
             Client_TryScheduleSnapshotRecovery(forceFull);
@@ -1018,18 +895,17 @@ public sealed class AISyncService
 
             if (entry == null) continue;
 
+            Client_UpdateNativeArea(entry);
             var forceSpawn = ShouldForceSpawnReplica(entry);
-            var shouldKeepAlive = ShouldKeepReplicaAlive(entry) || forceSpawn;
-
             if (!entry.Activated && !forceSpawn)
             {
-                Client_DestroyReplica(entry.Id, AIStatus.Despawned, !shouldKeepAlive);
+                Client_ReleaseReplica(entry.Id);
                 continue;
             }
 
             if (!ShouldHaveClientReplica(entry))
             {
-                Client_DestroyReplica(entry.Id, AIStatus.Despawned, !shouldKeepAlive);
+                Client_ReleaseReplica(entry.Id);
                 continue;
             }
 
@@ -1134,6 +1010,9 @@ public sealed class AISyncService
 
     private void Client_ProcessReplicaSpawnQueue()
     {
+        if (_clientReplicaSpawning.Count >= MaxReplicaSpawnsPerFrame)
+            return;
+
         var spawned = 0;
         while (spawned < MaxReplicaSpawnsPerFrame && _clientReplicaSpawnQueue.Count > 0)
         {
@@ -1158,19 +1037,19 @@ public sealed class AISyncService
 
         if (entry.Status == AIStatus.Dead)
         {
-            Client_DestroyReplica(entry.Id, AIStatus.Dead, false);
+            Client_DestroyReplica(entry.Id, AIStatus.Dead);
             return;
         }
 
         if (entry.Status == AIStatus.Despawned)
         {
-            Client_DestroyReplica(entry.Id, AIStatus.Despawned, false);
+            Client_ReleaseReplica(entry.Id);
             return;
         }
 
         if (!ShouldHaveClientReplica(entry))
         {
-            Client_DestroyReplica(entry.Id, AIStatus.Despawned, false);
+            Client_ReleaseReplica(entry.Id);
             return;
         }
 
@@ -1188,15 +1067,23 @@ public sealed class AISyncService
         QueueReplicaSpawn(entry);
     }
 
-    private void Client_DestroyReplica(int id, AIStatus status, bool removeEntry)
+    private void Client_DestroyReplica(int id, AIStatus status)
     {
+        Client_RemoveNativeArea(id);
         if (!CoopSyncDatabase.AI.TryGet(id, out var entry) || entry == null)
             return;
 
         entry.Activated = false;
-        entry.Status = status;
+        if (entry.Status != AIStatus.Dead)
+            entry.Status = status;
         entry.LastAnimSample = default;
 
+        Client_ReleaseReplica(id);
+    }
+
+    // Local culling releases the model without changing the host's lifecycle state.
+    private void Client_ReleaseReplica(int id)
+    {
         if (_clientReplicas.TryGetValue(id, out var replica))
         {
             DestroyReplica(replica);
@@ -1209,8 +1096,6 @@ public sealed class AISyncService
         _clientReplicaRecoveryTimes.Remove(id);
         _clientNextMissingModelWarning.Remove(id);
 
-        if (removeEntry)
-            CoopSyncDatabase.AI.RemoveEntry(id);
     }
 
     private void Client_ProcessPendingSnapshots()
@@ -1220,7 +1105,6 @@ public sealed class AISyncService
             _clientRequested.Clear();
             _clientReplicaSpawnQueue.Clear();
             _clientReplicaSpawnQueued.Clear();
-            _clientPendingBuffs.Clear();
 
             _pendingSnapshotReset = false;
         }
@@ -1235,7 +1119,7 @@ public sealed class AISyncService
             ApplySnapshot(entry, in snap);
             if (entry.Status == AIStatus.Dead)
             {
-                Client_DestroyReplica(entry.Id, AIStatus.Dead, false);
+                Client_DestroyReplica(entry.Id, AIStatus.Dead);
                 processed++;
                 continue;
             }
@@ -1250,26 +1134,23 @@ public sealed class AISyncService
     {
         if (_pendingStateUpdates.Count == 0)
         {
-            _latestPendingStateById.Clear();
             _droppedStateCount = 0;
             return;
         }
 
-        _latestPendingStateById.Clear();
         var budget = GetDynamicProcessBudget(MaxStateUpdatesPerFrame, _pendingStateUpdates.Count);
         budget = ScaleBudgetForDelta(budget);
         var drained = 0;
         while (drained < budget && _pendingStateUpdates.Count > 0)
         {
-            var message = _pendingStateUpdates.Dequeue();
-            _latestPendingStateById[message.Id] = message;
+            var id = _pendingStateUpdates.Dequeue();
+            if (_latestPendingStateById.TryGetValue(id, out var message))
+            {
+                _latestPendingStateById.Remove(id);
+                Client_ApplyStateUpdate(in message);
+            }
             drained++;
         }
-
-        foreach (var message in _latestPendingStateById.Values)
-            Client_ApplyStateUpdate(in message);
-
-        _latestPendingStateById.Clear();
 
         if (_pendingStateUpdates.Count == 0)
             _droppedStateCount = 0;
@@ -1282,6 +1163,8 @@ public sealed class AISyncService
             Client_TryScheduleSnapshotRecovery(true);
             return;
         }
+        if (entry.Status == AIStatus.Dead) return;
+        if (!entry.IsVehicle && message.Timestamp <= entry.LastKnownRemoteTime) return;
 
         var localAuthVehicle = IsLocalAuthoritativeVehicle(entry);
         var suppressVehicleState = entry.IsVehicle &&
@@ -1295,10 +1178,9 @@ public sealed class AISyncService
             entry.LastKnownVelocity = message.Velocity;
             entry.LastKnownRemoteTime = message.Timestamp;
         }
-        entry.CurrentHealth = message.CurrentHealth;
         SetActiveWeapon(message.Id, GetActiveWeaponSlot(message.Id), message.ActiveWeaponTypeId);
         entry.LastStateReceivedTime = Time.unscaledTime;
-        if (message.StatusOverride != AIStatus.Dormant)
+        if (message.StatusOverride != AIStatus.Dormant && message.StatusOverride != AIStatus.Dead)
             entry.Status = message.StatusOverride;
 
         if (!localAuthVehicle && !suppressVehicleState)
@@ -1323,59 +1205,30 @@ public sealed class AISyncService
             replica.ApplyState(entry);
     }
 
-    public void Client_HandleHealthBroadcast(AIHealthBroadcastRpc message)
-    {
-        if (IsServer) return;
-        if (!CoopSyncDatabase.AI.TryGet(message.Id, out var entry) || entry == null)
-            return;
-
-        if (!IsClientEntryInRange(entry, DeactivationRadius))
-        {
-            Client_DestroyReplica(message.Id, AIStatus.Despawned, false);
-            return;
-        }
-
-        if (message.MaxHealth > 0f)
-            entry.MaxHealth = message.MaxHealth;
-        entry.CurrentHealth = message.CurrentHealth;
-        entry.BodyArmor = message.BodyArmor;
-        entry.HeadArmor = message.HeadArmor;
-        if (message.IsDead)
-        {
-            entry.Status = AIStatus.Dead;
-            if (message.KillerCredit)
-                Client_RaiseQuestKillCredit(message.Id, in message);
-            Client_DestroyReplica(message.Id, AIStatus.Dead, false);
-            return;
-        }
-
-        if (_clientReplicas.TryGetValue(message.Id, out var replica))
-            replica.ApplyHealth(entry.MaxHealth, entry.CurrentHealth, entry.BodyArmor, entry.HeadArmor);
-    }
-
     public void Client_HandleBuffBroadcast(AIBuffBroadcastRpc message)
     {
         if (IsServer || message.BuffId == 0) return;
+        _clientBuffOrder.TryApply(message.Id, _clientBuffOrder.Receive());
         if (!CoopSyncDatabase.AI.TryGet(message.Id, out var entry) || entry == null)
         {
-            CacheClientPendingBuff(message.Id, message.WeaponTypeId, message.BuffId);
+            CacheClientPendingBuff(message.Id, message.WeaponTypeId, message.BuffId, message.Layers, !message.Removed);
             Client_TryScheduleSnapshotRecovery(true);
             return;
         }
 
         if (!IsClientEntryInRange(entry, DeactivationRadius))
         {
-            Client_DestroyReplica(message.Id, AIStatus.Despawned, false);
+            Client_ReleaseReplica(message.Id);
             return;
         }
 
-        AppendBuffState(entry.Buffs, message.WeaponTypeId, message.BuffId);
+        SetClientBuffState(entry, message.WeaponTypeId, message.BuffId, message.Layers);
 
         if (_clientReplicas.TryGetValue(message.Id, out var replica) && replica != null)
-            replica.ApplyBuff(message.WeaponTypeId, message.BuffId);
+            replica.ApplyBuff(message.WeaponTypeId, message.BuffId, message.Layers, !message.Removed);
         else
         {
-            CacheClientPendingBuff(message.Id, message.WeaponTypeId, message.BuffId);
+            CacheClientPendingBuff(message.Id, message.WeaponTypeId, message.BuffId, message.Layers, !message.Removed);
 
             if (entry != null)
             {
@@ -1449,10 +1302,6 @@ public sealed class AISyncService
                 continue;
             }
 
-            entry.MaxHealth = pending.MaxHealth;
-            entry.CurrentHealth = pending.CurrentHealth;
-            entry.BodyArmor = pending.BodyArmor;
-            entry.HeadArmor = pending.HeadArmor;
             _lastHealthBroadcastTime[id] = now;
             _pendingHealthBroadcasts.Remove(id);
             var damage = pending.HasDamage ? pending.Damage : (DamageForwardPayload?)null;
@@ -1487,6 +1336,7 @@ public sealed class AISyncService
                     : cmc.characterPreset.nameKey;
             }
             entry.Team = cmc.Team;
+            ApplyNativeAreaScene(entry, cmc);
             entry.HideIfFoundEnemyName = NormalizePrefabName(controller.hideIfFoundEnemy ? controller.hideIfFoundEnemy.name : entry.HideIfFoundEnemyName);
             entry.IsVehicle = cmc.isVehicle;
             entry.VehicleAnimationType = cmc.vehicleAnimationType;
@@ -1572,12 +1422,14 @@ public sealed class AISyncService
         var modelTransform = cmc && cmc.characterModel ? cmc.characterModel.transform : controller.transform;
         var position = controller.transform.position;
         var rotation = modelTransform ? modelTransform.rotation : controller.transform.rotation;
-        var delta = Mathf.Max(Time.deltaTime, 0.0001f);
+        var now = Time.unscaledTime;
+        var delta = Mathf.Max(now - entry.LastStateSentTime, Mathf.Max(Time.unscaledDeltaTime, 0.0001f));
         var velocity = (position - entry.LastKnownPosition) / delta;
 
         entry.LastKnownPosition = position;
         entry.LastKnownRotation = rotation;
         entry.LastKnownVelocity = velocity;
+        entry.LastStateSentTime = now;
         entry.LastAnimSample = CaptureAnimSample(entry, controller);
     }
 
@@ -1865,7 +1717,7 @@ public sealed class AISyncService
             if (peer == null || status == null || peer.ConnectionState != ConnectionState.Connected)
                 continue;
 
-            if (!IsPeerWithinRange(peer, anchor, ActivationRadius))
+            if (!IsPeerWithinRange(peer, anchor, ActivationRadius) && !HasNativeArea(entry.CharacterPresetKey))
                 continue;
 
             if (watchers.Add(peer))
@@ -2136,7 +1988,7 @@ public sealed class AISyncService
                 continue;
             }
 
-            if (!IsPeerWithinRange(peer, anchor, range))
+            if (!IsPeerWithinRange(peer, anchor, range) && !HasNativeArea(entry.CharacterPresetKey))
             {
                 SendActivationState(entry, peer, false);
                 _serverWatcherPruneBuffer.Add(peer);
@@ -2192,6 +2044,9 @@ public sealed class AISyncService
         };
 
         var signature = ComputeStateSignature(in message);
+        // An idle area's last unreliable pose may be lost; periodically resend its current anchor.
+        if (HasNativeArea(entry.CharacterPresetKey))
+            signature = HashCode.Combine(signature, Mathf.FloorToInt(Time.unscaledTime / Mathf.Max(1f, IdleStateRecordInterval)));
         if (_lastStateSignatures.TryGetValue(entry.Id, out var lastState) && lastState == signature)
             return;
         _lastStateSignatures[entry.Id] = signature;
@@ -2205,7 +2060,7 @@ public sealed class AISyncService
             foreach (var peer in watchers)
             {
                 if (peer != null && peer.ConnectionState == ConnectionState.Connected &&
-                    (watchersAlreadyFiltered || IsPeerWithinRange(peer, anchor, DeactivationRadius)))
+                    (watchersAlreadyFiltered || IsPeerWithinRange(peer, anchor, DeactivationRadius) || HasNativeArea(entry.CharacterPresetKey)))
                 {
                     peer.Send(writer, descriptor.Delivery);
                     sent++;
@@ -2236,10 +2091,6 @@ public sealed class AISyncService
         }
 
         var pending = new PendingHealthBroadcast(
-            entry.MaxHealth,
-            entry.CurrentHealth,
-            entry.BodyArmor,
-            entry.HeadArmor,
             entry.Status == AIStatus.Dead,
             damage.HasValue,
             damage,
@@ -2334,18 +2185,22 @@ public sealed class AISyncService
         }
     }
 
-    private void BroadcastAIBuff(AISyncEntry entry, int weaponTypeId, int buffId)
+    private void BroadcastAIBuff(AISyncEntry entry, int weaponTypeId, int buffId, bool removed = false)
     {
         if (!IsServer || entry == null || buffId == 0) return;
 
-        AppendBuffState(entry.Buffs, weaponTypeId, buffId);
+        var layers = GetBuffLayers(TryGetCharacter(entry.Id), buffId);
+        entry.Buffs.RemoveAll(b => b.BuffId == buffId);
+        if (layers > 0) AppendBuffState(entry.Buffs, weaponTypeId, buffId);
 
         var descriptor = RpcRegistry.GetDescriptor<AIBuffBroadcastRpc>();
         var message = new AIBuffBroadcastRpc
         {
             Id = entry.Id,
             WeaponTypeId = weaponTypeId,
-            BuffId = buffId
+            BuffId = buffId,
+            Layers = layers,
+            Removed = removed
         };
 
         var watchers = GetServerWatchersInRange(entry, DeactivationRadius);
@@ -2363,56 +2218,6 @@ public sealed class AISyncService
         finally
         {
             RpcWriterPool.Return(writer);
-        }
-    }
-
-    private void ApplyHealthToController(AISyncEntry entry)
-    {
-        if (entry == null) return;
-        var controller = entry.Controller;
-        var cmc = controller ? controller.CharacterMainControl : null;
-        var health = cmc ? cmc.Health : null;
-        if (health)
-            HealthM.Instance.ForceSetHealth(
-                health,
-                entry.MaxHealth > 0f ? entry.MaxHealth : Mathf.Max(1f, entry.CurrentHealth),
-                entry.CurrentHealth,
-                true,
-                entry.BodyArmor,
-                entry.HeadArmor);
-    }
-
-    private bool ApplyDamageToController(AISyncEntry entry, DamageForwardPayload? damage, CharacterMainControl attacker)
-    {
-        if (entry == null || !damage.HasValue)
-            return false;
-
-        var controller = entry.Controller;
-        var cmc = controller ? controller.CharacterMainControl : null;
-        var health = cmc ? cmc.Health : null;
-        if (!health)
-            return false;
-
-        var receiver = cmc ? cmc.mainDamageReceiver : null;
-        if (!receiver && cmc)
-            receiver = cmc.GetComponentInChildren<DamageReceiver>(true);
-
-        // 确保传给 AI 的伤害信息里有攻击者和命中点，避免行为树里因空引用而报错
-        var info = damage.Value.ToDamageInfo(attacker ?? cmc, receiver);
-        if (info.toDamageReceiver == null)
-            info.toDamageReceiver = receiver;
-        if (info.fromCharacter == null)
-            info.fromCharacter = attacker ?? cmc;
-
-        try
-        {
-            IsHostHurt = true;
-            health.Hurt(info);
-            return true;
-        }
-        catch
-        {
-            return false;
         }
     }
 
@@ -2453,90 +2258,9 @@ public sealed class AISyncService
         return null;
     }
 
-    private bool EnsureServerControllerDeath(AISyncEntry entry, DamageForwardPayload? damage, CharacterMainControl attacker)
+    private void Server_SendSnapshotChunk(NetPeer peer, List<AISnapshotEntry> buffer, bool reset)
     {
-        if (entry == null) return false;
-        var controller = entry.Controller;
-        var cmc = controller ? controller.CharacterMainControl : null;
-        var health = cmc ? cmc.Health : null;
-        if (!health) return false;
-
-        float current;
-        try
-        {
-            current = health.CurrentHealth;
-        }
-        catch
-        {
-            current = 0f;
-        }
-
-        if (current <= 0.0001f)
-            return false;
-
-        DamageInfo info;
-        if (damage.HasValue)
-        {
-            var receiver = cmc ? cmc.mainDamageReceiver : null;
-            if (!receiver && cmc)
-                receiver = cmc.GetComponentInChildren<DamageReceiver>(true);
-
-            info = damage.Value.ToDamageInfo(attacker, receiver);
-            if (info.toDamageReceiver == null)
-                info.toDamageReceiver = receiver;
-            if (info.fromCharacter == null)
-                info.fromCharacter = attacker;
-        }
-        else
-        {
-            info = new DamageInfo(attacker)
-            {
-                damageValue = Mathf.Max(1f, current),
-                finalDamage = Mathf.Max(1f, current),
-                damagePoint = cmc ? cmc.transform.position : Vector3.zero,
-                damageNormal = Vector3.up
-            };
-        }
-
-        try
-        {
-            health.OnDeadEvent?.Invoke(info);
-            RaiseStaticHealthOnDead(health, info);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private void ForceDisableServerController(AISyncEntry entry)
-    {
-        if (entry == null) return;
-        var controller = entry.Controller;
-        if (!controller) return;
-        try
-        {
-            controller.enabled = false;
-        }
-        catch
-        {
-        }
-
-        var cmc = controller.CharacterMainControl;
-        if (!cmc) return;
-        try
-        {
-            cmc.gameObject.SetActive(false);
-        }
-        catch
-        {
-        }
-    }
-
-    private void SendSnapshotChunk(NetPeer peer, List<AISnapshotEntry> buffer, bool reset)
-    {
-        if (!IsServer || peer == null || buffer == null || buffer.Count == 0) return;
+        if (!IsServer || peer == null || buffer == null) return;
 
         var descriptor = RpcRegistry.GetDescriptor<AISnapshotChunkRpc>();
         var message = new AISnapshotChunkRpc
@@ -2560,20 +2284,6 @@ public sealed class AISyncService
         }
     }
 
-    private void SendSnapshotChunkToPeers(List<AISnapshotEntry> buffer, bool reset)
-    {
-        if (!IsServer || buffer == null || buffer.Count == 0) return;
-        var service = Service;
-        var statuses = service?.playerStatuses;
-        if (statuses == null || statuses.Count == 0) return;
-
-        foreach (var peer in statuses.Keys)
-        {
-            if (peer == null || peer.ConnectionState != ConnectionState.Connected) continue;
-            SendSnapshotChunk(peer, buffer, reset);
-        }
-    }
-
     private bool Server_BroadcastSnapshotToAll(bool reset)
     {
         if (!IsServer) return false;
@@ -2581,38 +2291,42 @@ public sealed class AISyncService
         var statuses = service?.playerStatuses;
         if (statuses == null || statuses.Count == 0) return false;
 
+        var buffers = statuses.Keys
+            .Where(peer => peer != null && peer.ConnectionState == ConnectionState.Connected &&
+                !_serverSnapshotChunks.ContainsKey(peer) &&
+                service.netManager.GetReliableQueueLength(peer) < MaxReliableQueueBeforeSnapshot)
+            .ToDictionary(peer => peer, _ => new List<AISnapshotEntry>(SnapshotChunkSize));
+        if (buffers.Count == 0) return false;
+        var resetPending = reset ? new HashSet<NetPeer>(buffers.Keys) : new HashSet<NetPeer>();
+        var range = Mathf.Max(ActivationRadius, VehicleReplicaKeepAliveDistance) * 1.2f;
         var sent = false;
-        try
+        foreach (var entry in Server_SnapshotEntries())
         {
-            _snapshotBuffer.Clear();
-            foreach (var entry in CoopSyncDatabase.AI.Entries)
+            if (entry == null) continue;
+
+            var snapshot = BuildSnapshotEntry(entry);
+            var duplicate = HasDuplicateSnapshot(entry.Id, in snapshot);
+            if (!reset && duplicate) continue;
+
+            foreach (var pair in buffers)
             {
-                if (entry == null) continue;
-
-                var snapshot = BuildSnapshotEntry(entry);
-                var duplicate = HasDuplicateSnapshot(entry.Id, in snapshot);
-                if (!reset && duplicate)
-                    continue;
-
-                _snapshotBuffer.Add(snapshot);
-                if (_snapshotBuffer.Count >= SnapshotChunkSize)
+                if (!IsPeerWithinRange(pair.Key, GetSnapshotAnchor(in snapshot), range) && !HasNativeArea(entry.CharacterPresetKey)) continue;
+                pair.Value.Add(snapshot);
+                if (pair.Value.Count >= SnapshotChunkSize)
                 {
-                    SendSnapshotChunkToPeers(_snapshotBuffer, reset);
-                    reset = false;
-                    _snapshotBuffer.Clear();
+                    SendSnapshotChunk(pair.Key, pair.Value, resetPending.Remove(pair.Key));
+                    pair.Value.Clear();
                     sent = true;
                 }
             }
-
-            if (_snapshotBuffer.Count > 0)
+        }
+        foreach (var pair in buffers)
+        {
+            if (pair.Value.Count > 0)
             {
-                SendSnapshotChunkToPeers(_snapshotBuffer, reset);
+                SendSnapshotChunk(pair.Key, pair.Value, resetPending.Remove(pair.Key));
                 sent = true;
             }
-        }
-        finally
-        {
-            _snapshotBuffer.Clear();
         }
 
         return sent;
@@ -2650,11 +2364,14 @@ public sealed class AISyncService
             }
 
             PopulateEntryMetadata(entry, controller);
+            if (!controller.GetComponent<AISyncTracker>())
+                AttachTracker(controller, entry);
         }
     }
 
     private AISnapshotEntry BuildSnapshotEntry(AISyncEntry entry)
     {
+        RefreshServerBuffs(entry);
         if (entry != null && string.IsNullOrEmpty(entry.ModelName) && entry.Controller)
             PopulateEntryMetadata(entry, entry.Controller);
 
@@ -2686,7 +2403,8 @@ public sealed class AISyncService
             LastKnownPosition = entry.LastKnownPosition != Vector3.zero ? entry.LastKnownPosition : entry.SpawnPosition,
             LastKnownRotation = entry.LastKnownRotation != Quaternion.identity ? entry.LastKnownRotation : entry.SpawnRotation,
             LastKnownVelocity = entry.LastKnownVelocity,
-            LastKnownRemoteTime = entry.LastKnownRemoteTime > 0d ? entry.LastKnownRemoteTime : Time.unscaledTimeAsDouble
+            LastKnownRemoteTime = entry.IsVehicle && entry.LastKnownRemoteTime > 0d ? entry.LastKnownRemoteTime :
+                entry.LastStateSentTime > 0f ? entry.LastStateSentTime : Time.unscaledTimeAsDouble
         };
 
         if (entry.Equipment.Count > 0)
@@ -2733,10 +2451,12 @@ public sealed class AISyncService
         {
             snapshot.BuffWeaponTypeIds = new int[entry.Buffs.Count];
             snapshot.BuffIds = new int[entry.Buffs.Count];
+            snapshot.BuffLayers = new int[entry.Buffs.Count];
             for (var i = 0; i < entry.Buffs.Count; i++)
             {
                 snapshot.BuffWeaponTypeIds[i] = entry.Buffs[i].WeaponTypeId;
                 snapshot.BuffIds[i] = entry.Buffs[i].BuffId;
+                snapshot.BuffLayers[i] = GetBuffLayers(TryGetCharacter(entry.Id), entry.Buffs[i].BuffId);
             }
         }
         else
@@ -2823,6 +2543,7 @@ public sealed class AISyncService
             {
                 hash.Add(snapshot.BuffWeaponTypeIds[i]);
                 hash.Add(snapshot.BuffIds[i]);
+                if (snapshot.BuffLayers != null && i < snapshot.BuffLayers.Length) hash.Add(snapshot.BuffLayers[i]);
             }
         }
 
@@ -2896,27 +2617,33 @@ public sealed class AISyncService
         entry.ScenePath = snapshot.ScenePath;
         entry.Team = snapshot.Team;
         var forceSpawn = IsForceSpawnModel(snapshot.ModelName) || snapshot.IsVehicle;
-        entry.Status = forceSpawn && snapshot.Status != AIStatus.Dead
-            ? AIStatus.Active
-            : snapshot.Status;
+        var applyHealth = _clientHealthOrder.TryApply(entry.Id, snapshot.HealthReceiveOrder);
+        if (applyHealth)
+        {
+            entry.Status = forceSpawn && snapshot.Status != AIStatus.Dead
+                ? AIStatus.Active
+                : snapshot.Status;
+            entry.MaxHealth = snapshot.MaxHealth;
+            entry.CurrentHealth = snapshot.CurrentHealth;
+            entry.BodyArmor = snapshot.BodyArmor;
+            entry.HeadArmor = snapshot.HeadArmor;
+        }
         entry.Activated = forceSpawn || snapshot.Activated;
         if (entry.Status == AIStatus.Dead)
             entry.Activated = false;
-        entry.MaxHealth = snapshot.MaxHealth;
-        entry.CurrentHealth = snapshot.CurrentHealth;
-        entry.BodyArmor = snapshot.BodyArmor;
-        entry.HeadArmor = snapshot.HeadArmor;
         entry.ShowHealthBar = snapshot.ShowHealthBar;
         entry.IsVehicle = snapshot.IsVehicle;
         entry.VehicleAnimationType = snapshot.VehicleAnimationType;
         entry.VehicleWalkSpeed = snapshot.VehicleWalkSpeed;
         entry.VehicleRunSpeed = snapshot.VehicleRunSpeed;
         SetActiveWeapon(entry.Id, snapshot.ActiveWeaponSlot, snapshot.ActiveWeaponTypeId);
-        entry.LastKnownPosition = snapshot.LastKnownPosition != Vector3.zero ? snapshot.LastKnownPosition : snapshot.SpawnPosition;
-        entry.LastKnownRotation = snapshot.LastKnownRotation != Quaternion.identity ? snapshot.LastKnownRotation : snapshot.SpawnRotation;
-        entry.LastKnownVelocity = snapshot.LastKnownVelocity;
-        entry.LastKnownRemoteTime = snapshot.LastKnownRemoteTime > 0d ? snapshot.LastKnownRemoteTime : Time.unscaledTimeAsDouble;
-        entry.LastAnimSample = default;
+        if (entry.IsVehicle || snapshot.LastKnownRemoteTime >= entry.LastKnownRemoteTime)
+        {
+            entry.LastKnownPosition = snapshot.LastKnownPosition != Vector3.zero ? snapshot.LastKnownPosition : snapshot.SpawnPosition;
+            entry.LastKnownRotation = snapshot.LastKnownRotation != Quaternion.identity ? snapshot.LastKnownRotation : snapshot.SpawnRotation;
+            entry.LastKnownVelocity = snapshot.LastKnownVelocity;
+            entry.LastKnownRemoteTime = snapshot.LastKnownRemoteTime;
+        }
         entry.PositionKey = AISyncRegistry.ComputePositionKey(entry.SpawnPosition, entry.SceneBuildIndex, entry.ScenePath);
 
         entry.Equipment.Clear();
@@ -2957,19 +2684,8 @@ public sealed class AISyncService
             }
         }
 
-        entry.Buffs.Clear();
-        if (snapshot.BuffWeaponTypeIds != null && snapshot.BuffIds != null)
-        {
-            var count = Math.Min(snapshot.BuffWeaponTypeIds.Length, snapshot.BuffIds.Length);
-            for (var i = 0; i < count; i++)
-            {
-                var buffId = snapshot.BuffIds[i];
-                if (buffId == 0) continue;
-                AppendBuffState(entry.Buffs, snapshot.BuffWeaponTypeIds[i], buffId);
-            }
-        }
-        if (entry.Buffs.Count > MaxStoredBuffs)
-            entry.Buffs.RemoveRange(0, entry.Buffs.Count - MaxStoredBuffs);
+        ApplySnapshotBuffs(entry, in snapshot);
+        Client_ApplyPendingHealth(entry);
     }
 
     void MultiplyCharacterStat(Item characterItemInstance, string statName, float multiplier)
@@ -2984,10 +2700,13 @@ public sealed class AISyncService
     private async UniTaskVoid SpawnReplicaAsync(AISyncEntry entry)
     {
         var spawnId = entry?.Id ?? 0;
+        var generation = _clientReplicaSpawnGeneration;
+        GameObject instance = null;
+        var completed = false;
         try
         {
             if (entry == null) return;
-            if (!ShouldHaveClientReplica(entry)) return;
+            if (!Client_CanCompleteReplicaSpawn(entry, generation)) return;
 
             DestroyReplica(entry.Id);
 
@@ -2998,7 +2717,9 @@ public sealed class AISyncService
                 return;
             }
 
-            var prefab = ResolveModelPrefab(entry.ModelName);
+            var prefab = ResolveModelFromPresetKey(entry.CharacterPresetKey);
+            if (!prefab || !string.Equals(NormalizePrefabName(prefab.name), entry.ModelName, StringComparison.OrdinalIgnoreCase))
+                prefab = ResolveModelPrefab(entry.ModelName);
             if (!prefab)
             {
                 prefab = ResolveModelFromPresetKey(entry.CharacterPresetKey);
@@ -3015,14 +2736,18 @@ public sealed class AISyncService
             if (!prefab || !host) return;
 
             var characterItemInstance = await Coopbase.LoadOrCreateCharacterItemInstance();
-            if (!ShouldHaveClientReplica(entry)) return;
+            if (!Client_CanCompleteReplicaSpawn(entry, generation))
+            {
+                if (characterItemInstance) Object.Destroy(characterItemInstance.gameObject);
+                return;
+            }
            // var modelInstance = Object.Instantiate(prefab);
             //var instance = Object.Instantiate(host.gameObject, entry.SpawnPosition, entry.SpawnRotation);
-            var characterMainControl = await LevelManager.Instance.CharacterCreator.CreateCharacter(characterItemInstance, prefab, entry.SpawnPosition, entry.SpawnRotation);
-            var instance = characterMainControl ? characterMainControl.gameObject : null;
+            var characterMainControl = await LevelManager.Instance.CharacterCreator.CreateCharacter(characterItemInstance, prefab, entry.LastKnownPosition, entry.LastKnownRotation);
+            instance = characterMainControl ? characterMainControl.gameObject : null;
             if (!instance) return;
             instance.SetActive(false);
-            if (!ShouldHaveClientReplica(entry))
+            if (!Client_CanCompleteReplicaSpawn(entry, generation))
             {
                 if (instance)
                     Object.Destroy(instance);
@@ -3059,6 +2784,8 @@ public sealed class AISyncService
             ApplySpecialAttachments(cmc,entry);
             cmc.SetTeam(entry.Team);
             MakeReplicaPassive(cmc);
+            await UniTask.NextFrame();
+            if (!Client_CanCompleteReplicaSpawn(entry, generation)) return;
             TryAttachHideIfFoundEnemyReplica(entry, instance, cmc);
 
             var modelRoot = cmc.characterModel;
@@ -3069,7 +2796,14 @@ public sealed class AISyncService
             }
             
             ApplyCustomFace(cmc.characterModel, entry.CustomFaceJson);
-            await ApplyEquipmentAsync(cmc.characterModel, entry.Equipment, entry.Weapons, entry.WeaponSnapshots, GetActiveWeaponSlot(entry.Id), GetActiveWeaponType(entry.Id));
+            await ApplyEquipmentAsync(cmc.characterModel, new Dictionary<string, int>(entry.Equipment),
+                new Dictionary<string, int>(entry.Weapons), new Dictionary<string, ItemSnapshot>(entry.WeaponSnapshots),
+                GetActiveWeaponSlot(entry.Id), GetActiveWeaponType(entry.Id));
+            if (!Client_CanCompleteReplicaSpawn(entry, generation))
+            {
+                Object.Destroy(instance);
+                return;
+            }
             TryApplyVehicleSpeedStats(characterItemInstance, entry);
 
            // MultiplyCharacterStat(characterItemInstance, "WalkSpeed", cmc.characterPreset.moveSpeedFactor);
@@ -3122,8 +2856,10 @@ public sealed class AISyncService
             
             var replica = new RemoteAIReplica(entry.Id, instance, cmc, entry, this);
             _clientReplicas[entry.Id] = replica;
+            completed = true;
             replica.ApplyState(entry);
-            // Buffs are intentionally not applied at spawn; they will be received via live broadcasts.
+            replica.ApplyBuffList(entry.Buffs);
+            FlushClientPendingBuffs(entry.Id, replica);
             cmc.gameObject.SetActive(false);
             cmc.gameObject.SetActive(true);
             ModApiEvents.RaiseAiSpawned(entry.Id, cmc);
@@ -3136,9 +2872,16 @@ public sealed class AISyncService
         }
         finally
         {
-            if (spawnId != 0)
+            if (!completed && instance) Object.Destroy(instance);
+            if (spawnId != 0 && generation == _clientReplicaSpawnGeneration)
                 _clientReplicaSpawning.Remove(spawnId);
         }
+    }
+
+    private bool Client_CanCompleteReplicaSpawn(AISyncEntry entry, int generation)
+    {
+        return generation == _clientReplicaSpawnGeneration && Service != null && Service.networkStarted && !IsServer &&
+               ShouldHaveClientReplica(entry) && CoopSyncDatabase.AI.TryGet(entry.Id, out var current) && ReferenceEquals(entry, current);
     }
 
     private void TryApplyVehicleSpeedStats(Item characterItemInstance, AISyncEntry entry)
@@ -3202,13 +2945,10 @@ public sealed class AISyncService
               //  Debug.Log($"[AI][CLIENT] Replica {replica.Id} has receiver: {(receiver != null)}");
                 var info = lastDamage;
                // Debug.Log($"[AI][CLIENT] DamageInfo for replica {replica.Id}: DamageValue={info.damageValue}, FinalDamage={info.finalDamage} crit：{info.crit}  fromCharacter:{info.fromCharacter != null} fromWeaponItemID:{info.fromWeaponItemID}");
-                info.damageValue = 99999f;
-                info.finalDamage = 99999f;
                 if (info.toDamageReceiver == null)
                     info.toDamageReceiver = receiver;
                 if (info.fromCharacter == null && CharacterMainControl.Main)
                     info.fromCharacter = CharacterMainControl.Main;
-                Client_RaiseQuestKillCredit(replica.Id, health, info);
                // Debug.Log($"[AI][CLIENT] Invoking OnDeadEvent for replica {replica.Id}");
                 try
                 {
@@ -3259,6 +2999,7 @@ public sealed class AISyncService
 
     private bool Client_RaiseQuestKillCredit(int id, Health health, DamageInfo info)
     {
+        if (SharedHome.Active) return false;
         if (IsServer || !health || !CharacterMainControl.Main)
             return false;
 
@@ -3269,6 +3010,9 @@ public sealed class AISyncService
         if (!_clientQuestKillCreditRaised.Add(id))
             return false;
 
+        var item = health.TryGetCharacter()?.CharacterItem;
+        if (item && health.team != Teams.player)
+            Duckov.EXPManager.AddExp(item.GetInt("Exp"));
         RaiseStaticHealthOnDead(health, info);
         return true;
     }
@@ -3316,11 +3060,6 @@ public sealed class AISyncService
         return n;
     }
 
-    private static bool ShouldKeepReplicaAlive(AISyncEntry entry)
-    {
-        return entry != null && !string.IsNullOrEmpty(entry.HideIfFoundEnemyName);
-    }
-
     private static (float max, float cur, float bodyArmor, float headArmor) ReadHealthSafe(Health health)
     {
         float max = 0f, cur = 0f, body = 0f, head = 0f;
@@ -3361,21 +3100,16 @@ public sealed class AISyncService
             list.RemoveRange(0, list.Count - MaxStoredBuffs);
     }
 
-    private void CacheClientPendingBuff(int id, int weaponTypeId, int buffId)
+    private void CacheClientPendingBuff(int id, int weaponTypeId, int buffId, int? layers, bool refresh)
     {
         if (id == 0 || buffId == 0) return;
         if (!_clientPendingBuffs.TryGetValue(id, out var list) || list == null)
         {
-            list = new List<(int weaponTypeId, int buffId)>();
+            list = new List<(int weaponTypeId, int buffId, int? layers, bool refresh)>();
             _clientPendingBuffs[id] = list;
         }
-        for (var i = 0; i < list.Count; i++)
-        {
-            var item = list[i];
-            if (item.weaponTypeId == weaponTypeId && item.buffId == buffId)
-                return;
-        }
-        list.Add((weaponTypeId, buffId));
+        list.RemoveAll(b => b.buffId == buffId);
+        list.Add((weaponTypeId, buffId, layers, refresh));
         if (list.Count > MaxStoredBuffs)
             list.RemoveRange(0, list.Count - MaxStoredBuffs);
     }
@@ -3386,45 +3120,58 @@ public sealed class AISyncService
         if (!_clientPendingBuffs.TryGetValue(id, out var list) || list == null || list.Count == 0)
             return;
 
-        foreach (var (weaponTypeId, buffId) in list)
+        foreach (var (weaponTypeId, buffId, layers, refresh) in list)
         {
             if (CoopSyncDatabase.AI.TryGet(id, out var entry) && entry != null)
             {
-                AppendBuffState(entry.Buffs, weaponTypeId, buffId);
+                SetClientBuffState(entry, weaponTypeId, buffId, layers);
             }
-            replica.ApplyBuff(weaponTypeId, buffId);
+            replica.ApplyBuff(weaponTypeId, buffId, layers, refresh);
         }
 
         _clientPendingBuffs.Remove(id);
     }
 
-    private void ApplyBuffProxy(CharacterMainControl cmc, int weaponTypeId, int buffId)
+    private void ApplyBuffProxy(CharacterMainControl cmc, int weaponTypeId, int buffId, int? layers = null, bool refresh = true)
     {
-        ApplyBuffProxyAsync(cmc, weaponTypeId, buffId).Forget();
+        ApplyBuffProxyAsync(cmc, weaponTypeId, buffId, layers, refresh).Forget();
     }
 
-    private async UniTask ApplyBuffProxyAsync(CharacterMainControl cmc, int weaponTypeId, int buffId)
+    private async UniTask ApplyBuffProxyAsync(CharacterMainControl cmc, int weaponTypeId, int buffId, int? layers = null, bool refresh = true)
     {
         if (!cmc || buffId == 0) return;
 
-        var buff = await COOPManager.ResolveBuffAsync(weaponTypeId, buffId);
-        if (buff == null || !cmc) return;
+        var key = cmc.GetInstanceID().ToString();
+        var order = _aiBuffReplayOrder.Receive(key, buffId, layers.HasValue);
+        var buff = layers == 0 ? null : await COOPManager.ResolveBuffAsync(weaponTypeId, buffId);
+        await UniTask.SwitchToMainThread();
+        if (!cmc || (layers != 0 && !buff) || !_aiBuffReplayOrder.IsCurrent(key, buffId, order)) return;
 
         RemoteAIReplicaTag tag = null;
+        var previous = Buff_.ApplyingNetworkBuff;
+        var suppressed = false;
         try
         {
             tag = cmc.GetComponent<RemoteAIReplicaTag>();
+            suppressed = tag != null && tag.SuppressBuffForward;
+            Buff_.ApplyingNetworkBuff = true;
             if (tag != null)
                 tag.SuppressBuffForward = true;
 
-            await UniTask.SwitchToMainThread();
-            if (cmc)
-                cmc.AddBuff(buff, null, weaponTypeId);
+            if (layers == 0) cmc.RemoveBuff(buffId, false);
+            else
+            {
+                var active = cmc.GetBuffManager().Buffs.FirstOrDefault(b => b && b.ID == buffId);
+                if (refresh || !active) cmc.AddBuff(buff, null, weaponTypeId);
+                active = cmc.GetBuffManager().Buffs.FirstOrDefault(b => b && b.ID == buffId);
+                if (active && layers.HasValue) active.CurrentLayers = Mathf.Clamp(layers.Value, 1, Mathf.Max(1, active.MaxLayers));
+            }
         }
         finally
         {
             if (tag != null)
-                tag.SuppressBuffForward = false;
+                tag.SuppressBuffForward = suppressed;
+            Buff_.ApplyingNetworkBuff = previous;
         }
     }
 
@@ -3548,14 +3295,11 @@ public sealed class AISyncService
 
     public void Client_ReportAiHealth(int id, Health health, DamageInfo? damage)
     {
-        if (IsServer || Service == null || !Service.networkStarted || health == null) return;
+        if (IsServer || Service == null || !Service.networkStarted || health == null || !damage.HasValue) return;
 
         var (max, cur, bodyArmor, headArmor) = ReadHealthSafe(health);
         if (max <= 0f)
             max = Mathf.Max(cur, 1f);
-
-
-        Client_ApplyLocalHealthReport(id, max, cur, bodyArmor, headArmor);
 
         var rpc = new AIHealthReportRpc
         {
@@ -3564,38 +3308,12 @@ public sealed class AISyncService
             CurrentHealth = cur,
             BodyArmor = bodyArmor,
             HeadArmor = headArmor,
-            IsDead = cur <= 0f,
+            IsDead = false,
             HasDamage = damage.HasValue,
             Damage = DamageForwardPayload.FromDamageInfo(damage)
         };
 
         CoopTool.SendRpc(in rpc);
-    }
-
-    private void Client_ApplyLocalHealthReport(int id, float max, float current, float bodyArmor, float headArmor)
-    {
-        if (id == 0) return;
-        var entry = CoopSyncDatabase.AI.GetOrCreate(id);
-        entry.MaxHealth = max;
-        entry.CurrentHealth = Mathf.Clamp(current, 0f, max > 0f ? max : Mathf.Max(1f, current));
-        entry.BodyArmor = bodyArmor;
-        entry.HeadArmor = headArmor;
-        if (entry.CurrentHealth <= 0.0001f)
-            entry.Status = AIStatus.Dead;
-        else if (entry.Status != AIStatus.Active)
-            entry.Status = AIStatus.Active;
-
-        if (_clientReplicas.TryGetValue(id, out var replica))
-        {
-            replica.ApplyHealth(entry.MaxHealth, entry.CurrentHealth, entry.BodyArmor, entry.HeadArmor);
-            if (entry.Status == AIStatus.Dead)
-            {
-                DestroyReplica(replica);
-                _clientReplicas.Remove(id);
-                _clientRequested.Remove(id);
-                _clientPendingBuffs.Remove(id);
-            }
-        }
     }
 
     private CharacterModel ResolveModelPrefab(string modelName)
@@ -3613,19 +3331,6 @@ public sealed class AISyncService
 
         try
         {
-            var main = CharacterMainControl.Main;
-            if (main && main.characterModel && string.Equals(NormalizePrefabName(main.characterModel.name), modelName, StringComparison.OrdinalIgnoreCase))
-            {
-                _modelCache[modelName] = main.characterModel.gameObject;
-                return main.characterModel;
-            }
-        }
-        catch
-        {
-        }
-
-        try
-        {
             var loaded = Resources.Load<CharacterModel>(modelName);
             if (loaded)
             {
@@ -3639,7 +3344,7 @@ public sealed class AISyncService
 
         foreach (var model in Resources.FindObjectsOfTypeAll<CharacterModel>())
         {
-            if (!model) continue;
+            if (!model || model.gameObject.scene.IsValid()) continue;
             if (string.Equals(NormalizePrefabName(model.name), modelName, StringComparison.OrdinalIgnoreCase))
             {
                 _modelCache[modelName] = model.gameObject;
@@ -3864,6 +3569,8 @@ public sealed class AISyncService
                 catch
                 {
                 }
+                await UniTask.NextFrame();
+                if (!model || !charItem) return;
             }
         }
 
@@ -3905,6 +3612,8 @@ public sealed class AISyncService
                 catch
                 {
                 }
+                await UniTask.NextFrame();
+                if (!model || !charItem) return;
             }
 
             var itemToHold = activeItem ?? firstGunItem ?? firstWeaponItem;
@@ -4517,15 +4226,19 @@ public sealed class AISyncService
 
         public void ApplyBuffList(List<AIBuffState> buffs)
         {
-            if (buffs == null) return;
+            if (buffs == null || !Character) return;
+            foreach (var active in Character.GetBuffManager().Buffs.ToArray())
+                if (active && !buffs.Any(b => b.BuffId == active.ID))
+                    _service.ApplyBuffProxy(Character, active.fromWeaponID, active.ID, 0, false);
             for (var i = 0; i < buffs.Count; i++)
-                ApplyBuff(buffs[i].WeaponTypeId, buffs[i].BuffId);
+                _service.ApplyBuffProxy(Character, buffs[i].WeaponTypeId, buffs[i].BuffId,
+                    _service.ClientBuffLayers(Id, buffs[i].BuffId), false);
         }
 
-        public void ApplyBuff(int weaponTypeId, int buffId)
+        public void ApplyBuff(int weaponTypeId, int buffId, int? layers = null, bool refresh = true)
         {
             if (_service == null || buffId == 0) return;
-            _service.ApplyBuffProxy(Character, weaponTypeId, buffId);
+            _service.ApplyBuffProxy(Character, weaponTypeId, buffId, layers, refresh);
         }
 
         private void ApplyTeam(Teams team)

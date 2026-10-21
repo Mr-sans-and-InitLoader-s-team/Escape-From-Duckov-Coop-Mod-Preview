@@ -295,7 +295,7 @@ public class WeaponHandle
 
     private void SpawnVisualProjectile(string shooterId, int weaponType, Vector3 spawnPos, Vector3 dir, float speed,
      float distance, bool isFake, ProjectileContext ctx, CharacterMainControl shooterCMC, ItemAgent_Gun overrideGun = null,
-     int aiId = 0)
+     int aiId = 0, bool playFx = true)
     {
         var cacheKey = GetShooterCacheKey(shooterId, aiId);
 
@@ -335,7 +335,9 @@ public class WeaponHandle
         if (isFake)
         {
             ctx.damage = 0f;
+            ctx.explosionDamage = 0f;
             ctx.buffChance = 0f;
+            ctx.bleedChance = 0f;
         }
 
         ItemAgent_Gun gun = overrideGun;
@@ -373,7 +375,8 @@ public class WeaponHandle
 
         if (isFake && !ShouldSpawnFakeProjectile(ctx))
         {
-            FxManager.PlayMuzzleFxAndShell(shooterId, weaponType, muzzleTf ? muzzleTf.position : spawnPos, dir, gun, muzzleTf, aiId);
+            if (playFx)
+                FxManager.PlayMuzzleFxAndShell(shooterId, weaponType, muzzleTf ? muzzleTf.position : spawnPos, dir, gun, muzzleTf, aiId);
             return;
         }
 
@@ -423,8 +426,11 @@ public class WeaponHandle
             FakeProjectileRegistry.Register(proj);
         }
 
-        FxManager.PlayMuzzleFxAndShell(shooterId, weaponType, spawn, dir, gun, muzzleTf, aiId);
-        CoopTool.TryPlayShootAnim(shooterId);
+        if (playFx)
+        {
+            FxManager.PlayMuzzleFxAndShell(shooterId, weaponType, spawn, dir, gun, muzzleTf, aiId);
+            CoopTool.TryPlayShootAnim(shooterId);
+        }
 
     }
 
@@ -504,7 +510,7 @@ public class WeaponHandle
         EmitGunshotSound(controller, gun, message.MuzzlePosition, ctx.team);
 
         SpawnVisualProjectile(message.ShooterId, message.WeaponTypeId, message.MuzzlePosition, message.Direction.normalized,
-            message.Speed, message.Distance, message.IsFake, ctx, controller, gun, message.AiId);
+            message.Speed, message.Distance, message.IsFake, ctx, controller, gun, message.AiId, message.PlayFx);
     }
 
     public void Server_HandleFireRequest(NetPeer sender, in WeaponFireRequestRpc message)
@@ -534,7 +540,7 @@ public class WeaponHandle
             ctx.team = (Teams)message.Team;
 
         SpawnVisualProjectile(shooterId, message.WeaponTypeId, message.MuzzlePosition, message.Direction.normalized,
-            message.Speed, message.Distance, true, ctx, controller, gun, message.AiId);
+            message.Speed, message.Distance, true, ctx, controller, gun, message.AiId, message.PlayFx);
 
         EmitGunshotSound(controller, gun, message.MuzzlePosition, ctx.team);
 
@@ -594,7 +600,7 @@ public class WeaponHandle
             Speed = ctx.speed,
             Distance = ctx.distance,
             IsFake = true,
-            PlayFx = true,
+            PlayFx = ProjectileShotFx.Take(gun),
             Team = (int)ctx.team,
             AiId = aiId,
             HasPayload = true,
@@ -629,60 +635,6 @@ public class WeaponHandle
 
     public void Client_HandleMeleeSwing(in MeleeSwingBroadcastRpc message)
     {
-        if (!networkStarted) return;
-        if (NetService.Instance.IsSelfId(message.PlayerId)) return;
-
-        CharacterMainControl cmc = null;
-        if (clientRemoteCharacters.TryGetValue(message.PlayerId, out var who))
-            cmc = who.GetComponent<CharacterMainControl>();
-        else if (message.AiId != 0)
-            cmc = COOPManager.AI?.TryGetCharacter(message.AiId);
-        //兜底我擦老
-        if (!cmc)
-        {
-            var closestDist = float.MaxValue;
-
-            foreach (var kvp in clientRemoteCharacters)
-            {
-                var go = kvp.Value;
-                if (!go) continue;
-
-                var candidate = go.GetComponent<CharacterMainControl>();
-                if (!candidate) continue;
-
-                var dist = (candidate.transform.position - message.SnapshotPosition).sqrMagnitude;
-                if (dist < closestDist)
-                {
-                    closestDist = dist;
-                    cmc = candidate;
-                }
-            }
-
-            if (!cmc)
-            {
-                foreach (var candidate in GameObject.FindObjectsByType<CharacterMainControl>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
-                {
-                    if (!candidate || candidate.IsMainCharacter()) continue;
-
-                    var dist = (candidate.transform.position - message.SnapshotPosition).sqrMagnitude;
-                    if (dist < closestDist)
-                    {
-                        closestDist = dist;
-                        cmc = candidate;
-                    }
-                }
-            }
-        }
-
-        if (!cmc) return;
-
-        var anim = cmc.characterModel.GetComponent<CharacterAnimationControl_MagicBlend>();
-        if (anim != null) anim.OnAttack();
-
-        var anim2 = cmc.characterModel.GetComponent<CharacterAnimationControl>();
-        if (anim2) anim2.OnAttack();
-
-        var model = cmc.characterModel;
-        if (model) MeleeFx.SpawnSlashFx(model);
+        RemoteMeleePlayback.Play(Service, in message);
     }
 }

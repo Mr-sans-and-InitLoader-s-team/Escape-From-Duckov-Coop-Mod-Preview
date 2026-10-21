@@ -27,13 +27,17 @@ namespace EscapeFromDuckovCoopMod.Patch.Loot;
     typeof(Item), typeof(Vector3), typeof(Quaternion), typeof(bool), typeof(InteractableLootbox), typeof(bool))]
 internal static class DeadLootSpawnPatch
 {
-    private static bool Prefix(ref InteractableLootbox __result, InteractableLootbox prefab)
+    private static bool Prefix(ref InteractableLootbox __result, Item item, InteractableLootbox prefab)
     {
         if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var service = NetService.Instance;
         var tombPrefab = GameplayDataSettings.Prefabs?.LootBoxPrefab_Tomb;
         var isTomb = tombPrefab && prefab && prefab.gameObject == tombPrefab.gameObject;
         // 客户端不要本地生成尸体箱，否则会和主机广播的箱子重复
+        var main = CharacterMainControl.Main;
+        var isLocalDeath = isTomb && main && main.Health.IsDead && item == main.CharacterItem;
+        if (isLocalDeath && service != null && !service.IsServer && service.networkStarted)
+            HealthM.Instance?.NotifyLocalDeadLootReady(main.Health);
         if (!isTomb && service != null && !service.IsServer && service.networkStarted)
         {
             __result = null;
@@ -43,7 +47,7 @@ internal static class DeadLootSpawnPatch
         return true;
     }
 
-    private static void Postfix(InteractableLootbox __result)
+    private static void Postfix(InteractableLootbox __result, Item item, InteractableLootbox prefab)
     {
         if (__result == null)
             return;
@@ -51,9 +55,24 @@ internal static class DeadLootSpawnPatch
         if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
 
         var service = NetService.Instance;
-        if (service == null || !service.IsServer || !service.networkStarted)
+        if (service == null || !service.networkStarted)
             return;
 
-        DeadLootBox.Instance?.Server_OnDeadLootboxSpawned(__result, DeadLootSpawnContext.InOnDead);
+        var tomb = GameplayDataSettings.Prefabs?.LootBoxPrefab_Tomb;
+        var isTomb = tomb && prefab && prefab.gameObject == tomb.gameObject;
+        var main = CharacterMainControl.Main;
+        var isLocalDeath = isTomb && main && main.Health.IsDead && item == main.CharacterItem;
+        if (!service.IsServer)
+        {
+            if (isLocalDeath)
+            {
+                // Preserve native item transfer/filtering, then discard this temporary local copy.
+                __result.gameObject.SetActive(false);
+                UnityEngine.Object.Destroy(__result.gameObject);
+            }
+            return;
+        }
+        DeadLootBox.Instance?.Server_OnDeadLootboxSpawned(__result, DeadLootSpawnContext.InOnDead, isTomb);
+        if (isLocalDeath) CorpseRecovery.RegisterServerBody(__result, null, CorpseRecovery.GetLocalRecordId(main));
     }
 }

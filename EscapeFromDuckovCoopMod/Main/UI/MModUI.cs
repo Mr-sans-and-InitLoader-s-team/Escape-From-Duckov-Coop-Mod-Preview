@@ -36,6 +36,7 @@ public class MModUI : MonoBehaviour
 
     // UI 组件引用 - 使用组件容器
     private Canvas _canvas;
+    private CoopModeSelectionUI _modeSelection;
     private MModUIComponents _components;
     private MModUILayoutBuilder _layoutBuilder;
 
@@ -64,7 +65,7 @@ public class MModUI : MonoBehaviour
     private string _manualIP = "127.0.0.1";
     private string _manualPort = "9050";
     private int _port = 9050;
-    private string _status = "未连接";
+    private string _status = CoopLocalization.Get("ui.status.notConnected");
     public bool _streamerMode;
 
     private readonly Dictionary<string, GameObject> _hostEntries = new();
@@ -73,6 +74,7 @@ public class MModUI : MonoBehaviour
 
     // Steam相关字段
     private readonly List<SteamLobbyManager.LobbyInfo> _steamLobbyInfos = new();
+    private readonly Dictionary<ulong, CoopLobbyModeBadge> _steamModeBadges = new();
     private readonly HashSet<ulong> _displayedSteamLobbies = new();  // 缓存已显示的房间ID
     private string _steamLobbySearchTerm = string.Empty;
     private string _lastAppliedSteamSearchTerm = string.Empty;
@@ -324,6 +326,13 @@ public class MModUI : MonoBehaviour
         if (panel == null)
             yield break;
 
+        yield return AnimateCard(panel, show, VotePanelShownPosition, GetVotePanelHiddenPosition(panel.GetComponent<RectTransform>().sizeDelta.y));
+        _votePanelAnimation = null;
+    }
+
+    internal IEnumerator AnimateCard(GameObject panel, bool show, Vector2 shownPosition, Vector2 hiddenPosition)
+    {
+
         var rect = panel.GetComponent<RectTransform>();
         var canvasGroup = panel.GetComponent<CanvasGroup>() ?? panel.AddComponent<CanvasGroup>();
         if (rect == null)
@@ -333,7 +342,7 @@ public class MModUI : MonoBehaviour
             panel.SetActive(true);
 
         var startPos = rect.anchoredPosition;
-        var targetPos = show ? VotePanelShownPosition : GetVotePanelHiddenPosition(rect.sizeDelta.y);
+        var targetPos = show ? shownPosition : hiddenPosition;
         var startAlpha = canvasGroup.alpha;
         var targetAlpha = show ? 1f : 0f;
         var startScale = rect.localScale;
@@ -362,7 +371,6 @@ public class MModUI : MonoBehaviour
         if (!show)
             panel.SetActive(false);
 
-        _votePanelAnimation = null;
     }
 
     private static float VoteEaseOutCubic(float t)
@@ -500,6 +508,8 @@ public class MModUI : MonoBehaviour
     {
         _steamLobbyInfos.Clear();
         _steamLobbyInfos.AddRange(lobbies);
+        foreach (var lobby in lobbies)
+            if (_steamModeBadges.TryGetValue(lobby.LobbyId.m_SteamID, out var badge) && badge) badge.SetMode(lobby.SharedMode);
     }
 
     private void OnLobbyJoined()
@@ -585,10 +595,35 @@ public class MModUI : MonoBehaviour
 
         // 创建聊天面板
         CreateChatPanel();
+        if (!_modeSelection) _modeSelection = gameObject.AddComponent<CoopModeSelectionUI>();
+        _modeSelection.Bind(_canvas, this);
     }
+
+    internal void HideConnectionPanel()
+    {
+        showUI = false;
+        if (_components?.MainPanel) _components.MainPanel.SetActive(false);
+    }
+
+    internal void ShowConnectionPanel()
+    {
+        showUI = true;
+        if (_components?.MainPanel) StartCoroutine(AnimatePanel(_components.MainPanel, true));
+    }
+
+    internal void OnChooseCoopMode() => _modeSelection?.Show();
+
+    internal void ShowDisconnectNotice(bool returning) => DisconnectNotice.Show(this, _canvas.transform, returning);
 
     private static string _tipText;
     private static float _tipExpireTime;
+    internal void ShowConnectionError(string title, string details)
+    {
+        showUI = true;
+        if (_components?.MainPanel != null) StartCoroutine(AnimatePanel(_components.MainPanel, true));
+        ConnectionErrorDialog.Show(this, _canvas.transform, title, details);
+    }
+
     public static void ShowTip(string msg, float duration = 4f)
     {
         _tipText = msg;
@@ -1064,10 +1099,19 @@ public class MModUI : MonoBehaviour
 
     private void UpdateModeDisplay()
     {
+        if (_components?.CoopModeSelectButton != null)
+            _components.CoopModeSelectButton.interactable = CoopModeSelectionUI.CanChoose;
         // 判断是否是活跃的服务器（服务器模式且网络已启动）
         bool isActiveServer = IsServer && networkStarted;
         bool isSteamMode = TransportMode == NetworkTransportMode.SteamP2P;
         bool isInSteamLobby = isSteamMode && LobbyManager != null && LobbyManager.IsInLobby;
+        if (_components?.SteamCoopModeBadge != null)
+        {
+            bool? roomMode = SharedHome.Enabled;
+            if (isInSteamLobby && !LobbyManager.IsHost)
+                roomMode = LobbyManager.TryGetLobbyInfo(LobbyManager.CurrentLobbyId, out var currentRoom) ? currentRoom.SharedMode : null;
+            _components.SteamCoopModeBadge.SetMode(roomMode);
+        }
 
         if (_components?.ModeText != null)
         {
@@ -1965,20 +2009,20 @@ public class MModUI : MonoBehaviour
     {
         if (SceneNet.Instance == null)
         {
-            SetStatusText("[!] 投票系统未初始化", ModernColors.Error);
+            SetStatusText("[!] " + CoopLocalization.Get("ui.vote.notInitialized"), ModernColors.Error);
             return;
         }
 
         // 只有房主才能取消投票
         if (!IsServer)
         {
-            SetStatusText("[!] 只有房主可以取消投票", ModernColors.Error);
+            SetStatusText("[!] " + CoopLocalization.Get("ui.vote.onlyHostCanCancel"), ModernColors.Error);
             return;
         }
 
         // 调用取消投票方法
         SceneNet.Instance.CancelVote();
-        SetStatusText("[OK] 已取消投票", ModernColors.Success);
+        SetStatusText("[OK] " + CoopLocalization.Get("ui.vote.cancelled"), ModernColors.Success);
         Debug.Log("[MModUI] 房主取消了投票");
     }
 
@@ -2262,12 +2306,12 @@ public class MModUI : MonoBehaviour
     private static Sprite RoundedCloseGlyphSprite => _roundedCloseGlyphSprite ??= CreateVerticalCapsuleSprite(32, 8, 4, new Vector4(4, 4, 4, 4));
     private static Sprite RoundedToggleSprite => _roundedToggleSprite ??= CreateRoundedRectSprite(44, 8, 8);
 
-    private static void StylePanelImage(Image image, Color color)
+    internal static void StylePanelImage(Image image, Color color)
     {
         StyleRoundedImage(image, color, RoundedPanelSprite);
     }
 
-    private static void StyleCardImage(Image image, Color color)
+    internal static void StyleCardImage(Image image, Color color)
     {
         StyleRoundedImage(image, color, RoundedCardSprite);
     }
@@ -3299,6 +3343,8 @@ public class MModUI : MonoBehaviour
         controlLayout.flexibleHeight = 1;
 
         CreateSectionHeader(controlCard.transform, CoopLocalization.Get("ui.steam.lobbySettings"));
+        var modeRow = CreateHorizontalGroup(controlCard.transform, "CoopModeRow");
+        _components.SteamCoopModeBadge = CoopLobbyModeBadge.Create(modeRow.transform, SharedHome.Enabled);
 
         // 房间名称
         var nameRow = CreateHorizontalGroup(controlCard.transform, "NameRow");
@@ -3475,6 +3521,7 @@ public class MModUI : MonoBehaviour
             return false;
         }
 
+        if (SharedHomeEntry.AtMainMenu) return true;
         var isInGame = LocalPlayerManager.Instance.ComputeIsInGame(out var sceneId);
         if (!isInGame)
         {
@@ -3605,6 +3652,7 @@ public class MModUI : MonoBehaviour
         Debug.Log($"[MModUI] Steam房间列表已更新，重建UI (当前: {currentLobbies.Count}, 之前: {_displayedSteamLobbies.Count})");
 
         // 清空现有列表
+        _steamModeBadges.Clear();
         foreach (Transform child in _components.SteamLobbyListContent)
             Destroy(child.gameObject);
 
@@ -3631,8 +3679,8 @@ public class MModUI : MonoBehaviour
     {
         var entry = CreateModernCard(_components.SteamLobbyListContent, $"Lobby_{lobby.LobbyId}");
         var entryLayout = entry.GetComponent<LayoutElement>();
-        entryLayout.preferredHeight = 120;  // 增加高度：90 -> 120
-        entryLayout.minHeight = 120;
+        entryLayout.preferredHeight = 144;
+        entryLayout.minHeight = 144;
 
         // 禁用卡片背景的射线检测，让点击事件能传递到按钮
         var entryImage = entry.GetComponent<Image>();
@@ -3656,6 +3704,7 @@ public class MModUI : MonoBehaviour
 
         var lobbyNameText = CreateText("LobbyName", nameRow.transform, lobby.LobbyName, 16, ModernColors.TextPrimary, TextAlignmentOptions.Left, FontStyles.Bold);
         lobbyNameText.raycastTarget = false;  // 禁用文本射线检测
+        _steamModeBadges[lobby.LobbyId.m_SteamID] = CoopLobbyModeBadge.Create(nameRow.transform, lobby.SharedMode);
 
         if (lobby.RequiresPassword)
         {

@@ -16,6 +16,7 @@
 
 using Cysharp.Threading.Tasks;
 using Duckov.UI;
+using Duckov.Utilities;
 using ItemStatsSystem;
 using LiteNetLib;
 using System.Collections;
@@ -45,7 +46,8 @@ public class HealthM : MonoBehaviour
     private float _cliNextSendHp;
     private float _cliNextHeartbeat;
 
-    private bool _clientDeathReported = false;
+    private readonly LocalPlayerDeathReport _localDeathReport = new();
+    private readonly PlayerDeathReportGate<CoopPeer> _deathReports = new();
 
     private NetService Service => NetService.Instance;
     private bool IsServer => Service != null && Service.IsServer;
@@ -64,6 +66,11 @@ public class HealthM : MonoBehaviour
     public void NotifyLocalHealthChanged(Health health, DamageInfo? damage)
     {
         if (!networkStarted || health == null) return;
+        var main = CharacterMainControl.Main;
+        if (!main || main.Health != health) return;
+        // OnHealthChange runs inside Hurt before the game's non-raid death
+        // protection restores 1 HP. Do not publish that intermediate lethal value.
+        if (!health.IsDead && health.CurrentHealth <= 0f) return;
         if (IsServer)
             Server_BroadcastHostSnapshot(health, damage);
         else
@@ -72,7 +79,7 @@ public class HealthM : MonoBehaviour
 
     private void Update()
     {
-        if (IsServer || !networkStarted) return;
+        if (!networkStarted) return;
 
         if (Time.time < _cliNextHeartbeat) return;
         _cliNextHeartbeat = Time.time + 3f;
@@ -81,7 +88,8 @@ public class HealthM : MonoBehaviour
         var health = main ? main.Health : null;
         if (!health) return;
 
-        Client_SendSnapshot(health, null, true);
+        if (IsServer) Server_BroadcastHostSnapshot(health, null);
+        else Client_SendSnapshot(health, null, true);
     }
 
     private void Client_SendSnapshot(Health health, DamageInfo? damage, bool force = false)
@@ -91,14 +99,10 @@ public class HealthM : MonoBehaviour
 
         var (max, cur) = ReadHealth(health);
         if (max <= 0f) return;
+        if (!health.IsDead && cur <= 0f) return;
+        _localDeathReport.Observe(health, health.IsDead, cur);
         var now = Time.time;
         force |= damage.HasValue;
-
-        if (cur > 0f && _clientDeathReported)
-        {
-            // Reset lock when player is alive again (e.g. after respawn)
-            _clientDeathReported = false;
-        }
 
         if (!force)
         {
@@ -111,7 +115,10 @@ public class HealthM : MonoBehaviour
             MaxHealth = max,
             CurrentHealth = cur,
             HasDamage = damage.HasValue,
-            Damage = DamageForwardPayload.FromDamageInfo(damage)
+            Damage = DamageForwardPayload.FromDamageInfo(damage),
+            LifeId = _localDeathReport.LifeId,
+            IsDead = health.IsDead,
+            Buffs = Buff_.CaptureLocal()
         };
 
         CoopTool.SendRpc(in rpc);
@@ -119,46 +126,45 @@ public class HealthM : MonoBehaviour
         _cliLastSentHp = (max, cur);
         _cliNextSendHp = now + CLIENT_SEND_INTERVAL;
 
-        if(cur < 0f && !_clientDeathReported)
-        {
-            // Lock to avoid sending multiple death reports before player respawns
-            _clientDeathReported = true;
-            Client_SendDeadLoot();
-        }
     }
 
-    private void Client_SendDeadLoot()
+    internal void NotifyLocalDeadLootReady(Health health)
     {
+        // Native CharacterDieTask records the death before transferring its items to a tomb.
+        // Health can already be zero before that record exists.
+        NotifyLocalHealthChanged(health, null);
+        if (!networkStarted || IsServer || health == null || CharacterMainControl.Main?.Health != health) return;
+        if (_localDeathReport.TryReport(health.IsDead, health.CurrentHealth))
+            Client_SendDeadLoot(health, _localDeathReport.LifeId);
+    }
+
+    private void Client_SendDeadLoot(Health health, string lifeId)
+    {
+        var main = CharacterMainControl.Main;
+        if (main == null || main.Health != health || !health.IsDead || health.CurrentHealth > 0f) return;
         var w = new NetDataWriter();
         w.Put((byte)Op.PLAYER_DEAD_LOOT_SPAWN);
+        w.Put(lifeId);
 
         Debug.Log($"[Client Report Dead] Writing Op: {(byte)Op.PLAYER_DEAD_LOOT_SPAWN}");
 
-        var main = CharacterMainControl.Main;
         w.PutV3cm(main.transform.position);
-        var inventory = CharacterMainControl.Main.CharacterItem.Inventory;
-        var equipedItems = new[]
-        {
-            CharacterMainControl.Main.PrimWeaponSlot().Content,
-            CharacterMainControl.Main.SecWeaponSlot().Content,
-            CharacterMainControl.Main.HelmatSlot().Content,
-            CharacterMainControl.Main.ArmorSlot().Content,
-            CharacterMainControl.Main.GetSlot(CharacterEquipmentController.faceMaskHash).Content,
-            CharacterMainControl.Main.GetSlot(CharacterEquipmentController.headsetHash).Content,
-            CharacterMainControl.Main.BackpackSlot().Content
-        };
+        var inventory = main.CharacterItem.Inventory;
         var items = new List<Item>();
-        
-        foreach (var item in equipedItems)
+
+        foreach (var slot in main.CharacterItem.Slots)
         {
-            if (item != null) items.Add(item);
+            var item = slot.Content;
+            if (item != null && !item.Tags.Contains(GameplayDataSettings.Tags.DestroyOnLootBox) &&
+                !item.Tags.Contains(GameplayDataSettings.Tags.DontDropOnDeadInSlot) && !item.Sticky)
+                items.Add(item);
         }
 
         if (inventory != null)
         {
             foreach (var item in inventory)
             {
-                if (item != null) items.Add(item);
+                if (item != null && !item.Tags.Contains(GameplayDataSettings.Tags.DestroyOnLootBox)) items.Add(item);
             }
         }
 
@@ -170,9 +176,11 @@ public class HealthM : MonoBehaviour
             ItemTool.WriteItemSnapshot(w, ItemTool.MakeSnapshot(item));
         }
     
+        w.Put(CorpseRecovery.GetLocalRecordId(main));
         CoopTool.SendReliable(w);
         Debug.Log($"Reporting Death message to server!");
     }
+
 
     private void Server_BroadcastHostSnapshot(Health health, DamageInfo? damage)
     {
@@ -185,7 +193,7 @@ public class HealthM : MonoBehaviour
         if (max <= 0f) return;
 
 
-        BroadcastPlayerSnapshot(playerId, max, cur, damage.HasValue ? DamageForwardPayload.FromDamageInfo(damage) : (DamageForwardPayload?)null, null);
+        BroadcastPlayerSnapshot(playerId, max, cur, damage.HasValue ? DamageForwardPayload.FromDamageInfo(damage) : (DamageForwardPayload?)null, null, Buff_.CaptureLocal());
     }
 
     private static (float max, float cur) ReadHealth(Health health)
@@ -196,7 +204,7 @@ public class HealthM : MonoBehaviour
         return (max, cur);
     }
 
-    private void BroadcastPlayerSnapshot(string playerId, float max, float cur, DamageForwardPayload? damage, NetPeer excludePeer)
+    private void BroadcastPlayerSnapshot(string playerId, float max, float cur, DamageForwardPayload? damage, NetPeer excludePeer, PlayerBuffState[] buffs = null)
     {
         if (!IsServer || string.IsNullOrEmpty(playerId) || max <= 0f) return;
 
@@ -209,7 +217,8 @@ public class HealthM : MonoBehaviour
             MaxHealth = max,
             CurrentHealth = cur,
             HasDamage = damage.HasValue,
-            Damage = damage ?? default
+            Damage = damage ?? default,
+            Buffs = buffs
         };
 
         CoopTool.SendRpc(in rpc, excludePeer);
@@ -218,6 +227,8 @@ public class HealthM : MonoBehaviour
     public void Server_HandlePlayerHealthReport(NetPeer sender, PlayerHealthReportRpc message)
     {
         if (!IsServer || sender == null) return;
+
+        _deathReports.Observe(sender, message.LifeId, message.IsDead && message.CurrentHealth <= 0f);
 
         var service = Service;
         var playerId = service?.GetPlayerId(sender);
@@ -236,7 +247,28 @@ public class HealthM : MonoBehaviour
             Server_TrySpawnMissingRemote(sender, playerId, max, cur);
         }
 
-        BroadcastPlayerSnapshot(playerId, max, cur, message.HasDamage ? message.Damage : (DamageForwardPayload?)null, sender);
+        COOPManager.Buff?.ReceiveSnapshot(playerId, message.Buffs);
+        BroadcastPlayerSnapshot(playerId, max, cur, message.HasDamage ? message.Damage : (DamageForwardPayload?)null, sender, message.Buffs);
+    }
+
+    public bool Server_CanSpawnDeathLoot(CoopPeer peer, string lifeId) => IsServer && networkStarted &&
+        peer?.ConnectionState == ConnectionState.Connected && _deathReports.CanConsume(peer, lifeId);
+
+    public bool Server_ConsumeDeathLoot(CoopPeer peer, string lifeId) => Server_CanSpawnDeathLoot(peer, lifeId) &&
+        _deathReports.TryConsume(peer, lifeId);
+
+    public void ForgetDeathReports(CoopPeer peer) => _deathReports.Remove(peer);
+
+    public void ResetDeathReports()
+    {
+        HealthSyncDiagnostics.Reset();
+        _localDeathReport.Reset();
+        _deathReports.Clear();
+        _srvPlayerSnapshots.Clear();
+        _srvNextBroadcast.Clear();
+        _srvNextDamageRequestBySenderTarget.Clear();
+        _cliLastSentHp = default;
+        _cliNextSendHp = _cliNextHeartbeat = 0f;
     }
 
     public void Server_HandlePlayerDamageRequest(NetPeer sender, PlayerDamageRequestRpc message)
@@ -285,6 +317,7 @@ public class HealthM : MonoBehaviour
     {
         if (IsServer || string.IsNullOrEmpty(message.PlayerId)) return;
         if (Service != null && Service.IsSelfId(message.PlayerId)) return;
+        COOPManager.Buff?.ReceiveSnapshot(message.PlayerId, message.Buffs);
 
         var max = Mathf.Max(1f, message.MaxHealth);
         var cur = Mathf.Clamp(message.CurrentHealth, 0f, max);
@@ -304,10 +337,9 @@ public class HealthM : MonoBehaviour
         if (IsServer) return;
         var service = Service;
         if (service == null) return;
+        if (!service.IsSelfId(message.PlayerId)) return;
         if (LocalPlayerManager.Instance != null && LocalPlayerManager.Instance.IsLocalInvincible())
             return;
-        // 允许空 PlayerId 或不匹配的转发继续执行，恢复客户端对自身伤害的本地处理
-
         Client_ApplyForwardedDamage(message.Damage).Forget();
     }
 
@@ -350,6 +382,9 @@ public class HealthM : MonoBehaviour
         var playerId = service?.GetPlayerId(peer);
         if (string.IsNullOrEmpty(playerId)) return;
         if (!_srvPlayerSnapshots.TryGetValue(playerId, out var snap)) return;
+        var health = instance.GetComponent<CharacterMainControl>()?.Health;
+        var state = RemoteHealthState.Get(health);
+        if (state?.HasSnapshot == true && state.MaxHealth == snap.max && state.CurrentHealth == snap.cur) return;
        // Debug.Log("Server_ApplyCachedHealth "+ snap.max+" "+snap.cur);
         ApplyHealthAndEnsureBar(instance, snap.max, snap.cur);
     }
@@ -428,6 +463,16 @@ public class HealthM : MonoBehaviour
         bool exactMax = false)
     {
         if (!h) return;
+        if (float.IsNaN(max) || float.IsInfinity(max) || max <= 0f ||
+            float.IsNaN(cur) || float.IsInfinity(cur)) return;
+
+        if (RemoteHealthState.TryApply(h, max, cur))
+        {
+            var replicaCharacter = h.TryGetCharacter();
+            ApplyArmorStats(replicaCharacter ? replicaCharacter.CharacterItem : null, bodyArmor, headArmor);
+            if (ensureBar) EnsureHealthBar(h);
+            return;
+        }
 
         var nowMax = h.MaxHealth;
         var defMax = (int)(HealthTool.FI_defaultMax?.GetValue(h) ?? 0);
@@ -478,30 +523,32 @@ public class HealthM : MonoBehaviour
             h.OnHealthChange?.Invoke(h);
         }
 
-        if (ensureBar)
-        {
-            if (!ShouldShowHealthBar(h))
-            {
-                SuppressHealthBar(h);
-                return;
-            }
+        if (ensureBar) EnsureHealthBar(h);
+    }
 
-            if (NetService.Instance.IsServer)
-            {
-                if (h.TryGetCharacter().aiCharacterController == null)
-                {
-                    h.showHealthBar = true;
-                }
-            }
-            if (!NetService.Instance.IsServer)
+    private void EnsureHealthBar(Health h)
+    {
+        if (!ShouldShowHealthBar(h))
+        {
+            SuppressHealthBar(h);
+            return;
+        }
+
+        if (NetService.Instance.IsServer)
+        {
+            if (h.TryGetCharacter().aiCharacterController == null)
             {
                 h.showHealthBar = true;
             }
-
-            h.RequestHealthBar();
-
-            StartCoroutine(EnsureBarRoutine(h, 2, 0.1f));
         }
+        if (!NetService.Instance.IsServer)
+        {
+            h.showHealthBar = true;
+        }
+
+        h.RequestHealthBar();
+
+        StartCoroutine(EnsureBarRoutine(h, 2, 0.1f));
     }
 
     private static void ApplyArmorStats(Item characterItemInstance, float? bodyArmor, float? headArmor)
@@ -530,7 +577,7 @@ public class HealthM : MonoBehaviour
         if (!go) return;
         
         var cmc = go.GetComponent<CharacterMainControl>();
-        var h = cmc.Health;
+        var h = cmc ? cmc.Health : null;
         if (!cmc || !h) return;
 
         h.autoInit = false;

@@ -14,6 +14,7 @@ public struct AIHealthBroadcastRpc : IRpcMessage
     public bool HasDamage;
     public DamageForwardPayload Damage;
     public bool KillerCredit;
+    public float ConfirmedDamage;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -27,6 +28,7 @@ public struct AIHealthBroadcastRpc : IRpcMessage
         if (HasDamage)
             Damage.Serialize(writer);
         writer.Put(KillerCredit);
+        writer.Put(ConfirmedDamage);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -44,5 +46,6 @@ public struct AIHealthBroadcastRpc : IRpcMessage
             Damage.Deserialize(reader);
         }
         KillerCredit = reader.AvailableBytes > 0 && reader.GetBool();
+        ConfirmedDamage = reader.AvailableBytes >= sizeof(float) ? reader.GetFloat() : 0f;
     }
 }

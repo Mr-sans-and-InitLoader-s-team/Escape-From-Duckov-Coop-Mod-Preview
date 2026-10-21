@@ -117,6 +117,7 @@ public class Weather
         SendClockState(context.Sender, true);
         SendWeatherState(context.Sender, true);
         SendLootSnapshot(context.Sender);
+        DeadLootBox.Instance?.Server_ReplayToPeer(context.Sender);
         SendDoorSnapshot(context.Sender);
         LevelDataBoolNet.Server_SendCostTakerSnapshot(context.Sender);
         SendDestructibleSnapshot(context.Sender);

@@ -18,7 +18,6 @@ using Duckov.Scenes;
 using Duckov.Utilities;
 using Duckov.Weathers;
 using System;
-using System.Reflection;
 using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
@@ -131,6 +130,7 @@ internal static class Patch_SABPD_FixedUpdate_AllPlayersUnion
     {
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true; // 单机：走原版
+        if (!mod.IsServer) return true;
         if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var tr = Traverse.Create(__instance);
 
@@ -216,39 +216,6 @@ internal static class Patch_ClientMelee_HurtRedirect_Destructible
         // 正确的调用：传 id，而不是传 HealthSimpleBase
         COOPManager.HurtM.Client_RequestDestructibleHurt(id, __0);
         return false; // 阻止本地结算，等主机广播
-    }
-}
-
-//观战
-[HarmonyPatch]
-internal static class Patch_ClosureView_ShowAndReturnTask_SpectatorGate
-{
-    private static MethodBase TargetMethod()
-    {
-        var t = AccessTools.TypeByName("Duckov.UI.ClosureView");
-        if (t == null) return null;
-        return AccessTools.Method(t, "ShowAndReturnTask", new[] { typeof(DamageInfo), typeof(float) });
-    }
-
-    private static bool Prefix(ref UniTask __result, DamageInfo dmgInfo, float duration)
-    {
-        var mod = ModBehaviourF.Instance;
-        if (mod == null || !mod.networkStarted) return true;
-
-        if (Spectator.Instance._skipSpectatorForNextClosure)
-        {
-            Spectator.Instance._skipSpectatorForNextClosure = false;
-            __result = UniTask.CompletedTask;
-            return true;
-        }
-
-        // 如果还有队友活着，走观战并阻止结算 UI
-        if (Spectator.Instance.TryEnterSpectatorOnDeath(dmgInfo))
-            //  __result = UniTask.CompletedTask;
-            // ClosureView.Instance.gameObject.SetActive(false);
-            return true; // 拦截原方法
-
-        return true;
     }
 }
 

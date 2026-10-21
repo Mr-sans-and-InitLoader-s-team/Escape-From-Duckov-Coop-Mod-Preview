@@ -7,6 +7,14 @@ namespace EscapeFromDuckovCoopMod;
 
 public static class RPCLoot
 {
+    public static void HandleCorpseInventory(RpcContext context, CorpseInventoryRpc message)
+    {
+        if (context.Service != null && !context.IsServer) CorpseRecovery.ApplySnapshot(message);
+    }
+    public static void HandleCorpseSpawnRequest(RpcContext context, CorpseSpawnRequestRpc message)
+    {
+        if (context.IsServer) CorpseRecovery.HandleSpawnRequest(context.Sender, message);
+    }
 
     public static void HandleLootOpenRequest(RpcContext context, LootOpenRequestRpc message)
     {
@@ -75,7 +83,7 @@ public static class RPCLoot
         if (SceneManager.GetActiveScene().buildIndex != message.SceneIndex)
             return;
 
-        DeadLootBox.Instance?.SpawnDeadLootboxAt(message.LootUid, message.Position, message.Rotation, message.UseTombPrefab, message.PrefabName);
+        DeadLootBox.Instance?.SpawnDeadLootboxAt(message.LootUid, message.Position, message.Rotation, message.UseTombPrefab, message.PrefabName, message.OwnerId);
 
         if (!string.IsNullOrEmpty(message.PlayerId))
             Client_ForceRemoteDeath(context.Service, message.PlayerId);

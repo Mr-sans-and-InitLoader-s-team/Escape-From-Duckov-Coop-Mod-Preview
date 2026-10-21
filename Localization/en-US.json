@@ -145,10 +145,6 @@
       "value": "Cancel Vote"
     },
     {
-      "key": "ui.vote.title",
-      "value": "Map Vote"
-    },
-    {
       "key": "ui.spectator.mode",
       "value": "Spectator Mode: LMB ▶ Next | RMB ◀ Previous | Press F8 to end and view results (failsafe)"
     },
@@ -1183,6 +1179,270 @@
     {
       "key": "ui.sceneVote.alreadyActive",
       "value": "A map vote is already in progress."
+    },
+    {
+      "key": "ui.teleporter.busy",
+      "value": "A departure is already in progress. Finish or cancel it first."
+    },
+    {
+      "key": "ui.teleporter.reason.notReady",
+      "value": "character is not ready"
+    },
+    {
+      "key": "ui.teleporter.reason.destinationMissing",
+      "value": "destination was not found"
+    },
+    {
+      "key": "ui.teleporter.reason.missingCost",
+      "value": "required items or money are missing"
+    },
+    {
+      "key": "ui.teleporter.reason.paymentFailed",
+      "value": "payment failed"
+    },
+    {
+      "key": "ui.teleporter.reason.readyWithdrawn",
+      "value": "withdrew readiness"
+    },
+    {
+      "key": "ui.teleporter.reason.openFailed",
+      "value": "could not open departure confirmation"
+    },
+    {
+      "key": "ui.teleporter.reason.checkFailed",
+      "value": "departure check failed"
+    },
+    {
+      "key": "ui.teleporter.reason.cancelled",
+      "value": "cancelled departure"
+    },
+    {
+      "key": "ui.teleporter.reason.requirementsFailed",
+      "value": "departure requirements were not met"
+    },
+    {
+      "key": "ui.teleporter.reason.disconnected",
+      "value": "disconnected"
+    },
+    {
+      "key": "ui.teleporter.reason.closed",
+      "value": "closed departure confirmation"
+    },
+    {
+      "key": "ui.teleporter.reason.timeout",
+      "value": "timed out waiting for a player"
+    },
+    {
+      "key": "ui.teleporter.cancelledByPlayer",
+      "value": "{0}: {1}. Departure cancelled. Any deducted costs will be refunded."
+    },
+    {
+      "key": "ui.teleporter.cancelled",
+      "value": "Departure cancelled."
+    },
+    {
+      "key": "ui.teleporter.disconnected",
+      "value": "Disconnected. Departure cancelled."
+    },
+    {
+      "key": "ui.teleporter.cancelTimeout",
+      "value": "Cancellation confirmation timed out. Local departure cancelled."
+    },
+    {
+      "key": "ui.streamerMode",
+      "value": "Streamer Mode"
+    },
+    {
+      "key": "ui.vote.notInitialized",
+      "value": "Voting system is not initialized"
+    },
+    {
+      "key": "ui.vote.onlyHostCanCancel",
+      "value": "Only the host can cancel the vote"
+    },
+    {
+      "key": "ui.vote.cancelled",
+      "value": "Vote cancelled"
+    },
+    {
+      "key": "net.steamUnavailable",
+      "value": "Steam is not initialized; P2P cannot start"
+    },
+    {
+      "key": "net.startFailed",
+      "value": "Failed to start networking"
+    },
+    {
+      "key": "ui.steam.protocolMismatch",
+      "value": "All players must use the same version of the native Steam P2P co-op mod"
+    },
+    {
+      "key": "ui.settings.configureOffline",
+      "value": "Please configure this setting in single-player mode."
+    },
+    {
+      "key": "ui.sharedHome",
+      "value": "Private shared mode"
+    },
+    {
+      "key": "ui.sharedHome.desc",
+      "value": "Enable before hosting; guests share automatically. The host saves experience, levels, skills, quests, kills, maps, beacons, recipes, money, storage, buildings and decorations. Appearance, backpacks and equipment are saved per player and restored on rejoining. First visits create a character with native customization; tutorial progress follows the host. Personal saves are preserved and restored on leaving. Locked while connected."
+    },
+    {
+      "key": "ui.sharedHome.displayHostOnly",
+      "value": "In shared mode, the host edits display contents and guests see the synchronized display. All players can use the common warehouse."
+    },
+    {
+      "key": "net.sharedHome.title",
+      "value": "Shared mode: connection failed"
+    },
+    {
+      "key": "net.sharedHome.close",
+      "value": "Close"
+    },
+    {
+      "key": "net.sharedHome.rejectedHost",
+      "value": "Player {0} could not connect: shared mode compatibility check failed."
+    },
+    {
+      "key": "net.sharedHome.rejectedClient",
+      "value": "Could not join: shared mode compatibility check failed."
+    },
+    {
+      "key": "net.sharedHome.invalid",
+      "value": "The enabled mod list or game version could not be verified. Restart both games and check that all enabled mods load correctly."
+    },
+    {
+      "key": "net.sharedHome.protocol",
+      "value": "Shared mode validation protocols differ. Install the same co-op build on both sides."
+    },
+    {
+      "key": "net.sharedHome.game",
+      "value": "Game version differs. Host: {1}; client: {2}."
+    },
+    {
+      "key": "net.sharedHome.coop",
+      "value": "Co-op version differs. Host: {1}; client: {2}."
+    },
+    {
+      "key": "net.sharedHome.missing",
+      "value": "Client is missing enabled mod: {0} (host version: {1})."
+    },
+    {
+      "key": "net.sharedHome.extra",
+      "value": "Client has an extra enabled mod: {0} (client version: {2})."
+    },
+    {
+      "key": "net.sharedHome.version",
+      "value": "Mod version differs: {0}. Host: {1}; client: {2}."
+    },
+    {
+      "key": "net.sharedHome.hash",
+      "value": "Mod DLL differs: {0}.\nHost SHA-256:\n{1}\nClient SHA-256:\n{2}"
+    },
+    {
+      "key": "net.sharedHome.unreadable",
+      "value": "Could not read the DLL for enabled mod: {0}. Restore the mod files and restart the game."
+    },
+    {
+      "key": "net.sharedHome.timeout",
+      "value": "Shared mode compatibility validation timed out. Check the connection and install the same co-op build on both sides."
+    },
+    {
+      "key": "net.sharedHome.entryFailed",
+      "value": "Could not load the shared room. Disconnected and restored your personal save. Please check the log."
+    },
+    {
+      "key": "ui.coopMode.title",
+      "value": "Choose your co-op mode"
+    },
+    {
+      "key": "ui.coopMode.hint",
+      "value": "Hover over a card for details. When joining a room, the host decides the mode."
+    },
+    {
+      "key": "ui.coopMode.select",
+      "value": "SELECT  ›"
+    },
+    {
+      "key": "ui.coopMode.independent.title",
+      "value": "Independent Co-op"
+    },
+    {
+      "key": "ui.coopMode.independent.tag",
+      "value": "YOUR CHARACTER · YOUR PROGRESS"
+    },
+    {
+      "key": "ui.coopMode.independent.summary",
+      "value": "• Explore and fight together<br>• Keep your own character progress<br>• Separate personal storage"
+    },
+    {
+      "key": "ui.coopMode.independent.detail",
+      "value": "Your own journey<br>Keep your personal experience, skills, quests and unlocks.<br><br>Your own equipment<br>Use your own storage, backpack and worn gear.<br><br>Team up to explore, fight and extract together."
+    },
+    {
+      "key": "ui.coopMode.shared.title",
+      "value": "Shared Co-op"
+    },
+    {
+      "key": "ui.coopMode.shared.tag",
+      "value": "ONE WORLD · SHARED PROGRESS"
+    },
+    {
+      "key": "ui.coopMode.shared.summary",
+      "value": "• Build one world together<br>• Shared progress and public storage<br>• Characters saved by the host"
+    },
+    {
+      "key": "ui.coopMode.shared.detail",
+      "value": "One shared adventure<br>Experience, levels, skills, quests, map unlocks, storage, buildings and decorations follow the host world.<br><br>Your own character<br>The host saves your appearance, backpack and gear. New visitors create a character.<br><br>Your personal save stays separate."
+    },
+    {
+      "key": "ui.steam.coopMode.shared",
+      "value": "Shared co-op"
+    },
+    {
+      "key": "ui.steam.coopMode.independent",
+      "value": "Independent co-op"
+    },
+    {
+      "key": "ui.steam.coopMode.unknown",
+      "value": "Mode unknown"
+    },
+    {
+      "key": "ui.coopMode.switch",
+      "value": "Switch mode"
+    },
+    {
+      "key": "net.disconnect.returning",
+      "value": "Returning to the main menu. Rejoin to return to the host map."
+    },
+    {
+      "key": "net.disconnect.reconnect",
+      "value": "Check your network and reconnect to the host."
+    },
+    {
+      "key": "net.reconnect.cancel",
+      "value": "Cancel reconnect"
+    },
+    {
+      "key": "net.reconnect.countdown",
+      "value": "Reconnecting in {0} seconds"
+    },
+    {
+      "key": "net.reconnect.connecting",
+      "value": "Reconnecting ({0}/5)…"
+    },
+    {
+      "key": "net.reconnect.connected",
+      "value": "Connection restored."
+    },
+    {
+      "key": "net.reconnect.stopped",
+      "value": "Automatic reconnect stopped. You can rejoin manually."
+    },
+    {
+      "key": "ui.coopMode.eyebrow",
+      "value": "ESCAPE FROM DUCKOV  /  COOPERATIVE"
     }
   ]
 }

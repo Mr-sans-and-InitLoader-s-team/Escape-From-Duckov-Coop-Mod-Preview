@@ -40,6 +40,7 @@ public static class CreateRemoteCharacter
 
     public static async UniTask<GameObject> CreateRemoteCharacterAsync(NetPeer peer, Vector3 position, Quaternion rotation, string customFaceJson)
     {
+        if (SceneLoader.IsSceneLoading || !LevelManager.LevelInited) return null;
         if (remoteCharacters.TryGetValue(peer, out var existing) && existing != null) return existing;
         if (!ServerSpawnPending.Add(peer)) return null;
 
@@ -50,8 +51,20 @@ public static class CreateRemoteCharacter
             if (levelManager == null || levelManager.MainCharacter == null) return null;
 
             var itemLoaded = await Coopbase.LoadOrCreateCharacterItemInstance();
-            var playerP = Traverse.Create(LevelManager.Instance).Field<CharacterModel>("characterModel").Value;
-            var player = await LevelManager.Instance.CharacterCreator.CreateCharacter(itemLoaded, playerP, position, rotation);
+            if (!networkStarted || peer.ConnectionState != ConnectionState.Connected || SceneLoader.IsSceneLoading ||
+                !LevelManager.LevelInited || LevelManager.Instance != levelManager)
+            {
+                if (itemLoaded) UnityEngine.Object.Destroy(itemLoaded.gameObject);
+                return null;
+            }
+            var playerP = Traverse.Create(levelManager).Field<CharacterModel>("characterModel").Value;
+            var player = await levelManager.CharacterCreator.CreateCharacter(itemLoaded, playerP, position, rotation);
+            if (!networkStarted || peer.ConnectionState != ConnectionState.Connected || SceneLoader.IsSceneLoading ||
+                !LevelManager.LevelInited || LevelManager.Instance != levelManager)
+            {
+                if (player) UnityEngine.Object.Destroy(player.gameObject);
+                return null;
+            }
             var instance = player.gameObject;
             var characterModel = instance.GetComponent<CharacterMainControl>();
 
@@ -76,11 +89,9 @@ public static class CreateRemoteCharacter
 
             CustomFace.StripAllCustomFaceParts(instance);
 
-            if (characterModel?.characterModel.CustomFace != null && !string.IsNullOrEmpty(customFaceJson))
-            {
-                var customFaceData = JsonUtility.FromJson<CustomFaceSettingData>(customFaceJson);
-                characterModel.characterModel.CustomFace.LoadFromData(customFaceData);
-            }
+            if (playerStatuses.TryGetValue(peer, out var latestFace) && !string.IsNullOrEmpty(latestFace.CustomFaceJson))
+                customFaceJson = latestFace.CustomFaceJson;
+            CustomFace.Client_ApplyFaceIfAvailable(Service.GetPlayerId(peer), instance, customFaceJson);
 
             if (playerStatuses.TryGetValue(peer, out var st1) && !string.IsNullOrEmpty(st1.PlayerName))
             {
@@ -134,6 +145,8 @@ public static class CreateRemoteCharacter
             cmc.gameObject.SetActive(false);
             remoteCharacters[peer] = instance;
             cmc.gameObject.SetActive(true);
+            RemoteLoadoutReplay.ForHost(peer, instance);
+            ColdBuffSync.ApplyPending(Service.GetPlayerId(peer), cmc);
 
             COOPManager.FriendlyFire?.OnRemoteCharacterCreated(cmc);
             ModApiEvents.RaisePlayerSpawned(cmc, NetService.Instance?.GetPlayerId(peer), false);
@@ -181,6 +194,7 @@ public static class CreateRemoteCharacter
 
     public static async UniTask CreateRemoteCharacterForClient(string playerId, Vector3 position, Quaternion rotation, string customFaceJson)
     {
+        if (SceneLoader.IsSceneLoading || !LevelManager.LevelInited) return;
         if (NetService.Instance.IsSelfId(playerId)) return; // ★ 不给自己创建“远程自己”
         if (clientRemoteCharacters.ContainsKey(playerId) && clientRemoteCharacters[playerId] != null) return;
         if (!ClientSpawnPending.Add(playerId)) return;
@@ -192,9 +206,24 @@ public static class CreateRemoteCharacter
             var levelManager = LevelManager.Instance;
             if (levelManager == null || levelManager.MainCharacter == null) return;
 
+            var connection = connectedPeer;
             var itemLoaded = await Coopbase.LoadOrCreateCharacterItemInstance();
-            var playerP = Traverse.Create(LevelManager.Instance).Field<CharacterModel>("characterModel").Value;
-            var player = await LevelManager.Instance.CharacterCreator.CreateCharacter(itemLoaded, playerP, position, rotation);
+            if (!networkStarted || connectedPeer != connection || connection?.ConnectionState != ConnectionState.Connected ||
+                SceneLoader.IsSceneLoading || !LevelManager.LevelInited || LevelManager.Instance != levelManager ||
+                !Service.clientPlayerStatuses.ContainsKey(playerId))
+            {
+                if (itemLoaded) UnityEngine.Object.Destroy(itemLoaded.gameObject);
+                return;
+            }
+            var playerP = Traverse.Create(levelManager).Field<CharacterModel>("characterModel").Value;
+            var player = await levelManager.CharacterCreator.CreateCharacter(itemLoaded, playerP, position, rotation);
+            if (!networkStarted || connectedPeer != connection || connection?.ConnectionState != ConnectionState.Connected ||
+                SceneLoader.IsSceneLoading || !LevelManager.LevelInited || LevelManager.Instance != levelManager ||
+                !Service.clientPlayerStatuses.ContainsKey(playerId))
+            {
+                if (player) UnityEngine.Object.Destroy(player.gameObject);
+                return;
+            }
             var instance = player.gameObject;
             var characterModel = instance.GetComponent<CharacterMainControl>();
 
@@ -219,6 +248,8 @@ public static class CreateRemoteCharacter
         CustomFace.StripAllCustomFaceParts(instance);
 
         // 如果入参为空，尽量从已知状态或待应用表拿，再应用（允许为空；为空时后续状态更新会补）
+        if (NetService.Instance.clientPlayerStatuses.TryGetValue(playerId, out var currentFace) && !string.IsNullOrEmpty(currentFace.CustomFaceJson))
+            customFaceJson = currentFace.CustomFaceJson;
         if (string.IsNullOrEmpty(customFaceJson))
         {
             if (NetService.Instance.clientPlayerStatuses.TryGetValue(playerId, out var st) && !string.IsNullOrEmpty(st.CustomFaceJson))
@@ -281,6 +312,8 @@ public static class CreateRemoteCharacter
         cmc.gameObject.SetActive(false);
         clientRemoteCharacters[playerId] = instance;
         cmc.gameObject.SetActive(true);
+        RemoteLoadoutReplay.ForClient(playerId, instance);
+        ColdBuffSync.ApplyPending(playerId, cmc);
 
             COOPManager.FriendlyFire?.OnRemoteCharacterCreated(cmc);
             ModApiEvents.RaisePlayerSpawned(cmc, playerId, false);

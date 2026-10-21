@@ -73,7 +73,7 @@ namespace EscapeFromDuckovCoopMod
                 return;
 
             var peer = context.Sender;
-            var playerId = !string.IsNullOrEmpty(message.Player.PlayerId)
+            var playerId = peer?.SteamId > 0 ? peer.EndPoint.ToString() : !string.IsNullOrEmpty(message.Player.PlayerId)
                 ? message.Player.PlayerId
                 : service.GetPlayerId(peer);
             if (!string.IsNullOrEmpty(playerId))
@@ -130,21 +130,21 @@ namespace EscapeFromDuckovCoopMod
             st.EquipmentList = message.Player.Equipment != null ? new List<EquipmentSyncData>(message.Player.Equipment) : new List<EquipmentSyncData>();
             st.WeaponList = message.Player.Weapons != null ? new List<WeaponSyncData>(message.Player.Weapons) : new List<WeaponSyncData>();
 
-            if (message.Player.IsInGame && !service.remoteCharacters.ContainsKey(peer))
+            if (message.Player.IsInGame && (!service.remoteCharacters.TryGetValue(peer, out var existingRemote) || existingRemote == null))
             {
-                HostSpawnAndLoadoutAsync(peer, st).Forget();
+                CreateRemoteCharacter.CreateRemoteCharacterAsync(peer, st.Position, st.Rotation, st.CustomFaceJson).Forget();
             }
             else if (message.Player.IsInGame)
             {
                 if (service.remoteCharacters.TryGetValue(peer, out var go) && go != null)
                 {
+                    CustomFace.Client_ApplyFaceIfAvailable(playerId, go, st.CustomFaceJson);
                     HealthBarNameDisplay.TryRefreshRemoteCharacter(go, playerId, st.SteamName);
 
                     var mounted = IsMountedPlayer(playerId);
                     if (!mounted)
                     {
-                        go.transform.position = st.Position;
-                        go.GetComponentInChildren<CharacterMainControl>().modelRoot.transform.rotation = st.Rotation;
+                        AttachPlayerPositionInterpolator(go)?.PushStatus(st.Position, st.Rotation);
                     }
                 }
 
@@ -157,47 +157,25 @@ namespace EscapeFromDuckovCoopMod
             SendLocalPlayerStatus.Instance.SendPlayerStatusUpdate();
         }
 
-        private static async UniTask HostSpawnAndLoadoutAsync(NetPeer peer, PlayerStatus st)
-        {
-            var remote = await CreateRemoteCharacter.CreateRemoteCharacterAsync(peer, st.Position, st.Rotation, st.CustomFaceJson);
-            if (remote == null)
-                remote = await WaitForHostRemoteAsync(peer);
-            if (remote == null)
-                return;
-
-            var equipmentList = st.EquipmentList ?? new List<EquipmentSyncData>();
-            var weaponList = st.WeaponList ?? new List<WeaponSyncData>();
-
-            foreach (var e in equipmentList)
-                COOPManager.HostPlayer_Apply.ApplyEquipmentUpdate(peer, e.SlotHash, e.ItemId).Forget();
-            foreach (var w in weaponList)
-                COOPManager.HostPlayer_Apply.ApplyWeaponUpdate(peer, w.SlotHash, w.ItemId, w.Snapshot).Forget();
-        }
-
-        private static async UniTask<GameObject> WaitForHostRemoteAsync(NetPeer peer)
-        {
-            var service = NetService.Instance;
-            if (service == null || peer == null)
-                return null;
-
-            for (var i = 0; i < 20; i++)
-            {
-                if (service.remoteCharacters.TryGetValue(peer, out var remote) && remote != null)
-                    return remote;
-
-                await UniTask.Delay(100);
-            }
-
-            CoopPerfLog.AppendEvent("loadout", $"host spawn wait timeout peer={peer.EndPoint}");
-            return null;
-        }
-
         public static void HandlePlayerStatusUpdate(RpcContext context, PlayerStatusUpdateRpc message)
         {
             var service = context.Service;
             if (service == null || context.IsServer)
                 return;
 
+            var players = new HashSet<string>(message.Players.Select(p => p.PlayerId), StringComparer.Ordinal);
+            foreach (var playerId in service.clientRemoteCharacters.Keys.Where(id => !players.Contains(id)).ToArray())
+            {
+                var remote = service.clientRemoteCharacters[playerId];
+                if (remote) UnityEngine.Object.Destroy(remote);
+                service.clientRemoteCharacters.Remove(playerId);
+                ForgetVehicleRider(playerId, true);
+                ColdBuffSync.Forget(playerId);
+                CoopTool._cliPendingRemoteHp.Remove(playerId);
+                CoopTool._cliPendingProxyBuffs.Remove(playerId);
+                CustomFace._cliPendingFace.Remove(playerId);
+                SceneNet.Instance?._cliLastSceneIdByPlayer.Remove(playerId);
+            }
             service.clientPlayerStatuses.Clear();
 
             for (var i = 0; i < message.Players.Length; i++)
@@ -236,7 +214,7 @@ namespace EscapeFromDuckovCoopMod
 
                 if (payload.IsInGame && (!service.clientRemoteCharacters.TryGetValue(payload.PlayerId, out var remote) || remote == null))
                 {
-                    HandleClientSpawnAndLoadoutAsync(service, payload, st).Forget();
+                    CreateRemoteCharacter.CreateRemoteCharacterForClient(payload.PlayerId, payload.Position, payload.Rotation, payload.CustomFaceJson).Forget();
                     continue;
                 }
 
@@ -247,7 +225,7 @@ namespace EscapeFromDuckovCoopMod
                     if (!IsMountedPlayer(payload.PlayerId))
                     {
                         var ni = AttachPlayerPositionInterpolator(remoteObj);
-                        ni?.Push(st.Position, st.Rotation);
+                        ni?.PushStatus(st.Position, st.Rotation);
                     }
                     else
                     {
@@ -266,19 +244,6 @@ namespace EscapeFromDuckovCoopMod
         {
             if (context.IsServer) return;
             COOPManager.FriendlyFire?.Client_HandleState(message);
-        }
-
-        private static async UniTask HandleClientSpawnAndLoadoutAsync(NetService service, PlayerStatusPayload payload, PlayerStatus st)
-        {
-            await CreateRemoteCharacter.CreateRemoteCharacterForClient(payload.PlayerId, payload.Position, payload.Rotation, payload.CustomFaceJson);
-
-            if (service.clientRemoteCharacters.TryGetValue(payload.PlayerId, out var remote) && remote != null)
-            {
-                CoopTool.Client_ApplyPendingRemoteIfAny(payload.PlayerId, remote);
-
-                foreach (var e in st.EquipmentList) COOPManager.ClientPlayer_Apply.ApplyEquipmentUpdate_Client(payload.PlayerId, e.SlotHash, e.ItemId).Forget();
-                foreach (var w in st.WeaponList) COOPManager.ClientPlayer_Apply.ApplyWeaponUpdate_Client(payload.PlayerId, w.SlotHash, w.ItemId, w.Snapshot).Forget();
-            }
         }
 
         public static void HandlePlayerPositionUpdate(RpcContext context, PlayerPositionUpdateRpc message)
@@ -330,14 +295,8 @@ namespace EscapeFromDuckovCoopMod
 
             if (service.IsSelfId(message.EndPoint)) return;
 
-            if (!service.clientPlayerStatuses.TryGetValue(message.EndPoint, out var clientStatus))
-            {
-                clientStatus = service.clientPlayerStatuses[message.EndPoint] = new PlayerStatus
-                {
-                    EndPoint = message.EndPoint,
-                    IsInGame = true
-                };
-            }
+            // Only the reliable roster creates players; late position packets cannot revive a disconnected peer.
+            if (!service.clientPlayerStatuses.TryGetValue(message.EndPoint, out var clientStatus)) return;
 
             clientStatus.Position = position;
             clientStatus.Rotation = rotation;
@@ -395,8 +354,9 @@ namespace EscapeFromDuckovCoopMod
 
             if (service.IsSelfId(message.PlayerId)) return;
 
-            if (service.clientPlayerStatuses.TryGetValue(message.PlayerId, out var clientStatus) && clientStatus.EquipmentList != null)
-                UpsertEquipment(clientStatus.EquipmentList, message.SlotHash, message.ItemId);
+            if (!service.clientPlayerStatuses.TryGetValue(message.PlayerId, out var clientStatus))
+                service.clientPlayerStatuses[message.PlayerId] = clientStatus = new PlayerStatus { EndPoint = message.PlayerId };
+            UpsertEquipment(clientStatus.EquipmentList, message.SlotHash, message.ItemId);
 
             COOPManager.ClientPlayer_Apply.ApplyEquipmentUpdate_Client(message.PlayerId, message.SlotHash, message.ItemId).Forget();
         }
@@ -423,8 +383,9 @@ namespace EscapeFromDuckovCoopMod
 
             if (service.IsSelfId(message.PlayerId)) return;
 
-            if (service.clientPlayerStatuses.TryGetValue(message.PlayerId, out var clientStatus) && clientStatus.WeaponList != null)
-                UpsertWeapon(clientStatus.WeaponList, message.SlotHash, message.ItemId, message.Snapshot);
+            if (!service.clientPlayerStatuses.TryGetValue(message.PlayerId, out var clientStatus))
+                service.clientPlayerStatuses[message.PlayerId] = clientStatus = new PlayerStatus { EndPoint = message.PlayerId };
+            UpsertWeapon(clientStatus.WeaponList, message.SlotHash, message.ItemId, message.Snapshot);
 
             COOPManager.ClientPlayer_Apply.ApplyWeaponUpdate_Client(message.PlayerId, message.SlotHash, message.ItemId, message.Snapshot).Forget();
         }

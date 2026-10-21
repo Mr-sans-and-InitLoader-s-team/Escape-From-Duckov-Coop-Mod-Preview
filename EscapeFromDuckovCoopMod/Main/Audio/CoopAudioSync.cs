@@ -91,7 +91,8 @@ public static class CoopAudioSync
         "hit_organic_normal",
         "killmarker",
         "hitmarker",
-        "Kazoo" //虽然有针对卡祖笛的同步处理但效果不尽人意所以封存起来，待有人能解开这个卡祖笛同步诅咒
+        CoopCombatAudio.FlybyEvent, // Each listener already evaluates native projectile flybys locally.
+        "Kazoo" // 持续音由 KazooSync 管理开始/参数/停止，禁止通过一次性音效重复播放。
     };
 
     private static bool ShouldBlockUi(string eventName, bool hasEmitter)
@@ -141,7 +142,10 @@ public static class CoopAudioSync
             return;
 
         var rpc = new AudioEventRpc { Payload = payload };
-        CoopTool.SendRpc(in rpc);
+        if (CoopCombatAudio.IsTransientGunshot(payload))
+            CoopTool.SendUnreliableRpc(in rpc);
+        else
+            CoopTool.SendRpc(in rpc);
     }
 
     private static IDisposable BeginSuppress()
@@ -246,6 +250,9 @@ public static class CoopAudioSync
                 AudioManager.Post(payload.EventName);
                 return;
             }
+
+            if (CoopCombatAudio.TryPlayGunshot(payload))
+                return;
 
             var emitter = CoopAudioEmitter.Spawn();
             emitter.Play(payload);

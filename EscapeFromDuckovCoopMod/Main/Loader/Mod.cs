@@ -129,10 +129,16 @@ public class ModBehaviourF : MonoBehaviour
 
         gameObject.AddComponent<DamageStatsTracker>();
         gameObject.AddComponent<DamageStatsUI>();
+        gameObject.AddComponent<KazooSyncDriver>();
     }
 
     private void Update()
     {
+        // Transport callbacks and scene-gate replies must keep running while the
+        // previous level is gone and the new LevelManager is not initialized yet.
+        if (networkStarted) netManager?.PollEvents();
+        TeleporterTravel.Tick();
+        if (networkStarted) SharedHome.Tick();
         if (LevelManager.Instance == null)
         {
             return;
@@ -188,7 +194,6 @@ public class ModBehaviourF : MonoBehaviour
         if (networkStarted)
         {
 
-            netManager.PollEvents();
             SceneNet.Instance.TrySendSceneReadyOnce();
             if (!isinit2)
             {
@@ -273,15 +278,7 @@ public class ModBehaviourF : MonoBehaviour
 
             
 
-            if (NetService.Instance.netManager != null)
-            {
-                if (!SteamP2PLoader.Instance._isOptimized && SteamP2PLoader.Instance.UseSteamP2P)
-                {
-                    NetService.Instance.netManager.UpdateTime = 1;
-                    SteamP2PLoader.Instance._isOptimized = true;
-                    Debug.Log("[SteamP2P扩展] ✓ LiteNetLib网络线程已优化 (1ms 更新周期)");
-                }
-            }
+
         }
 
         LocalPlayerManager.Instance.UpdatePlayerStatuses();
@@ -340,6 +337,7 @@ public class ModBehaviourF : MonoBehaviour
         if (Spectator.Instance._spectatorActive)
         {
             ClosureView.Instance.gameObject.SetActive(false);
+            var previousTarget = GameCamera.Instance ? GameCamera.Instance.target : null;
             // 动态剔除“已死/被销毁/不在本地图”的目标
             Spectator.Instance._spectateList = Spectator.Instance._spectateList.Where(c =>
             {
@@ -388,12 +386,7 @@ public class ModBehaviourF : MonoBehaviour
                 return;
             }
 
-            if (Spectator.Instance._spectateIdx < 0 || Spectator.Instance._spectateIdx >= Spectator.Instance._spectateList.Count)
-                Spectator.Instance._spectateIdx = 0;
-
-            // 当前目标若死亡，自动跳到下一个
-            if (!LocalPlayerManager.Instance.IsAlive(Spectator.Instance._spectateList[Spectator.Instance._spectateIdx]))
-                Spectator.Instance.SpectateNext();
+            Spectator.Instance.RefreshCameraTarget(previousTarget);
 
             // 客户端观战：按 F8 直接退出观战并进入结算
             if (!IsServer && Input.GetKeyDown(KeyCode.F8))
@@ -452,6 +445,8 @@ public class ModBehaviourF : MonoBehaviour
 
     private void LevelManager_OnAfterLevelInitialized()
     {
+        LocalPlayerManager.Instance?.RequestFullLoadoutSync();
+        ColdBuffSync.PublishAllLocal();
         if (IsServer && networkStarted)
             SceneNet.Instance.Server_SceneGateAsync().Forget();
         if (!IsServer)
@@ -482,10 +477,14 @@ public class ModBehaviourF : MonoBehaviour
     {
         CoopSyncDatabase.Environment.Clear();
         CoopSyncDatabase.AI.Clear();
-        CoopSyncDatabase.Drops.Clear();
         CoopSyncDatabase.Loot.Clear();
         COOPManager.AI?.Reset();
-        COOPManager.ItemNet?.Reset();
+        // Native drops live under MultiSceneCore and survive sub-scene unloads.
+        if (!MultiSceneCore.Instance || MultiSceneCore.Instance.gameObject.scene == scene)
+        {
+            CoopSyncDatabase.Drops.Clear();
+            COOPManager.ItemNet?.Reset();
+        }
         COOPManager.ExplosiveBarrels?.Reset();
         COOPManager.LootNet?.Reset();
         COOPManager.ExitSync?.Reset();
@@ -525,6 +524,12 @@ public class ModBehaviourF : MonoBehaviour
         var payloadBytes = Math.Max(0, totalBytes - 1);
         var op = (Op)opByte;
         NetDiagnostics.Instance.RecordInbound(op, payloadBytes);
+        if (!IsServer && (SceneLoader.IsSceneLoading || !LevelManager.LevelInited) &&
+            (op == Op.FIRE_EVENT || op == Op.GRENADE_SPAWN || op == Op.GRENADE_EXPLODE))
+        {
+            reader.Recycle();
+            return;
+        }
         //  Debug.Log($"[RECV OP] {(byte)op}, avail={reader.AvailableBytes}");
 
         if (RpcRegistry.TryHandle(op, new RpcContext(NetService.Instance, peer), reader))
@@ -594,7 +599,7 @@ public class ModBehaviourF : MonoBehaviour
             case Op.PLAYER_DEAD_LOOT_SPAWN:
             {
                 if (!IsServer) break;
-                COOPManager.LootNet.Server_HandlePlayerDeathWithInventory(reader);
+                COOPManager.LootNet.Server_HandlePlayerDeathWithInventory(peer, reader);
                 break;
             }
 
@@ -636,14 +641,10 @@ public class ModBehaviourF : MonoBehaviour
                 {
                     if (IsServer)
                     {
-                        var pid = reader.GetString();
+                        _ = reader.GetString(); // 兼容原消息格式；身份使用实际连接。
                         var sid = reader.GetString();
 
-                        // 若主机还没确定 gate 的 sid，就用第一次 READY 的 sid
-                        if (string.IsNullOrEmpty(SceneNet.Instance._srvGateSid))
-                            SceneNet.Instance._srvGateSid = sid;
-
-                        if (sid == SceneNet.Instance._srvGateSid) SceneNet.Instance._srvGateReadyPids.Add(pid);
+                        SceneNet.Instance.Server_HandleGateReady(peer, sid);
                     }
 
                     break;
@@ -660,12 +661,7 @@ public class ModBehaviourF : MonoBehaviour
                             SceneNet.Instance._cliGateSid = sid;
                             SceneNet.Instance._cliSceneGateReleased = true;
                         }
-                        else
-                        {
-                            Debug.LogWarning($"[GATE] release sid mismatch: srv={sid}, cli={SceneNet.Instance._cliGateSid} — accepting");
-                            SceneNet.Instance._cliGateSid = sid; // 对齐后仍放行
-                            SceneNet.Instance._cliSceneGateReleased = true;
-                        }
+                        // A delayed release for the old level must not open the new gate.
                     }
 
                     break;

@@ -10,6 +10,7 @@ public struct LootPutOkRpc : IRpcMessage
     public uint Token;
     public int Slot;
     public int Stack;
+    public int TypeId;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -17,6 +18,7 @@ public struct LootPutOkRpc : IRpcMessage
         writer.Put(Token);
         writer.Put(Slot);
         writer.Put(Stack);
+        writer.Put(TypeId);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -25,5 +27,6 @@ public struct LootPutOkRpc : IRpcMessage
         Token = reader.GetUInt();
         Slot = reader.GetInt();
         Stack = reader.GetInt();
+        TypeId = reader.AvailableBytes >= sizeof(int) ? reader.GetInt() : 0;
     }
 }

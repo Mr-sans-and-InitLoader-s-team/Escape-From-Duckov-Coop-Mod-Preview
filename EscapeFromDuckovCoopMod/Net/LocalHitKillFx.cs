@@ -26,6 +26,8 @@ public static class LocalHitKillFx
     private static FieldInfo _fiHurtVisual; // CharacterModel.hurtVisual (private global::HurtVisual)
     private static MethodInfo _miHvOnHurt, _miHvOnDead; // HurtVisual.OnHurt / OnDead (private)
     private static MethodInfo _miHmOnHit, _miHmOnKill; // HitMarker.OnHit / OnKill (private)
+    private static HitMarker _hitMarker;
+    private static float _nextHitMarkerLookup;
 
     private static float _lastBaseDamageForPop;
 
@@ -82,14 +84,30 @@ public static class LocalHitKillFx
 
     private static object FindHitMarkerSingleton()
     {
+        if (_hitMarker) return _hitMarker;
+        if (SceneLoader.IsSceneLoading || Time.unscaledTime < _nextHitMarkerLookup) return null;
+        _nextHitMarkerLookup = Time.unscaledTime + 0.5f;
         try
         {
-            return Object.FindObjectOfType(typeof(HitMarker), true);
+            _hitMarker = Object.FindObjectOfType(typeof(HitMarker), true) as HitMarker;
+            return _hitMarker;
         }
         catch
         {
             return null;
         }
+    }
+
+    internal static void RegisterHitMarker(HitMarker marker)
+    {
+        if (!_hitMarker) _hitMarker = marker;
+    }
+
+    internal static void ForgetHitMarker(HitMarker marker)
+    {
+        if (!ReferenceEquals(_hitMarker, marker)) return;
+        _hitMarker = null;
+        _nextHitMarkerLookup = 0f;
     }
 
     private static void PlayHurtVisual(object hv, DamageInfo di, bool predictedDead)

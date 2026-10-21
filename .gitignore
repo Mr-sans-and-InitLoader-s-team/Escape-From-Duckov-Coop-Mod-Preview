@@ -289,3 +289,6 @@ __pycache__/
 *.xsd.cs
 /卡顿分析报告.md
 /玩家卡顿优化补充.md
+
+# Local test projects and scripts
+/[Tt]ests/

@@ -31,6 +31,7 @@ internal sealed class LiteNetTransport : CoopNetworkManager, INetEventListener
         _connected.Clear();
     }
     public override void PollEvents() => _manager.PollEvents();
+    public override int GetReliableQueueLength(CoopPeer peer) => peer is LiteNetPeer direct ? direct.ReliableQueueLength : -1;
     public override void TriggerUpdate() => _manager.TriggerUpdate();
     public override void Connect(string address, int port, NetDataWriter data) => _manager.Connect(address, port, data);
     public override void SendUnconnectedMessage(NetDataWriter data, IPEndPoint endpoint) => _manager.SendUnconnectedMessage(data, endpoint);

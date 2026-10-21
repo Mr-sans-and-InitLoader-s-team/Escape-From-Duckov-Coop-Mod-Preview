@@ -17,6 +17,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Duckov.Scenes;
 using LiteNetLib;
 using ItemStatsSystem;
 using ItemStatsSystem.Items;
@@ -88,6 +89,8 @@ public sealed class ItemNet
             {
                 InNetworkDrop = true;
                 agent = item.Drop(entry.Position, entry.CreateRigidbody, entry.Direction, entry.Angle);
+                if (agent && entry.SceneBuildIndex >= 0)
+                    MultiSceneCore.MoveToActiveWithScene(agent.gameObject, entry.SceneBuildIndex);
             }
             finally
             {
@@ -438,6 +441,7 @@ public sealed class ItemNet
                     Direction = Vector3.zero,
                     Angle = 0f,
                     CreateRigidbody = false,
+                    SceneBuildIndex = GetDropSceneBuildIndex(e.Agent),
                     Snapshot = ItemTool.MakeSnapshot(e.Item)
                 };
             }
@@ -452,6 +456,21 @@ public sealed class ItemNet
 
             CoopTool.SendRpcTo(target, in chunk);
         }
+    }
+
+    private static int GetDropSceneBuildIndex(GameObject agent)
+    {
+        if (!agent) return -1;
+        var core = MultiSceneCore.Instance;
+        if (core)
+        {
+            for (var parent = agent.transform.parent; parent; parent = parent.parent)
+            {
+                if (parent.parent == core.transform)
+                    return SceneInfoCollection.GetSceneInfo(parent.name)?.BuildIndex ?? agent.scene.buildIndex;
+            }
+        }
+        return agent.scene.buildIndex;
     }
 
     public void Client_RequestDrop(Item item, Vector3 pos, bool createRigidbody, Vector3 dir, float angle, bool allowSlotOwned = false)

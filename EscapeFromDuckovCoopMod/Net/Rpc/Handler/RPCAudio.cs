@@ -8,7 +8,10 @@ public static class RPCAudio
 
         if (context.IsServer)
         {
-            CoopTool.SendRpc(in message, context.Sender);
+            if (CoopCombatAudio.IsTransientGunshot(message.Payload))
+                CoopTool.SendUnreliableRpc(in message, context.Sender);
+            else
+                CoopTool.SendRpc(in message, context.Sender);
         }
     }
 }

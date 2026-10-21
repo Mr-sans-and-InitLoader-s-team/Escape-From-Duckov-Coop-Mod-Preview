@@ -15,6 +15,7 @@
 // GNU Affero General Public License for more details.
 
 using Duckov.UI;
+using Duckov.Scenes;
 using EscapeFromDuckovCoopMod.Utils;
 using System;
 
@@ -155,10 +156,11 @@ public class SceneNet : MonoBehaviour
 
     private void Server_BroadcastBeginSceneLoad()
     {
-        if (Spectator.Instance._spectatorActive && Spectator.Instance._spectatorEndOnVotePending)
+        var returningFromDeath = Spectator.Instance.IsLocalDeathPending;
+        if (returningFromDeath)
         {
             Spectator.Instance._spectatorEndOnVotePending = false;
-            Spectator.Instance.EndSpectatorAndShowClosure();
+            Spectator.Instance.EndSpectatorAndShowClosure(true);
         }
 
         var message = new SceneBeginLoadRpc
@@ -191,7 +193,8 @@ public class SceneNet : MonoBehaviour
 
         _localSceneLoadLaunched = false;
 
-        Server_ScheduleSceneLoad(0.5f);
+        if (!returningFromDeath)
+            Server_ScheduleSceneLoad(0.5f);
 
         // 收尾与清理
         sceneVoteActive = false;
@@ -551,6 +554,7 @@ public class SceneNet : MonoBehaviour
         }
 
         Debug.Log("[SCENE] 取消投票，重置场景触发器");
+        _srvPendingBeginLoad = false;
 
         // 如果是服务器，广播取消投票消息给所有客户端
         if (IsServer && networkStarted && netManager != null)
@@ -920,6 +924,13 @@ public class SceneNet : MonoBehaviour
     public void Server_HandleGateReady(NetPeer peer, string sid)
     {
         if (!IsServer || peer == null || string.IsNullOrEmpty(sid)) return;
+        if (!SceneLoader.IsSceneLoading && LevelManager.LevelInited &&
+            LocalPlayerManager.Instance.ComputeIsInGame(out var currentScene) &&
+            (currentScene == sid || MultiSceneCore.MainScene.HasValue && MultiSceneCore.MainSceneID == sid))
+        {
+            Server_SendGateRelease(peer, sid);
+            return;
+        }
         if (string.IsNullOrEmpty(_srvGateSid)) _srvGateSid = sid;
         if (!string.Equals(sid, _srvGateSid, StringComparison.OrdinalIgnoreCase)) return;
         _srvGateReadyPids.Add(Service.GetPlayerId(peer));

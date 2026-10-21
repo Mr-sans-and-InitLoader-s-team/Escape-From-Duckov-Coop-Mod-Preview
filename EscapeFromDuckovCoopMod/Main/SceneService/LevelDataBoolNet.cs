@@ -215,7 +215,7 @@ public static class LevelDataBoolNet
         if (HasPerPlayerItemCost(costTaker) || IsLotteryBoxCostTaker(costTaker))
             return;
 
-        if (costTaker.Cost.IsFree)
+        if (costTaker.Cost.IsFree && !ConstructionSiteReplay.IsFreeConstructionCost(costTaker))
             return;
 
         var hasKey = TryGetInteractableKey(costTaker, out var keyHash);
@@ -510,6 +510,9 @@ public static class LevelDataBoolNet
 
             if (costTaker.Interacting)
                 costTaker.StopInteract();
+
+            if (ConstructionSiteReplay.TryApply(costTaker))
+                return;
 
             costTaker.SetCost(new Cost(0L));
             if (costTaker.interactCollider)

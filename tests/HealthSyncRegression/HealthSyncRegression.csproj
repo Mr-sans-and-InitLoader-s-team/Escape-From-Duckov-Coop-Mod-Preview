@@ -6,10 +6,34 @@
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/AI/AISoundEventRpc.cs" Link="Production/AISoundEventRpc.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/Loot/LootPutOkRpc.cs" Link="Production/LootPutOkRpc.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Main/Sharing/SharedHomeCharacterContext.cs" Link="Production/SharedHomeCharacterContext.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Main/Sharing/SharedHomeManifest.cs" Link="Production/SharedHomeManifest.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Main/Loadout/WeaponReplayOrder.cs" Link="Production/WeaponReplayOrder.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/Item/ItemDropSnapshotChunkRpc.cs" Link="Production/ItemDropSnapshotChunkRpc.cs" />
     <Compile Include="../../EscapeFromDuckovCoopMod/Main/Health/HealthSnapshotOrder.cs" Link="Production/HealthSnapshotOrder.cs" />
     <Compile Include="../../EscapeFromDuckovCoopMod/Main/Health/RemoteHealthState.cs" Link="Production/RemoteHealthState.cs" />
     <Compile Include="../../EscapeFromDuckovCoopMod/Patch/Character/HealthAuthorityPatch.cs" Link="Production/HealthAuthorityPatch.cs" />
     <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/AI/AIHealthBroadcastRpc.cs" Link="Production/AIHealthBroadcastRpc.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/AI/AIBuffBroadcastRpc.cs" Link="Production/AIBuffBroadcastRpc.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/AI/AISnapshotChunkRpc.cs" Link="Production/AISnapshotChunkRpc.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/AI/AISpawnRpc.cs" Link="Production/AISpawnRpc.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Main/Health/BuffReplayOrder.cs" Link="Production/BuffReplayOrder.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Main/LocalPlayer/Spectator.cs" Link="Production/Spectator.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Patch/Character/SpectatorControlPatch.cs" Link="Production/SpectatorControlPatch.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Main/Health/PlayerDeathReports.cs" Link="Production/PlayerDeathReports.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Main/Loot/CorpseRecovery.cs" Link="Production/CorpseRecovery.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Main/SceneService/ConstructionSiteReplay.cs" Link="Production/ConstructionSiteReplay.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Patch/Loot/DeadLootSpawnPatch.cs" Link="Production/DeadLootSpawnPatch.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/Loot/CorpseInventoryRpc.cs" Link="Production/CorpseInventoryRpc.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/Loot/DeadLootSpawnRpc.cs" Link="Production/DeadLootSpawnRpc.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Patch/Scene/DeathSettlementPatch.cs" Link="Production/DeathSettlementPatch.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/Health/PlayerBuffBroadcastRpc.cs" Link="Production/PlayerBuffBroadcastRpc.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/Health/PlayerBuffReportRpc.cs" Link="Production/PlayerBuffReportRpc.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/Health/PlayerBuffState.cs" Link="Production/PlayerBuffState.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/Health/PlayerHealthReportRpc.cs" Link="Production/PlayerHealthReportRpc.cs" />
+    <Compile Include="../../EscapeFromDuckovCoopMod/Net/Rpc/Messages/Health/PlayerHealthBroadcastRpc.cs" Link="Production/PlayerHealthBroadcastRpc.cs" />
     <Reference Include="0Harmony" HintPath="../../Shared/0Harmony.dll" Private="true" />
     <Reference Include="LiteNetLib" HintPath="../../Shared/LiteNetLib.dll" Private="true" />
   </ItemGroup>

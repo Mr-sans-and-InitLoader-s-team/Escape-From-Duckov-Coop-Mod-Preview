@@ -46,6 +46,7 @@ public class COOPManager
 
     public static void InitManager()
     {
+        SharedHome.Init();
         HostPlayer_Apply = new HostPlayerApply();
         ClientPlayer_Apply = new ClientPlayerApply();
         LootNet = new LootNet();

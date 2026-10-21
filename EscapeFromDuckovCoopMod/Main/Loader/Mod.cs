@@ -138,6 +138,7 @@ public class ModBehaviourF : MonoBehaviour
         // previous level is gone and the new LevelManager is not initialized yet.
         if (networkStarted) netManager?.PollEvents();
         TeleporterTravel.Tick();
+        if (networkStarted) SharedHome.Tick();
         if (LevelManager.Instance == null)
         {
             return;
@@ -336,6 +337,7 @@ public class ModBehaviourF : MonoBehaviour
         if (Spectator.Instance._spectatorActive)
         {
             ClosureView.Instance.gameObject.SetActive(false);
+            var previousTarget = GameCamera.Instance ? GameCamera.Instance.target : null;
             // 动态剔除“已死/被销毁/不在本地图”的目标
             Spectator.Instance._spectateList = Spectator.Instance._spectateList.Where(c =>
             {
@@ -384,12 +386,7 @@ public class ModBehaviourF : MonoBehaviour
                 return;
             }
 
-            if (Spectator.Instance._spectateIdx < 0 || Spectator.Instance._spectateIdx >= Spectator.Instance._spectateList.Count)
-                Spectator.Instance._spectateIdx = 0;
-
-            // 当前目标若死亡，自动跳到下一个
-            if (!LocalPlayerManager.Instance.IsAlive(Spectator.Instance._spectateList[Spectator.Instance._spectateIdx]))
-                Spectator.Instance.SpectateNext();
+            Spectator.Instance.RefreshCameraTarget(previousTarget);
 
             // 客户端观战：按 F8 直接退出观战并进入结算
             if (!IsServer && Input.GetKeyDown(KeyCode.F8))
@@ -480,10 +477,14 @@ public class ModBehaviourF : MonoBehaviour
     {
         CoopSyncDatabase.Environment.Clear();
         CoopSyncDatabase.AI.Clear();
-        CoopSyncDatabase.Drops.Clear();
         CoopSyncDatabase.Loot.Clear();
         COOPManager.AI?.Reset();
-        COOPManager.ItemNet?.Reset();
+        // Native drops live under MultiSceneCore and survive sub-scene unloads.
+        if (!MultiSceneCore.Instance || MultiSceneCore.Instance.gameObject.scene == scene)
+        {
+            CoopSyncDatabase.Drops.Clear();
+            COOPManager.ItemNet?.Reset();
+        }
         COOPManager.ExplosiveBarrels?.Reset();
         COOPManager.LootNet?.Reset();
         COOPManager.ExitSync?.Reset();
@@ -523,6 +524,12 @@ public class ModBehaviourF : MonoBehaviour
         var payloadBytes = Math.Max(0, totalBytes - 1);
         var op = (Op)opByte;
         NetDiagnostics.Instance.RecordInbound(op, payloadBytes);
+        if (!IsServer && (SceneLoader.IsSceneLoading || !LevelManager.LevelInited) &&
+            (op == Op.FIRE_EVENT || op == Op.GRENADE_SPAWN || op == Op.GRENADE_EXPLODE))
+        {
+            reader.Recycle();
+            return;
+        }
         //  Debug.Log($"[RECV OP] {(byte)op}, avail={reader.AvailableBytes}");
 
         if (RpcRegistry.TryHandle(op, new RpcContext(NetService.Instance, peer), reader))

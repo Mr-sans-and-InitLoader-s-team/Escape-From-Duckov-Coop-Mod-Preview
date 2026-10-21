@@ -5,6 +5,7 @@ namespace EscapeFromDuckovCoopMod;
 
 public sealed partial class AISyncService
 {
+    private static readonly System.Reflection.FieldInfo FinalDamageProcessors = AccessTools.Field(typeof(Health), "finalDamageProcessFuncs");
     private readonly HealthSnapshotOrder _clientHealthOrder = new();
     private readonly Dictionary<int, (AIHealthBroadcastRpc Message, long Order)> _clientPendingHealth = new();
 
@@ -40,7 +41,7 @@ public sealed partial class AISyncService
         {
             entry.Status = AIStatus.Dead;
             if (message.KillerCredit) Client_RaiseQuestKillCredit(entry.Id, in message);
-            Client_DestroyReplica(entry.Id, AIStatus.Dead, false);
+            Client_DestroyReplica(entry.Id, AIStatus.Dead);
             return;
         }
         if (_clientReplicas.TryGetValue(entry.Id, out var replica))
@@ -82,8 +83,13 @@ public sealed partial class AISyncService
         damageById[entry.Id] = payload;
         _serverLastHitPeer[entry.Id] = context.Sender;
         var resolvedDamage = info;
-        void CaptureDamage(DamageInfo value) => resolvedDamage = value;
+        var processors = FinalDamageProcessors?.GetValue(health) as List<Func<float, float>>;
         var confirmedDamage = 0f;
+        void CaptureDamage(DamageInfo value)
+        {
+            resolvedDamage = value;
+            if (processors == null) confirmedDamage = value.finalDamage;
+        }
         float CaptureFinalDamage(float value)
         {
             confirmedDamage = value;
@@ -97,13 +103,13 @@ public sealed partial class AISyncService
             IsHostHurt = true;
             health.OnHurtEvent.AddListener(CaptureDamage);
             // Observe the native result before its overkill cap, without changing the calculation.
-            health.finalDamageProcessFuncs.Add(CaptureFinalDamage);
+            processors?.Add(CaptureFinalDamage);
             applied = health.Hurt(info);
         }
         finally
         {
             health.OnHurtEvent.RemoveListener(CaptureDamage);
-            health.finalDamageProcessFuncs.Remove(CaptureFinalDamage);
+            processors?.Remove(CaptureFinalDamage);
             IsHostHurt = previousHostHurt;
         }
         if (!applied) return;

@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -19,6 +19,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using SodaCraft.Localizations;
+using Newtonsoft.Json.Linq;
 
 namespace EscapeFromDuckovCoopMod
 {
@@ -124,7 +125,7 @@ namespace EscapeFromDuckovCoopMod
 
                 string json = File.ReadAllText(localizationPath);
 
-                // 수동 JSON 파싱 (Unity JsonUtility의 배열 파싱 문제 회피)
+                // JSON 문자열의 이스케이프와 줄바꿈을 함께 처리
                 ParseJsonTranslations(json);
 
                 if (currentTranslations.Count > 0)
@@ -144,110 +145,16 @@ namespace EscapeFromDuckovCoopMod
             }
         }
 
-        /// <summary>
-        /// 수동 JSON 파싱 (Unity JsonUtility 배열 파싱 문제 회피)
-        /// </summary>
         private static void ParseJsonTranslations(string json)
         {
-            try
+            var entries = JObject.Parse(json)["translations"] as JArray;
+            if (entries == null) return;
+            foreach (var entry in entries)
             {
-                // "translations": [ 부분 찾기
-                int startIndex = json.IndexOf("\"translations\"");
-                if (startIndex == -1) return;
-
-                // [ 찾기
-                int arrayStart = json.IndexOf('[', startIndex);
-                if (arrayStart == -1) return;
-
-                // ] 찾기 (마지막)
-                int arrayEnd = json.LastIndexOf(']');
-                if (arrayEnd == -1) return;
-
-                // 각 엔트리 파싱
-                string arrayContent = json.Substring(arrayStart + 1, arrayEnd - arrayStart - 1);
-
-                // { } 블록 단위로 분리
-                int braceCount = 0;
-                int entryStart = -1;
-
-                for (int i = 0; i < arrayContent.Length; i++)
-                {
-                    char c = arrayContent[i];
-
-                    if (c == '{')
-                    {
-                        if (braceCount == 0) entryStart = i;
-                        braceCount++;
-                    }
-                    else if (c == '}')
-                    {
-                        braceCount--;
-                        if (braceCount == 0 && entryStart != -1)
-                        {
-                            // 하나의 엔트리 추출
-                            string entry = arrayContent.Substring(entryStart, i - entryStart + 1);
-                            ParseSingleEntry(entry);
-                            entryStart = -1;
-                        }
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[CoopLocalization] JSON parsing error: {e.Message}");
-            }
-        }
-
-        /// <summary>
-        /// 단일 JSON 엔트리 파싱
-        /// </summary>
-        private static void ParseSingleEntry(string entry)
-        {
-            try
-            {
-                string key = null;
-                string value = null;
-
-                // "key": "..." 파싱
-                int keyIndex = entry.IndexOf("\"key\"");
-                if (keyIndex != -1)
-                {
-                    int keyValueStart = entry.IndexOf(':', keyIndex);
-                    if (keyValueStart != -1)
-                    {
-                        int keyQuoteStart = entry.IndexOf('\"', keyValueStart);
-                        int keyQuoteEnd = entry.IndexOf('\"', keyQuoteStart + 1);
-                        if (keyQuoteStart != -1 && keyQuoteEnd != -1)
-                        {
-                            key = entry.Substring(keyQuoteStart + 1, keyQuoteEnd - keyQuoteStart - 1);
-                        }
-                    }
-                }
-
-                // "value": "..." 파싱
-                int valueIndex = entry.IndexOf("\"value\"");
-                if (valueIndex != -1)
-                {
-                    int valueValueStart = entry.IndexOf(':', valueIndex);
-                    if (valueValueStart != -1)
-                    {
-                        int valueQuoteStart = entry.IndexOf('\"', valueValueStart);
-                        int valueQuoteEnd = entry.IndexOf('\"', valueQuoteStart + 1);
-                        if (valueQuoteStart != -1 && valueQuoteEnd != -1)
-                        {
-                            value = entry.Substring(valueQuoteStart + 1, valueQuoteEnd - valueQuoteStart - 1);
-                        }
-                    }
-                }
-
+                var key = (string)entry["key"];
+                var value = (string)entry["value"];
                 if (!string.IsNullOrEmpty(key) && value != null)
-                {
                     currentTranslations[key] = value;
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[CoopLocalization] Entry parsing error: {e.Message}");
             }
         }
 
@@ -259,6 +166,47 @@ namespace EscapeFromDuckovCoopMod
             // 기본 영어 번역을 하드코딩으로 제공
             currentTranslations.Clear();
             currentTranslations["ui.window.title"] = "Co-op Mod Control Panel";
+            currentTranslations["ui.sharedHome.displayHostOnly"] = "In shared mode, the host edits display contents and guests see the synchronized display. All players can use the common warehouse.";
+            currentTranslations["net.sharedHome.entryFailed"] = "Could not load the shared room. Disconnected and restored your personal save. Please check the log.";
+            currentTranslations["net.sharedHome.title"] = "Shared mode: connection failed";
+            currentTranslations["net.sharedHome.close"] = "Close";
+            currentTranslations["net.sharedHome.rejectedHost"] = "Player {0} could not connect: shared mode compatibility check failed.";
+            currentTranslations["net.sharedHome.rejectedClient"] = "Could not join: shared mode compatibility check failed.";
+            currentTranslations["net.sharedHome.invalid"] = "The enabled mod list or game version could not be verified. Restart both games and check that all enabled mods load correctly.";
+            currentTranslations["net.sharedHome.protocol"] = "Shared mode validation protocols differ. Install the same co-op build on both sides.";
+            currentTranslations["net.sharedHome.game"] = "Game version differs. Host: {1}; client: {2}.";
+            currentTranslations["net.sharedHome.coop"] = "Co-op version differs. Host: {1}; client: {2}.";
+            currentTranslations["net.sharedHome.missing"] = "Client is missing enabled mod: {0} (host version: {1}).";
+            currentTranslations["net.sharedHome.extra"] = "Client has an extra enabled mod: {0} (client version: {2}).";
+            currentTranslations["net.sharedHome.version"] = "Mod version differs: {0}. Host: {1}; client: {2}.";
+            currentTranslations["net.sharedHome.hash"] = "Mod DLL differs: {0}.\nHost SHA-256:\n{1}\nClient SHA-256:\n{2}";
+            currentTranslations["net.sharedHome.unreadable"] = "Could not read the DLL for enabled mod: {0}. Restore the mod files and restart the game.";
+            currentTranslations["net.sharedHome.timeout"] = "Shared mode compatibility validation timed out. Check the connection and install the same co-op build on both sides.";
+            currentTranslations["ui.sharedHome"] = "Private shared mode";
+            currentTranslations["ui.sharedHome.desc"] = "Enable before hosting; guests share automatically. The host saves experience, levels, skills, quests, kills, maps, beacons, recipes, money, storage, buildings and decorations. Appearance, backpacks and equipment are saved per player and restored on rejoining. First visits create a character with native customization; tutorial progress follows the host. Personal saves are preserved and restored on leaving. Locked while connected.";
+            currentTranslations["ui.coopMode.title"] = "Choose your co-op mode";
+            currentTranslations["ui.coopMode.hint"] = "Hover over a card for details. When joining a room, the host decides the mode.";
+            currentTranslations["ui.coopMode.select"] = "SELECT  ›";
+            currentTranslations["ui.coopMode.independent.title"] = "Independent Co-op";
+            currentTranslations["ui.coopMode.independent.tag"] = "YOUR CHARACTER · YOUR PROGRESS";
+            currentTranslations["ui.coopMode.independent.summary"] = "• Explore and fight together<br>• Keep your own character progress<br>• Separate personal storage";
+            currentTranslations["ui.coopMode.independent.detail"] = "Your own journey<br>Keep your personal experience, skills, quests and unlocks.<br><br>Your own equipment<br>Use your own storage, backpack and worn gear.<br><br>Team up to explore, fight and extract together.";
+            currentTranslations["ui.coopMode.shared.title"] = "Shared Co-op";
+            currentTranslations["ui.coopMode.shared.tag"] = "ONE WORLD · SHARED PROGRESS";
+            currentTranslations["ui.coopMode.shared.summary"] = "• Build one world together<br>• Shared progress and public storage<br>• Characters saved by the host";
+            currentTranslations["ui.coopMode.shared.detail"] = "One shared adventure<br>Experience, levels, skills, quests, map unlocks, storage, buildings and decorations follow the host world.<br><br>Your own character<br>The host saves your appearance, backpack and gear. New visitors create a character.<br><br>Your personal save stays separate.";
+            currentTranslations["ui.steam.coopMode.shared"] = "Shared co-op";
+            currentTranslations["ui.steam.coopMode.independent"] = "Independent co-op";
+            currentTranslations["ui.steam.coopMode.unknown"] = "Mode unknown";
+            currentTranslations["ui.coopMode.switch"] = "Switch mode";
+            currentTranslations["net.disconnect.returning"] = "Returning to the main menu. Rejoin to return to the host map.";
+            currentTranslations["net.disconnect.reconnect"] = "Check your network and reconnect to the host.";
+            currentTranslations["net.reconnect.cancel"] = "Cancel reconnect";
+            currentTranslations["net.reconnect.countdown"] = "Reconnecting in {0} seconds";
+            currentTranslations["net.reconnect.connecting"] = "Reconnecting ({0}/5)…";
+            currentTranslations["net.reconnect.connected"] = "Connection restored.";
+            currentTranslations["net.reconnect.stopped"] = "Automatic reconnect stopped. You can rejoin manually.";
+            currentTranslations["ui.coopMode.eyebrow"] = "ESCAPE FROM DUCKOV  /  COOPERATIVE";
             currentTranslations["ui.window.playerStatus"] = "Player Status";
             currentTranslations["ui.mode.current"] = "Current Mode";
             currentTranslations["ui.mode.server"] = "Server";

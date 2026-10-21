@@ -184,11 +184,14 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
         if (!IsServer)
         {
+            ConnectionRecovery.Connected();
             if (SceneNet.Instance != null) SceneNet.Instance._sceneReadySidSent = null;
             status = CoopLocalization.Get("net.connectedTo", peer.EndPoint.ToString());
             isConnecting = false;
             Send_ClientStatus.Instance.SendClientStatusUpdate();
             LocalPlayerManager.Instance?.RequestFullLoadoutSync();
+            if (!SceneLoader.IsSceneLoading && LevelManager.LevelInited)
+                COOPManager.ItemNet?.Client_RequestDropSnapshot();
         }
 
         if (!playerStatuses.ContainsKey(peer))
@@ -213,6 +216,8 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
         {
             HealthM.Instance?.Server_SendAllSnapshotsTo(peer);
             COOPManager.FriendlyFire?.OnPeerConnected(peer);
+            SharedHome.PeerConnected(peer);
+            if (!SharedHome.Enabled) LateJoinScene.SendDestination(peer).Forget();
         }
 
         ModNetworkApi.NotifyPeerConnected(peer);
@@ -221,14 +226,26 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
+        var returnToMenu = SharedHome.Guest;
+        var disconnectedNetwork = netManager;
+        SharedHomeCompatibility.PeerDisconnected(peer);
         TeleporterTravel.PeerDisconnected(peer);
+        SharedHomeStorage.PeerDisconnected(peer);
+        SharedHomeLoadouts.PeerDisconnected(peer);
+        var sceneVote = SceneNet.Instance;
+        if (IsServer && sceneVote != null && sceneVote.sceneVoteActive && sceneVote.sceneParticipantIds.Contains(GetPlayerId(peer)))
+            sceneVote.CancelVote();
         ColdBuffSync.Forget(GetPlayerId(peer));
         HealthM.Instance?.ForgetDeathReports(peer);
         KazooSync.PeerDisconnected(peer);
         Debug.Log(CoopLocalization.Get("net.disconnected", peer.EndPoint.ToString(), disconnectInfo.Reason.ToString()));
         if (!IsServer)
         {
+            if (disconnectInfo.Reason == DisconnectReason.ConnectionRejected) ConnectionRecovery.Cancel();
+            else ConnectionRecovery.Begin(returnToMenu);
+            if (!returnToMenu) MModUI.Instance?.ShowDisconnectNotice(false);
             status = CoopLocalization.Get("net.connectionLost");
+            SharedHome.Reset();
             isConnecting = false;
 
             foreach (var kvp in clientRemoteCharacters)
@@ -270,7 +287,11 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
         COOPManager.AI?.Server_OnPeerDisconnected(peer);
 
+        if (IsServer) SendLocalPlayerStatus.Instance.SendPlayerStatusUpdate();
+
         ModNetworkApi.NotifyPeerDisconnected(peer);
+
+        if (returnToMenu) SharedHomeDisconnect.ReturnToMenu(this, disconnectedNetwork);
 
 
 
@@ -373,7 +394,8 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
     public void StartNetwork(bool isServer, bool keepSteamLobby = false)
     {
-        StopNetwork(!keepSteamLobby);
+        if (isServer) StopNetwork(!keepSteamLobby);
+        else ConnectionRecovery.Cleanup(() => StopNetwork(!keepSteamLobby));
         IsServer = isServer;
         NetDiagnostics.Instance.Reset();
         PerformanceDiagnostics.Instance.Reset();
@@ -417,6 +439,8 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
         CoopSyncDatabase.AI.Clear();
         COOPManager.AI?.Reset();
         COOPManager.FriendlyFire?.OnNetworkStarted(IsServer);
+        SharedHome.NetworkStarted();
+        CustomFace.ResetCache();
 
         LocalPlayerManager.Instance.InitializeLocalPlayer();
         if (!IsServer && TransportMode == NetworkTransportMode.Direct) CoopTool.SendBroadcastDiscovery();
@@ -447,6 +471,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
     public void ConnectToSteamHost(CSteamID host)
     {
+        ConnectionRecovery.RecordSteam(host);
         SetTransportMode(NetworkTransportMode.SteamP2P);
         StartNetwork(false, keepSteamLobby: true);
         if (!networkStarted || netManager is not SteamSocketsTransport steam) return;
@@ -466,9 +491,17 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
     public void StopNetwork(bool leaveSteamLobby = true)
     {
+        using var stopping = ConnectionRecovery.Stopping();
+        var returnToMenu = SharedHome.Guest;
+        var disconnectedNetwork = netManager;
+        LateJoinScene.Reset();
+        LocalAppearanceTravel.Reset();
+        SharedHome.Reset();
+        CorpseRecovery.StopNetwork();
         TeleporterTravel.Reset();
         SceneNet.Instance?.ResetTeleporterVote();
         ColdBuffSync.Reset();
+        COOPManager.Buff?.Reset();
         HealthM.Instance?.ResetDeathReports();
         KazooSync.Reset();
         if (netManager != null && netManager.IsRunning)
@@ -484,7 +517,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
         if (SceneNet.Instance != null) SceneNet.Instance._sceneReadySidSent = null;
         connectedPeer = null;
 
-        if (leaveSteamLobby && TransportMode == NetworkTransportMode.SteamP2P && SteamLobbyManager.Instance != null && SteamLobbyManager.Instance.IsInLobby)
+        if (leaveSteamLobby && TransportMode == NetworkTransportMode.SteamP2P && SteamLobbyManager.Instance != null)
         {
             SteamLobbyManager.Instance.LeaveLobby();
         }
@@ -510,6 +543,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
         PerformanceDiagnostics.Instance.Reset();
 
         ItemAgent_Gun.OnMainCharacterShootEvent -= COOPManager.WeaponHandle.Host_OnMainCharacterShoot;
+        if (returnToMenu) SharedHomeDisconnect.ReturnToMenu(this, disconnectedNetwork);
     }
 
     public void ConnectToHost(string ip, int port)
@@ -540,6 +574,8 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
             Debug.LogWarning(CoopLocalization.Get("net.alreadyConnecting"));
             return;
         }
+
+        ConnectionRecovery.RecordDirect(ip, port);
 
         //如未启动或仍在主机模式，则切到"客户端网络"
         if (netManager == null || !netManager.IsRunning || IsServer || !networkStarted)

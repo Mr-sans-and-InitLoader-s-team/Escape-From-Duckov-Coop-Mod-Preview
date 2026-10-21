@@ -76,6 +76,18 @@ public static class Patch_HSB_Awake_TagRegister
 [HarmonyPatch(typeof(HealthSimpleBase), "OnHurt")]
 public static class Patch_HSB_OnHurt_RedirectNet
 {
+    private static bool Prefix(HealthSimpleBase __instance, DamageInfo dmgInfo)
+    {
+        var mod = ModBehaviourF.Instance;
+        if (mod == null || !mod.networkStarted || mod.IsServer) return true;
+        if (dmgInfo.fromCharacter == CharacterMainControl.Main)
+        {
+            var tag = __instance.GetComponent<NetDestructibleTag>();
+            if (!tag) tag = __instance.gameObject.AddComponent<NetDestructibleTag>();
+            COOPManager.destructible.Client_ReportDestructibleHealth(tag.id, ReadMaxHealthValue(__instance), __instance.HealthValue, false, dmgInfo);
+        }
+        return false;
+    }
     private static float ReadMaxHealthValue(HealthSimpleBase hs)
     {
         return Destructible.ReadMaxHealthValue(hs, 0f);
@@ -89,17 +101,7 @@ public static class Patch_HSB_OnHurt_RedirectNet
         var tag = __instance.GetComponent<NetDestructibleTag>();
         if (!tag) tag = __instance.gameObject.AddComponent<NetDestructibleTag>();
 
-        if (!mod.IsServer)
-        {
-            // 仅转发本机玩家造成的伤害，避免 AI/环境事件反复覆写主机血量
-            if (dmgInfo.fromCharacter == null || dmgInfo.fromCharacter != CharacterMainControl.Main)
-                return;
-
-            var current = __instance != null ? __instance.HealthValue : 0f;
-            if (current > 0f)
-                COOPManager.destructible.Client_ReportDestructibleHealth(tag.id, ReadMaxHealthValue(__instance), current, false, dmgInfo);
-            return;
-        }
+        if (!mod.IsServer) return;
 
         COOPManager.destructible.Server_BroadcastDestructibleHurt(tag.id, __instance.HealthValue, dmgInfo);
     }
@@ -118,14 +120,7 @@ public static class Patch_HSB_Dead_Broadcast
         if (!tag) tag = __instance.gameObject.AddComponent<NetDestructibleTag>();
         if (!tag) return;
 
-        if (!mod.IsServer)
-        {
-            var reported = dmgInfo;
-            reported.damageValue = 999999f;
-            reported.finalDamage = Math.Max(reported.finalDamage, 999999f);
-            COOPManager.destructible.Client_ReportDestructibleHealth(tag.id, Destructible.ReadMaxHealthValue(__instance, 0f), 0f, true, reported);
-            return;
-        }
+        if (!mod.IsServer) return;
 
         COOPManager.destructible.Server_RegisterDestructibleDeath(tag.id);
         COOPManager.destructible.Server_BroadcastDestructibleDead(tag.id, dmgInfo);

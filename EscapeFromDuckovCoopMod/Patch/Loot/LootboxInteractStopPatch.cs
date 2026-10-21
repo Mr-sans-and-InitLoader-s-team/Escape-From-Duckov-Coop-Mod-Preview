@@ -56,6 +56,8 @@ internal static class LootboxInteractStopPatch
             }
         }
 
+        if (COOPManager.LootNet?.Client_WaitingForLootState(inv) == true) fullyInspected = false;
+
         try
         {
             inv.NeedInspection = !fullyInspected;

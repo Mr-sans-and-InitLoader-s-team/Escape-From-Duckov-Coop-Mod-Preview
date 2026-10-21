@@ -46,6 +46,7 @@ public static class RpcRegistry
         Register<SceneVoteRequestRpc>(RPCScene.HandleSceneVoteRequest);
         Register<SceneReadySetRpc>(RPCScene.HandleSceneReadySet);
         Register<SceneBeginLoadRpc>(RPCScene.HandleSceneBeginLoad);
+        Register<SceneJoinRpc>(LateJoinScene.Handle);
         Register<SceneVoteCancelRpc>(RPCScene.HandleSceneVoteCancel);
         Register<EnvSnapshotRequestRpc>(RPCEnvironment.HandleSnapshotRequest);
         Register<EnvClockStateRpc>(RPCEnvironment.HandleClockState);
@@ -61,6 +62,9 @@ public static class RpcRegistry
         Register<EnvExitSnapshotRpc>(RPCEnvironment.HandleExitSnapshot);
         Register<EnvDestructibleHealthReportRpc>(RPCEnvironment.HandleDestructibleHealthReport);
         Register<DeadLootSpawnRpc>(RPCLoot.HandleDeadLootSpawn);
+        Register<CorpseInventoryRpc>(RPCLoot.HandleCorpseInventory);
+        Register<CorpseSpawnRequestRpc>(RPCLoot.HandleCorpseSpawnRequest);
+        Register<SharedHomeRpc>(SharedHome.Handle);
         Register<LootOpenRequestRpc>(RPCLoot.HandleLootOpenRequest);
         Register<LootStateRpc>(RPCLoot.HandleLootState);
         Register<LootPutRequestRpc>(RPCLoot.HandleLootPutRequest);
@@ -133,6 +137,7 @@ public static class RpcRegistry
         if (!_byOp.TryGetValue(op, out var descriptor))
             return false;
 
+        if (context.IsServer && op != Op.SHARED_HOME && !SharedHomeCompatibility.Allows(context.Sender)) return true;
         descriptor.Invoker(context, reader);
         return true;
     }

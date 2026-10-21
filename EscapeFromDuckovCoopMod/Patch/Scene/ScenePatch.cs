@@ -33,7 +33,13 @@ public static class Patch_SceneLoaderProxy_Authority
 
         if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var proxySceneId = Traverse.Create(__instance).Field<string>("sceneID").Value;
-        if (SceneNet.Instance.IsLocalSceneLoadAllowed(proxySceneId)) return true;
+        if (SceneNet.Instance.IsLocalSceneLoadAllowed(proxySceneId) || LocalAppearanceTravel.Allows(proxySceneId)) return true;
+        if (SharedHome.Guest && (SharedHomeCharacterCreation.Creating || SharedHomeCharacterCreation.Joining)) return false;
+        if (__instance.name == "CustomFace")
+        {
+            LocalAppearanceTravel.Begin(proxySceneId);
+            return true;
+        }
         var useLoc = Traverse.Create(__instance).Field<bool>("useLocation").Value;
         var loc = Traverse.Create(__instance).Field<MultiSceneLocation>("location").Value;
         var curtain = Traverse.Create(__instance).Field<SceneReference>("overrideCurtainScene").Value;
@@ -50,7 +56,7 @@ public static class Patch_SceneLoaderProxy_Authority
             return false;
         }
 
-        if(__instance.name == "CustomFace" || __instance.name == "SelectDifficulty")
+        if(__instance.name == "SelectDifficulty")
         {
             MModUI.ShowTip(CoopLocalization.Get("ui.settings.configureOffline"));
             return false;
@@ -136,6 +142,12 @@ internal static class SceneLoadVoteGuard
         MultiSceneLocation location,
         string source)
     {
+        if (SharedHome.Guest && (SharedHomeCharacterCreation.Creating || SharedHomeCharacterCreation.Joining) &&
+            SceneNet.Instance?.IsLocalSceneLoadAllowed(targetId) != true)
+        {
+            __result = UniTask.CompletedTask;
+            return false;
+        }
         if (ModBehaviourF.Instance?.networkStarted == true && SceneLoader.IsSceneLoading)
         {
             __result = UniTask.CompletedTask;
@@ -166,6 +178,9 @@ internal static class SceneLoadVoteGuard
             return false;
 
         if (sceneNet.IsLocalSceneLoadAllowed(targetId))
+            return false;
+
+        if (LocalAppearanceTravel.Allows(targetId))
             return false;
 
         if (LevelManager.Instance == null || MultiSceneCore.Instance == null)

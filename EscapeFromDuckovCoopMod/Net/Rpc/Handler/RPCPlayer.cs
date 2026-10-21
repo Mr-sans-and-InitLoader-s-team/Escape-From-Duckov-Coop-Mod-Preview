@@ -138,6 +138,7 @@ namespace EscapeFromDuckovCoopMod
             {
                 if (service.remoteCharacters.TryGetValue(peer, out var go) && go != null)
                 {
+                    CustomFace.Client_ApplyFaceIfAvailable(playerId, go, st.CustomFaceJson);
                     HealthBarNameDisplay.TryRefreshRemoteCharacter(go, playerId, st.SteamName);
 
                     var mounted = IsMountedPlayer(playerId);
@@ -162,6 +163,19 @@ namespace EscapeFromDuckovCoopMod
             if (service == null || context.IsServer)
                 return;
 
+            var players = new HashSet<string>(message.Players.Select(p => p.PlayerId), StringComparer.Ordinal);
+            foreach (var playerId in service.clientRemoteCharacters.Keys.Where(id => !players.Contains(id)).ToArray())
+            {
+                var remote = service.clientRemoteCharacters[playerId];
+                if (remote) UnityEngine.Object.Destroy(remote);
+                service.clientRemoteCharacters.Remove(playerId);
+                ForgetVehicleRider(playerId, true);
+                ColdBuffSync.Forget(playerId);
+                CoopTool._cliPendingRemoteHp.Remove(playerId);
+                CoopTool._cliPendingProxyBuffs.Remove(playerId);
+                CustomFace._cliPendingFace.Remove(playerId);
+                SceneNet.Instance?._cliLastSceneIdByPlayer.Remove(playerId);
+            }
             service.clientPlayerStatuses.Clear();
 
             for (var i = 0; i < message.Players.Length; i++)
@@ -281,14 +295,8 @@ namespace EscapeFromDuckovCoopMod
 
             if (service.IsSelfId(message.EndPoint)) return;
 
-            if (!service.clientPlayerStatuses.TryGetValue(message.EndPoint, out var clientStatus))
-            {
-                clientStatus = service.clientPlayerStatuses[message.EndPoint] = new PlayerStatus
-                {
-                    EndPoint = message.EndPoint,
-                    IsInGame = true
-                };
-            }
+            // Only the reliable roster creates players; late position packets cannot revive a disconnected peer.
+            if (!service.clientPlayerStatuses.TryGetValue(message.EndPoint, out var clientStatus)) return;
 
             clientStatus.Position = position;
             clientStatus.Rotation = rotation;

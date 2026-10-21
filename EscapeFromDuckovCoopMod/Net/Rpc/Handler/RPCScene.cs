@@ -71,14 +71,14 @@ namespace EscapeFromDuckovCoopMod
             var net = SceneNet.Instance;
             if (net == null) return;
 
-            if (Spectator.Instance._spectatorActive && Spectator.Instance._spectatorEndOnVotePending)
+            if (Spectator.Instance.IsLocalDeathPending)
             {
                 Spectator.Instance._spectatorEndOnVotePending = false;
                 net.sceneVoteActive = false;
                 net.sceneReady.Clear();
                 net.localReady = false;
 
-                Spectator.Instance.EndSpectatorAndShowClosure();
+                Spectator.Instance.EndSpectatorAndShowClosure(true);
                 return;
             }
 

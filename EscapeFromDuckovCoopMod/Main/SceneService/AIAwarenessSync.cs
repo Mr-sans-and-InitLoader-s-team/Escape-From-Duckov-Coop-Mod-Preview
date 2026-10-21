@@ -178,12 +178,21 @@ public static class AIAwarenessSync
         if (!ShouldSyncSound(sound.soundType))
             return;
 
+        if (sound.soundType == SoundTypes.combatSound && !ProjectileShotFx.TakeSound(sound))
+            return;
+
+        var sourceAiId = 0;
+        var sourceController = sound.fromCharacter ? sound.fromCharacter.aiCharacterController : null;
+        if (sourceController && CoopSyncDatabase.AI.TryGet(sourceController, out var sourceEntry) && sourceEntry != null)
+            sourceAiId = sourceEntry.Id;
+
         var rpc = new AISoundEventRpc
         {
             Position = sound.pos,
             Radius = sound.radius,
             Team = sound.fromTeam,
-            SoundType = sound.soundType
+            SoundType = sound.soundType,
+            SourceAiId = sourceAiId
         };
 
         CoopTool.SendRpc(in rpc);
@@ -220,14 +229,15 @@ public static class AIAwarenessSync
     {
         using (new SoundScope())
         {
+            var source = message.SourceAiId != 0 ? COOPManager.AI?.TryGetCharacter(message.SourceAiId) : null;
             var sound = new AISound
             {
                 pos = message.Position,
                 radius = message.Radius,
                 fromTeam = message.Team,
                 soundType = message.SoundType,
-                fromObject = null,
-                fromCharacter = null
+                fromObject = source ? source.gameObject : null,
+                fromCharacter = source
             };
 
             AIMainBrain.MakeSound(sound);

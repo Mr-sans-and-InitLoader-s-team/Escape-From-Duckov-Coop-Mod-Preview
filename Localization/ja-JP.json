@@ -1,300 +1,1185 @@
 {
   "translations": [
-    { "key": "ui.window.title", "value": "協力Mod コントロールパネル" },
-    { "key": "ui.window.playerStatus", "value": "プレイヤーステータス" },
-    { "key": "ui.mode.current", "value": "現在のモード" },
-    { "key": "ui.mode.server", "value": "サーバー" },
-    { "key": "ui.mode.client", "value": "クライアント" },
-    { "key": "ui.mode.switchTo", "value": "{0}モードに切り替え" },
-    { "key": "ui.hostList.title", "value": "LANホストリスト" },
-    { "key": "ui.hostList.empty", "value": "（ブロードキャスト待機中、ホストなし）" },
-    { "key": "ui.hostList.connect", "value": "接続" },
-    { "key": "ui.manualConnect.title", "value": "手動IP・ポート接続:" },
-    { "key": "ui.manualConnect.ip", "value": "IP:" },
-    { "key": "ui.manualConnect.port", "value": "ポート:" },
-    { "key": "ui.manualConnect.button", "value": "手動接続" },
-    { "key": "ui.manualConnect.portError", "value": "ポート形式エラー" },
-    { "key": "ui.status.label", "value": "ステータス:" },
-    { "key": "ui.status.notConnected", "value": "未接続" },
-    { "key": "ui.status.connecting", "value": "接続中..." },
-    { "key": "ui.status.connected", "value": "接続済み" },
-    { "key": "ui.server.listenPort", "value": "サーバーリスニングポート:" },
-    { "key": "ui.server.connections", "value": "現在の接続数:" },
-    { "key": "ui.playerStatus.toggle", "value": "プレイヤーステータスウィンドウを表示 (トグルキー: {0})" },
-    { "key": "ui.playerStatus.id", "value": "ID:" },
-    { "key": "ui.playerStatus.name", "value": "名前:" },
-    { "key": "ui.playerStatus.latency", "value": "遅延:" },
-    { "key": "ui.playerStatus.inGame", "value": "ゲーム中:" },
-    { "key": "ui.playerStatus.yes", "value": "はい" },
-    { "key": "ui.playerStatus.no", "value": "いいえ" },
-    { "key": "ui.debug.printLootBoxes", "value": "[Debug] このマップのすべてのルートボックスを表示" },
-    { "key": "ui.vote.mapVote", "value": "マップ投票 / 準備  [{0}]" },
-    { "key": "ui.vote.pressKey", "value": "{0} を押して準備を切り替え（現在：{1}）" },
-    { "key": "ui.vote.ready", "value": "準備完了" },
-    { "key": "ui.vote.notReady", "value": "未準備" },
-    { "key": "ui.vote.playerReadyStatus", "value": "プレイヤー準備状態：" },
-    { "key": "ui.vote.readyIcon", "value": "準備完了" },
-    { "key": "ui.vote.notReadyIcon", "value": "未準備" },
-    { "key": "ui.vote.cancel", "value": "投票をキャンセル" },
-    { "key": "ui.spectator.mode", "value": "観戦モード: 左クリック ▶ 次 | 右クリック ◀ 前 | F8で結果画面へ（フリーズ防止）" },
-    { "key": "scene.waitingForHost", "value": "[Coop] ホストの読み込み待機中… (遅延が続く場合は100秒後に自動入場)" },
-    { "key": "scene.hostReady", "value": "ホスト準備完了、入場中…" },
-    { "key": "net.connectionSuccess", "value": "接続成功: {0}" },
-    { "key": "net.connectedTo", "value": "{0}に接続済み" },
-    { "key": "net.disconnected", "value": "接続切断: {0}, 理由: {1}" },
-    { "key": "net.connectionLost", "value": "接続切断" },
-    { "key": "net.networkError", "value": "ネットワークエラー: {0} 送信元: {1}" },
-    { "key": "net.hostDiscovered", "value": "ホスト発見: {0}" },
-    { "key": "net.serverStarted", "value": "サーバー起動、ポート {0} をリスニング中" },
-    { "key": "net.serverStartFailed", "value": "サーバー起動失敗、ポートが使用中か確認してください" },
-    { "key": "net.clientStarted", "value": "クライアント起動" },
-    { "key": "net.clientStartFailed", "value": "クライアント起動失敗" },
-    { "key": "net.networkStarted", "value": "ネットワーク起動済み" },
-    { "key": "net.networkStopped", "value": "ネットワーク停止済み" },
-    { "key": "net.ipEmpty", "value": "IPが空です" },
-    { "key": "net.invalidPort", "value": "ポートが不正です" },
-    { "key": "net.serverModeCannotConnect", "value": "サーバーモードでは他のホストに接続できません" },
-    { "key": "net.alreadyConnecting", "value": "接続中です。" },
-    { "key": "net.clientNetworkStartFailed", "value": "クライアントネットワーク起動失敗: {0}" },
-    { "key": "net.clientNetworkStartFailedStatus", "value": "クライアントネットワーク起動失敗" },
-    { "key": "net.clientNotStarted", "value": "クライアント未起動" },
-    { "key": "net.connectingTo", "value": "接続中: {0}:{1}" },
-    { "key": "net.connectionFailedLog", "value": "ホスト接続失敗: {0}" },
-    { "key": "net.connectionFailed", "value": "接続失敗" },
-    { "key": "net.clientVersionMismatch", "value": "クライアントのバージョンが一致しません（クライアント: {0}、ホスト: {1}）。接続を拒否しました" },
-    { "key": "net.clientVersionUnknown", "value": "クライアントのバージョンが不明のため接続を拒否しました" },
-    { "key": "ui.status.online", "value": "オンライン" },
-    { "key": "ui.error", "value": "エラー" },
-    { "key": "ui.server.management", "value": "サーバー管理" },
-    { "key": "ui.server.info", "value": "サーバー情報" },
-    { "key": "ui.server.port", "value": "ポート" },
-    { "key": "ui.server.create", "value": "ホスト作成" },
-    { "key": "ui.server.close", "value": "ホスト終了" },
-    { "key": "ui.server.closed", "value": "ホスト終了済み" },
-    { "key": "ui.server.created", "value": "ホスト作成成功、ポート {0} でリスニング中" },
-    { "key": "ui.server.hint.waiting", "value": "サーバーモード: プレイヤー接続待機中" },
-    { "key": "ui.server.hint.willUsePort", "value": "直接クライアント: ポート {0} を使用してサーバーを作成します" },
-    { "key": "ui.client.hint.browse", "value": "クライアントモード: サーバーを検索して接続" },
-    { "key": "ui.error.serverNotInGame", "value": "サーバーがゲームレベルにない、接続切断" },
-    { "key": "ui.error.gameNotInitialized", "value": "ゲームが初期化されていません" },
-    { "key": "ui.error.mustInLevel", "value": "接続する前にレベルに入る必要があります" },
-    { "key": "ui.hostList.lanServer", "value": "LANサーバー - {0}" },
-    { "key": "ui.hostList.serverDetails", "value": "ポート: {0}  |  プレイヤー: 0/4  |  Ping: <50ms" },
-    { "key": "ui.playerStatus.local", "value": "ローカル" },
-    { "key": "ui.playerStatus.inGameStatus", "value": "ゲーム中" },
-    { "key": "ui.playerStatus.idle", "value": "待機中" },
-    { "key": "ui.vote.title", "value": "マップ投票" },
-    { "key": "ui.steam.lobbyList", "value": "Steamロビーリスト" },
-    { "key": "ui.steam.client.connected", "value": "Steamクライアント: ロビーに接続済み" },
-    { "key": "ui.steam.hint.createOrJoin", "value": "Steam P2Pモード: ロビーを作成または参加" },
-    { "key": "ui.steam.joinPassword", "value": "ロビーパスワード" },
-    { "key": "ui.steam.joinPasswordPlaceholder", "value": "ロビーにパスワードが必要な場合" },
-    { "key": "ui.steam.lobbyNamePlaceholder", "value": "マイロビー" },
-    { "key": "ui.steam.lobbyPasswordPlaceholder", "value": "公開する場合は空にしてください" },
-    { "key": "ui.steam.visibility", "value": "表示設定" },
-    { "key": "ui.steam.maxPlayers.label", "value": "最大プレイヤー数" },
-    { "key": "ui.steam.lobby.left", "value": "ロビー退出" },
-    { "key": "ui.steam.lobby.creating", "value": "Steamロビー作成中..." },
-    { "key": "ui.steam.playerCount", "value": "プレイヤー: {0}/{1}" },
-    { "key": "ui.steam.notInitialized", "value": "Steamが初期化されていません" },
-    { "key": "ui.steam.refresh", "value": "リスト更新" },
-    { "key": "ui.steam.lobbiesEmpty", "value": "利用可能なロビーがありません、更新をクリックしてください" },
-    { "key": "ui.steam.lobbiesEmptyFiltered", "value": "検索条件に一致するロビーがありません" },
-    { "key": "ui.steam.searchPlaceholder", "value": "ロビー名またはホスト名で検索" },
-    { "key": "ui.steam.joinButton", "value": "ロビー参加" },
-    { "key": "ui.steam.createHost", "value": "ロビー作成" },
-    { "key": "ui.steam.leaveLobby", "value": "ロビーを離れる" },
-    { "key": "ui.steam.lobbySettings", "value": "Steamロビー設定" },
-    { "key": "ui.steam.lobbyName", "value": "ロビー名" },
-    { "key": "ui.steam.lobbyPassword", "value": "パスワード" },
-    { "key": "ui.steam.visibility.public", "value": "公開" },
-    { "key": "ui.steam.visibility.friends", "value": "フレンドのみ" },
-    { "key": "ui.steam.maxPlayers", "value": "最大プレイヤー数: {0}" },
-    { "key": "ui.steam.currentLobby", "value": "現在のロビー: {0}  プレイヤー: {1}/{2}" },
-    { "key": "ui.steam.server.waiting", "value": "Steamホスト: ロビー作成済み" },
-    { "key": "ui.steam.tab.create", "value": "ロビー作成" },
-    { "key": "ui.steam.tab.browse", "value": "ロビー検索" },
-    { "key": "ui.steam.error.notInitialized", "value": "Steamが初期化されていません" },
-    { "key": "ui.steam.error.metadata", "value": "ロビー情報が利用できません" },
-    { "key": "ui.steam.error.password", "value": "パスワードエラー" },
-    { "key": "ui.steam.error.generic", "value": "ロビー参加失敗" },
-    { "key": "ui.transport.label", "value": "転送モード" },
-    { "key": "ui.transport.mode.direct", "value": "直接接続" },
-    { "key": "ui.transport.mode.steam", "value": "Steam P2P" },
-    { "key": "ui.manualConnect.hint", "value": "ヒント: 接続するにはレベルに入る必要があります" },
-    { "key": "ui.actions.quickActions", "value": "クイックアクション" },
-    { "key": "ui.actions.settings", "value": "協力設定" },
-    { "key": "ui.actions.lootSettings", "value": "ドロップ調整" },
-    { "key": "ui.debug.lootBoxCount", "value": "{0}個のルートボックスが出力されました" },
-    { "key": "ui.difficulty.title", "value": "難易度" },
-    { "key": "ui.difficulty.hint", "value": "ホストがAIの反応速度と戦闘力を調整します。" },
-    { "key": "ui.difficulty.current", "value": "現在: {0}" },
-    { "key": "ui.difficulty.easy", "value": "簡単" },
-    { "key": "ui.difficulty.normal", "value": "普通" },
-    { "key": "ui.difficulty.hard", "value": "難しい" },
-    { "key": "ui.difficulty.veryHard", "value": "とても難しい" },
-    { "key": "ui.difficulty.impossible", "value": "不可能" },
-    { "key": "ui.difficulty.custom", "value": "カスタム" },
-    { "key": "ui.difficulty.section.title", "value": "AI難易度" },
-    { "key": "ui.difficulty.section.subtitle", "value": "プリセットを選ぶかカスタムを調整" },
-    { "key": "ui.difficulty.section.hint", "value": "プリセットは閲覧のみ。カスタムに切り替えてスライダーを調整してください。" },
-    { "key": "ui.difficulty.value.on", "value": "オン" },
-    { "key": "ui.difficulty.value.off", "value": "オフ" },
-    { "key": "ui.difficulty.patrolTurnSpeed", "value": "巡回旋回速度" },
-    { "key": "ui.difficulty.combatTurnSpeed", "value": "戦闘旋回速度" },
-    { "key": "ui.difficulty.baseReactionTime", "value": "基本反応時間" },
-    { "key": "ui.difficulty.scatterRunning", "value": "走行目標時の拡散" },
-    { "key": "ui.difficulty.scatterOffScreen", "value": "画面外拡散" },
-    { "key": "ui.difficulty.nightReaction", "value": "夜間反応倍率" },
-    { "key": "ui.difficulty.hearing", "value": "聴覚" },
-    { "key": "ui.difficulty.traceTarget", "value": "追跡確率" },
-    { "key": "ui.difficulty.shootDelay", "value": "発射前ディレイ倍率" },
-    { "key": "ui.difficulty.shootTime", "value": "連射時間倍率" },
-    { "key": "ui.difficulty.shootInterval", "value": "射撃間隔倍率" },
-    { "key": "ui.difficulty.combatMoveTime", "value": "戦闘移動時間倍率" },
-    { "key": "ui.difficulty.sightAngle", "value": "視角倍率" },
-    { "key": "ui.difficulty.sightDistance", "value": "視距離倍率" },
-    { "key": "ui.difficulty.canDash", "value": "ダッシュ許可" },
-    { "key": "ui.difficulty.dashCooldown", "value": "ダッシュクールダウン倍率" },
-    { "key": "ui.difficulty.moveSpeed", "value": "移動速度倍率" },
-    { "key": "ui.difficulty.bulletSpeed", "value": "弾速倍率" },
-    { "key": "ui.difficulty.gunDistance", "value": "射程倍率" },
-    { "key": "ui.difficulty.damage", "value": "ダメージ倍率" },
-    { "key": "ui.difficulty.healthMultiplier", "value": "AI体力倍率（最大2.5倍、人数で難易度補正）" },
-    { "key": "ui.hint.toggleUI", "value": "{0} 表示/非表示" },
-    { "key": "ui.settings.title", "value": "協力設定" },
-    { "key": "ui.settings.toggleHint", "value": "{0} 表示/非表示" },
-    { "key": "ui.settings.applyChanges", "value": "変更を適用" },
-    { "key": "ui.settings.saveGlobal", "value": "グローバル設定を保存" },
-    { "key": "ui.settings.reset", "value": "リセット" },
-    { "key": "ui.settings.nav.network", "value": "ネットワーク" },
-    { "key": "ui.settings.nav.aiSync", "value": "AI同期" },
-    { "key": "ui.settings.nav.aiDifficulty", "value": "AI難易度" },
-    { "key": "ui.settings.nav.loot", "value": "ドロップ" },
-    { "key": "ui.settings.section.network.title", "value": "ネットワーク" },
-    { "key": "ui.settings.section.network.subtitle", "value": "転送方式とブロードキャスト間隔（ホストのみ有効）" },
-    { "key": "ui.settings.transportMode", "value": "通信方式" },
-    { "key": "ui.settings.transport.direct", "value": "直接" },
-    { "key": "ui.settings.transport.steam", "value": "Steam P2P" },
-    { "key": "ui.settings.port", "value": "ポート" },
-    { "key": "ui.settings.broadcastInterval", "value": "ビーコン間隔（秒）" },
-    { "key": "ui.settings.syncInterval", "value": "同期間隔（秒）" },
-    { "key": "ui.settings.projectileSyncMaxDistance", "value": "弾丸同期の最大距離（メートル）" },
-    { "key": "ui.settings.teleporterSpawnTogether", "value": "テレポーターで一緒に出現" },
-    { "key": "ui.aiSettings.title", "value": "協力AI同期" },
-    { "key": "ui.aiSettings.toggleHint", "value": "{0} 表示/非表示" },
-    { "key": "ui.aiSettings.section.distance.title", "value": "同期距離" },
-    { "key": "ui.aiSettings.section.distance.subtitle", "value": "AI の起動/休眠判定範囲" },
-    { "key": "ui.aiSettings.activationRadius", "value": "起動半径（メートル）" },
-    { "key": "ui.aiSettings.deactivationRadius", "value": "休眠半径（メートル）" },
-    { "key": "ui.aiSettings.section.pacing.title", "value": "同期リズム" },
-    { "key": "ui.aiSettings.section.pacing.subtitle", "value": "ブロードキャストとサンプリング周期" },
-    { "key": "ui.aiSettings.activationRetryInterval", "value": "起動再試行間隔（秒）" },
-    { "key": "ui.aiSettings.stateBroadcastInterval", "value": "状態ブロードキャスト間隔（秒）" },
-    { "key": "ui.aiSettings.idleStateRecordInterval", "value": "アイドルサンプル間隔（秒）" },
-    { "key": "ui.aiSettings.healthBroadcastInterval", "value": "体力ブロードキャスト間隔（秒）" },
-    { "key": "ui.aiSettings.section.precision.title", "value": "補間と精度" },
-    { "key": "ui.aiSettings.section.precision.subtitle", "value": "閾値と速度補間" },
-    { "key": "ui.aiSettings.minPositionDelta", "value": "最小位置変化（メートル）" },
-    { "key": "ui.aiSettings.minRotationDelta", "value": "最小回転変化（度）" },
-    { "key": "ui.aiSettings.velocityLerp", "value": "速度補間（係数）" },
-    { "key": "ui.aiSettings.section.snapshot.title", "value": "スナップショットとキュー" },
-    { "key": "ui.aiSettings.section.snapshot.subtitle", "value": "スナップショット更新、キュー上限、パケット損失補正" },
-    { "key": "ui.aiSettings.snapshotRefreshInterval", "value": "スナップショット更新間隔（秒）" },
-    { "key": "ui.aiSettings.snapshotRequestTimeout", "value": "スナップショット要求タイムアウト（秒）" },
-    { "key": "ui.aiSettings.snapshotRecoveryCooldown", "value": "スナップショット回復クールダウン（秒）" },
-    { "key": "ui.aiSettings.snapshotChunkSize", "value": "スナップショットチャンクサイズ（件数）" },
-    { "key": "ui.aiSettings.maxStoredBuffs", "value": "最大保存バフ（件数）" },
-    { "key": "ui.aiSettings.maxSnapshotAppliesPerFrame", "value": "フレーム毎スナップショット適用上限（回数）" },
-    { "key": "ui.aiSettings.maxClientEntryChecksPerFrame", "value": "フレーム毎のエントリチェック上限（回数）" },
-    { "key": "ui.aiSettings.maxStateUpdatesPerFrame", "value": "フレーム毎状態更新上限（回数）" },
-    { "key": "ui.aiSettings.maxPendingSnapshotQueue", "value": "スナップショットキュー上限（件数）" },
-    { "key": "ui.aiSettings.maxPendingStateQueue", "value": "状態キュー上限（件数）" },
-    { "key": "ui.aiSettings.snapshotDropResyncThreshold", "value": "スナップショット損失再同期しきい値（回数）" },
-    { "key": "ui.aiSettings.stateDropResyncThreshold", "value": "状態損失再同期しきい値（回数）" },
-    { "key": "ui.aiSettings.section.hostOnly.title", "value": "ホスト専用" },
-    { "key": "ui.aiSettings.section.hostOnly.subtitle", "value": "ホストの変更のみ反映されます" },
-    { "key": "ui.aiSettings.serverControllerRescanInterval", "value": "コントローラー再スキャン間隔（秒）" },
-    { "key": "ui.aiSettings.serverSnapshotBroadcastInterval", "value": "スナップショットブロードキャスト間隔（秒）" },
-    { "key": "ui.aiSettings.serverSnapshotRetryInterval", "value": "スナップショット再試行間隔（秒）" },
-    { "key": "ui.settings.broadcastInterval.desc", "value": "ホストがLANにロビーをアナウンスする頻度（秒）。数値が小さいほど頻繁。" },
-    { "key": "ui.settings.syncInterval.desc", "value": "クライアントへの同期ティック間隔（秒）。" },
-    { "key": "ui.settings.projectileSyncMaxDistance.desc", "value": "発射地点がこの距離を超える場合、リモート弾丸を生成しません。上限500m、0で制限を無効化。" },
-    { "key": "ui.settings.teleporterSpawnTogether.desc", "value": "ホスト専用: テレポート投票開始時、クライアントがマップに入る際にホスト位置へスポーンさせます。" },
-    { "key": "ui.aiSettings.activationRadius.desc", "value": "遠隔AIが有効化され同期を開始する距離（メートル）。" },
-    { "key": "ui.aiSettings.deactivationRadius.desc", "value": "遠隔AIが休止し同期を止める距離（メートル）。" },
-    { "key": "ui.aiSettings.activationRetryInterval.desc", "value": "以前失敗したAIを再有効化するまでの待ち時間（秒）。" },
-    { "key": "ui.aiSettings.stateBroadcastInterval.desc", "value": "AI状態スナップショットを送る基本間隔（秒）。" },
-    { "key": "ui.aiSettings.idleStateRecordInterval.desc", "value": "待機AIの位置を記録して滑らかにする頻度（秒）。" },
-    { "key": "ui.aiSettings.healthBroadcastInterval.desc", "value": "AIの体力変化を送信する間隔（秒）。" },
-    { "key": "ui.aiSettings.minPositionDelta.desc", "value": "位置変化がこの距離を超えたときだけ送信（メートル）。" },
-    { "key": "ui.aiSettings.minRotationDelta.desc", "value": "向きの変化がこの角度を超えたときだけ送信（度）。" },
-    { "key": "ui.aiSettings.velocityLerp.desc", "value": "AI速度を補間するときの係数。" },
-    { "key": "ui.aiSettings.snapshotRefreshInterval.desc", "value": "ホストがAIスナップショットを更新する周期（秒）。" },
-    { "key": "ui.aiSettings.snapshotRequestTimeout.desc", "value": "スナップショット要求を再送するまでのタイムアウト（秒）。" },
-    { "key": "ui.aiSettings.snapshotRecoveryCooldown.desc", "value": "ドロップ後にスナップショット復旧を再試行するクールダウン（秒）。" },
-    { "key": "ui.aiSettings.snapshotChunkSize.desc", "value": "状態再構築時、1チャンクに含めるエントリー数。" },
-    { "key": "ui.aiSettings.maxStoredBuffs.desc", "value": "各AIが保持するバフ記録の最大数。" },
-    { "key": "ui.aiSettings.maxSnapshotAppliesPerFrame.desc", "value": "1フレームで適用するスナップショットの上限。" },
-    { "key": "ui.aiSettings.maxClientEntryChecksPerFrame.desc", "value": "1フレームで実行されるAIエントリの起動/休止チェック上限。" },
-    { "key": "ui.aiSettings.maxStateUpdatesPerFrame.desc", "value": "1フレームで処理する状態更新パケットの上限。" },
-    { "key": "ui.aiSettings.maxPendingSnapshotQueue.desc", "value": "スナップショットパケットのキュー上限（古いものから破棄）。" },
-    { "key": "ui.aiSettings.maxPendingStateQueue.desc", "value": "状態パケットのキュー上限（古いものから破棄）。" },
-    { "key": "ui.aiSettings.snapshotDropResyncThreshold.desc", "value": "ドロップしたスナップショット数がこの値で再同期を要求。" },
-    { "key": "ui.aiSettings.stateDropResyncThreshold.desc", "value": "ドロップした状態更新数がこの値で再同期を要求。" },
-    { "key": "ui.aiSettings.serverControllerRescanInterval.desc", "value": "ホストが孤立したAIコントローラーを再スキャンする間隔（秒）。" },
-    { "key": "ui.aiSettings.serverSnapshotBroadcastInterval.desc", "value": "ホストが権威スナップショットを送信する間隔（秒）。" },
-    { "key": "ui.aiSettings.serverSnapshotRetryInterval.desc", "value": "スナップショット送信失敗後の再試行間隔（秒）。" },
-    { "key": "ui.aiSettings.badge.hostOnly", "value": "ホストのみ" },
-    { "key": "ui.aiSettings.badge.hostOnlyShort", "value": "ホスト" },
-    { "key": "ui.settings.search.placeholder", "value": "設定を検索..." },
-    { "key": "ui.lootSettings.title", "value": "ドロップ調整（ホストのみ）" },
-    { "key": "ui.lootSettings.hostOnly", "value": "ホストだけが変更できます" },
-    { "key": "ui.lootSettings.spawnChanceMultiplier", "value": "出現確率倍率" },
-    { "key": "ui.lootSettings.itemCountMultiplier", "value": "アイテム数倍率" },
-    { "key": "ui.lootSettings.globalWeight", "value": "全体重み倍率" },
-    { "key": "ui.lootSettings.qualityBias", "value": "品質バイアス" },
-    { "key": "ui.lootSettings.apply", "value": "適用（ホストのみ）" },
-    { "key": "ui.chat.title", "value": "チャット" },
-    { "key": "ui.chat.inputPlaceholder", "value": "メッセージを入力..." },
-    { "key": "ui.chat.send", "value": "送信" },
-    { "key": "ui.chat.unknown", "value": "不明" },
-    { "key": "ui.playerlist.kick", "value": "キック" },
-    { "key": "ui.waiting.initializing", "value": "初期化中..." },
-    { "key": "ui.waiting.syncComplete", "value": "同期完了！" },
-    { "key": "ui.waiting.map", "value": "マップ: {0}" },
-    { "key": "ui.waiting.time", "value": "時間: {0}日目 {1:D2}:{2:D2}" },
-    { "key": "ui.waiting.timeUnknown", "value": "時間: --:--" },
-    { "key": "ui.waiting.weather", "value": "天気: {0}" },
-    { "key": "ui.waiting.weatherUnknown", "value": "天気: 不明" },
-    { "key": "ui.waiting.loadingPlayers", "value": "プレイヤーリストを取得中..." },
-    { "key": "ui.settings.friendlyFirePlayers", "value": "プレイヤーへの同士討ち" },
-    { "key": "ui.settings.friendlyFirePlayers.desc", "value": "Host only. Sets player proxies neutral so friendly fire is possible; disabling restores Player team." },
-    { "key": "ui.settings.themeMode", "value": "UI テーマ" },
-    { "key": "ui.settings.themeMode.desc", "value": "この端末の協力プレイパネルのテーマを変更します。" },
-    { "key": "ui.settings.theme.white", "value": "白" },
-    { "key": "ui.settings.theme.black", "value": "黒" },
-    { "key": "ui.settings.theme.spring", "value": "春節" },
-    { "key": "ui.settings.theme.summer", "value": "夏" },
-    { "key": "ui.difficulty.spawnBonus", "value": "敵の出現倍率への加算" },
-    { "key": "ui.difficulty.spawnBonus.desc", "value": "基本の敵出現倍率に加算します（例：+1 で出現数が2倍）。" },
-    { "key": "ui.difficulty.forceBoss", "value": "ボスを必ず出現させる" },
-    { "key": "ui.difficulty.forceBoss.desc", "value": "最高難易度またはカスタム難易度でのみ有効にしてください。" },
-    { "key": "vehicle.control.title", "value": "車両制御" },
-    { "key": "vehicle.control.current", "value": "操作者: {0}" },
-    { "key": "vehicle.control.unassigned", "value": "割り当て待ち" },
-    { "key": "vehicle.control.riders", "value": "同乗者: {0}" },
-    { "key": "vehicle.control.requester", "value": "申請者: {0}" },
-    { "key": "vehicle.control.key", "value": "F2" },
-    { "key": "vehicle.control.action.approve", "value": "操作権申請を承認" },
-    { "key": "vehicle.control.action.controlling", "value": "この車両を操作中" },
-    { "key": "vehicle.control.action.pending", "value": "申請済み、承認待ち" },
-    { "key": "vehicle.control.action.request", "value": "操作権を申請" },
-    { "key": "vehicle.control.tip.approved", "value": "{0} の車両操作を承認しました" },
-    { "key": "vehicle.control.tip.requested", "value": "車両操作権を申請しました。現在の操作者が F2 で承認するのを待っています" },
-    { "key": "vehicle.control.tip.incomingRequest", "value": "{0} が車両操作権を申請しています。F2 で承認" },
-    { "key": "ui.teleporter.openInterfaceFirst", "value": "先にテレポーター画面を開いてください。" },
-    { "key": "ui.sceneVote.alreadyActive", "value": "すでにマップ投票が進行中です。" },
+    {
+      "key": "ui.window.title",
+      "value": "協力Mod コントロールパネル"
+    },
+    {
+      "key": "ui.window.playerStatus",
+      "value": "プレイヤーステータス"
+    },
+    {
+      "key": "ui.mode.current",
+      "value": "現在のモード"
+    },
+    {
+      "key": "ui.mode.server",
+      "value": "サーバー"
+    },
+    {
+      "key": "ui.mode.client",
+      "value": "クライアント"
+    },
+    {
+      "key": "ui.mode.switchTo",
+      "value": "{0}モードに切り替え"
+    },
+    {
+      "key": "ui.hostList.title",
+      "value": "LANホストリスト"
+    },
+    {
+      "key": "ui.hostList.empty",
+      "value": "（ブロードキャスト待機中、ホストなし）"
+    },
+    {
+      "key": "ui.hostList.connect",
+      "value": "接続"
+    },
+    {
+      "key": "ui.manualConnect.title",
+      "value": "手動IP・ポート接続:"
+    },
+    {
+      "key": "ui.manualConnect.ip",
+      "value": "IP:"
+    },
+    {
+      "key": "ui.manualConnect.port",
+      "value": "ポート:"
+    },
+    {
+      "key": "ui.manualConnect.button",
+      "value": "手動接続"
+    },
+    {
+      "key": "ui.manualConnect.portError",
+      "value": "ポート形式エラー"
+    },
+    {
+      "key": "ui.status.label",
+      "value": "ステータス:"
+    },
+    {
+      "key": "ui.status.notConnected",
+      "value": "未接続"
+    },
+    {
+      "key": "ui.status.connecting",
+      "value": "接続中..."
+    },
+    {
+      "key": "ui.status.connected",
+      "value": "接続済み"
+    },
+    {
+      "key": "ui.server.listenPort",
+      "value": "サーバーリスニングポート:"
+    },
+    {
+      "key": "ui.server.connections",
+      "value": "現在の接続数:"
+    },
+    {
+      "key": "ui.playerStatus.toggle",
+      "value": "プレイヤーステータスウィンドウを表示 (トグルキー: {0})"
+    },
+    {
+      "key": "ui.playerStatus.id",
+      "value": "ID:"
+    },
+    {
+      "key": "ui.playerStatus.name",
+      "value": "名前:"
+    },
+    {
+      "key": "ui.playerStatus.latency",
+      "value": "遅延:"
+    },
+    {
+      "key": "ui.playerStatus.inGame",
+      "value": "ゲーム中:"
+    },
+    {
+      "key": "ui.playerStatus.yes",
+      "value": "はい"
+    },
+    {
+      "key": "ui.playerStatus.no",
+      "value": "いいえ"
+    },
+    {
+      "key": "ui.debug.printLootBoxes",
+      "value": "[Debug] このマップのすべてのルートボックスを表示"
+    },
+    {
+      "key": "ui.vote.mapVote",
+      "value": "マップ投票 / 準備  [{0}]"
+    },
+    {
+      "key": "ui.vote.pressKey",
+      "value": "{0} を押して準備を切り替え（現在：{1}）"
+    },
+    {
+      "key": "ui.vote.ready",
+      "value": "準備完了"
+    },
+    {
+      "key": "ui.vote.notReady",
+      "value": "未準備"
+    },
+    {
+      "key": "ui.vote.playerReadyStatus",
+      "value": "プレイヤー準備状態："
+    },
+    {
+      "key": "ui.vote.readyIcon",
+      "value": "準備完了"
+    },
+    {
+      "key": "ui.vote.notReadyIcon",
+      "value": "未準備"
+    },
+    {
+      "key": "ui.vote.cancel",
+      "value": "投票をキャンセル"
+    },
+    {
+      "key": "ui.spectator.mode",
+      "value": "観戦モード: 左クリック ▶ 次 | 右クリック ◀ 前 | F8で結果画面へ（フリーズ防止）"
+    },
+    {
+      "key": "scene.waitingForHost",
+      "value": "[Coop] ホストの読み込み待機中… (遅延が続く場合は100秒後に自動入場)"
+    },
+    {
+      "key": "scene.hostReady",
+      "value": "ホスト準備完了、入場中…"
+    },
+    {
+      "key": "net.connectionSuccess",
+      "value": "接続成功: {0}"
+    },
+    {
+      "key": "net.connectedTo",
+      "value": "{0}に接続済み"
+    },
+    {
+      "key": "net.disconnected",
+      "value": "接続切断: {0}, 理由: {1}"
+    },
+    {
+      "key": "net.connectionLost",
+      "value": "接続切断"
+    },
+    {
+      "key": "net.networkError",
+      "value": "ネットワークエラー: {0} 送信元: {1}"
+    },
+    {
+      "key": "net.hostDiscovered",
+      "value": "ホスト発見: {0}"
+    },
+    {
+      "key": "net.serverStarted",
+      "value": "サーバー起動、ポート {0} をリスニング中"
+    },
+    {
+      "key": "net.serverStartFailed",
+      "value": "サーバー起動失敗、ポートが使用中か確認してください"
+    },
+    {
+      "key": "net.clientStarted",
+      "value": "クライアント起動"
+    },
+    {
+      "key": "net.clientStartFailed",
+      "value": "クライアント起動失敗"
+    },
+    {
+      "key": "net.networkStarted",
+      "value": "ネットワーク起動済み"
+    },
+    {
+      "key": "net.networkStopped",
+      "value": "ネットワーク停止済み"
+    },
+    {
+      "key": "net.ipEmpty",
+      "value": "IPが空です"
+    },
+    {
+      "key": "net.invalidPort",
+      "value": "ポートが不正です"
+    },
+    {
+      "key": "net.serverModeCannotConnect",
+      "value": "サーバーモードでは他のホストに接続できません"
+    },
+    {
+      "key": "net.alreadyConnecting",
+      "value": "接続中です。"
+    },
+    {
+      "key": "net.clientNetworkStartFailed",
+      "value": "クライアントネットワーク起動失敗: {0}"
+    },
+    {
+      "key": "net.clientNetworkStartFailedStatus",
+      "value": "クライアントネットワーク起動失敗"
+    },
+    {
+      "key": "net.clientNotStarted",
+      "value": "クライアント未起動"
+    },
+    {
+      "key": "net.connectingTo",
+      "value": "接続中: {0}:{1}"
+    },
+    {
+      "key": "net.connectionFailedLog",
+      "value": "ホスト接続失敗: {0}"
+    },
+    {
+      "key": "net.connectionFailed",
+      "value": "接続失敗"
+    },
+    {
+      "key": "net.clientVersionMismatch",
+      "value": "クライアントのバージョンが一致しません（クライアント: {0}、ホスト: {1}）。接続を拒否しました"
+    },
+    {
+      "key": "net.clientVersionUnknown",
+      "value": "クライアントのバージョンが不明のため接続を拒否しました"
+    },
+    {
+      "key": "ui.status.online",
+      "value": "オンライン"
+    },
+    {
+      "key": "ui.error",
+      "value": "エラー"
+    },
+    {
+      "key": "ui.server.management",
+      "value": "サーバー管理"
+    },
+    {
+      "key": "ui.server.info",
+      "value": "サーバー情報"
+    },
+    {
+      "key": "ui.server.port",
+      "value": "ポート"
+    },
+    {
+      "key": "ui.server.create",
+      "value": "ホスト作成"
+    },
+    {
+      "key": "ui.server.close",
+      "value": "ホスト終了"
+    },
+    {
+      "key": "ui.server.closed",
+      "value": "ホスト終了済み"
+    },
+    {
+      "key": "ui.server.created",
+      "value": "ホスト作成成功、ポート {0} でリスニング中"
+    },
+    {
+      "key": "ui.server.hint.waiting",
+      "value": "サーバーモード: プレイヤー接続待機中"
+    },
+    {
+      "key": "ui.server.hint.willUsePort",
+      "value": "直接クライアント: ポート {0} を使用してサーバーを作成します"
+    },
+    {
+      "key": "ui.client.hint.browse",
+      "value": "クライアントモード: サーバーを検索して接続"
+    },
+    {
+      "key": "ui.error.serverNotInGame",
+      "value": "サーバーがゲームレベルにない、接続切断"
+    },
+    {
+      "key": "ui.error.gameNotInitialized",
+      "value": "ゲームが初期化されていません"
+    },
+    {
+      "key": "ui.error.mustInLevel",
+      "value": "接続する前にレベルに入る必要があります"
+    },
+    {
+      "key": "ui.hostList.lanServer",
+      "value": "LANサーバー - {0}"
+    },
+    {
+      "key": "ui.hostList.serverDetails",
+      "value": "ポート: {0}  |  プレイヤー: 0/4  |  Ping: <50ms"
+    },
+    {
+      "key": "ui.playerStatus.local",
+      "value": "ローカル"
+    },
+    {
+      "key": "ui.playerStatus.inGameStatus",
+      "value": "ゲーム中"
+    },
+    {
+      "key": "ui.playerStatus.idle",
+      "value": "待機中"
+    },
+    {
+      "key": "ui.vote.title",
+      "value": "マップ投票"
+    },
+    {
+      "key": "ui.steam.lobbyList",
+      "value": "Steamロビーリスト"
+    },
+    {
+      "key": "ui.steam.client.connected",
+      "value": "Steamクライアント: ロビーに接続済み"
+    },
+    {
+      "key": "ui.steam.hint.createOrJoin",
+      "value": "Steam P2Pモード: ロビーを作成または参加"
+    },
+    {
+      "key": "ui.steam.joinPassword",
+      "value": "ロビーパスワード"
+    },
+    {
+      "key": "ui.steam.joinPasswordPlaceholder",
+      "value": "ロビーにパスワードが必要な場合"
+    },
+    {
+      "key": "ui.steam.lobbyNamePlaceholder",
+      "value": "マイロビー"
+    },
+    {
+      "key": "ui.steam.lobbyPasswordPlaceholder",
+      "value": "公開する場合は空にしてください"
+    },
+    {
+      "key": "ui.steam.visibility",
+      "value": "表示設定"
+    },
+    {
+      "key": "ui.steam.maxPlayers.label",
+      "value": "最大プレイヤー数"
+    },
+    {
+      "key": "ui.steam.lobby.left",
+      "value": "ロビー退出"
+    },
+    {
+      "key": "ui.steam.lobby.creating",
+      "value": "Steamロビー作成中..."
+    },
+    {
+      "key": "ui.steam.playerCount",
+      "value": "プレイヤー: {0}/{1}"
+    },
+    {
+      "key": "ui.steam.notInitialized",
+      "value": "Steamが初期化されていません"
+    },
+    {
+      "key": "ui.steam.refresh",
+      "value": "リスト更新"
+    },
+    {
+      "key": "ui.steam.lobbiesEmpty",
+      "value": "利用可能なロビーがありません、更新をクリックしてください"
+    },
+    {
+      "key": "ui.steam.lobbiesEmptyFiltered",
+      "value": "検索条件に一致するロビーがありません"
+    },
+    {
+      "key": "ui.steam.searchPlaceholder",
+      "value": "ロビー名またはホスト名で検索"
+    },
+    {
+      "key": "ui.steam.joinButton",
+      "value": "ロビー参加"
+    },
+    {
+      "key": "ui.steam.createHost",
+      "value": "ロビー作成"
+    },
+    {
+      "key": "ui.steam.leaveLobby",
+      "value": "ロビーを離れる"
+    },
+    {
+      "key": "ui.steam.lobbySettings",
+      "value": "Steamロビー設定"
+    },
+    {
+      "key": "ui.steam.lobbyName",
+      "value": "ロビー名"
+    },
+    {
+      "key": "ui.steam.lobbyPassword",
+      "value": "パスワード"
+    },
+    {
+      "key": "ui.steam.visibility.public",
+      "value": "公開"
+    },
+    {
+      "key": "ui.steam.visibility.friends",
+      "value": "フレンドのみ"
+    },
+    {
+      "key": "ui.steam.maxPlayers",
+      "value": "最大プレイヤー数: {0}"
+    },
+    {
+      "key": "ui.steam.currentLobby",
+      "value": "現在のロビー: {0}  プレイヤー: {1}/{2}"
+    },
+    {
+      "key": "ui.steam.server.waiting",
+      "value": "Steamホスト: ロビー作成済み"
+    },
+    {
+      "key": "ui.steam.tab.create",
+      "value": "ロビー作成"
+    },
+    {
+      "key": "ui.steam.tab.browse",
+      "value": "ロビー検索"
+    },
+    {
+      "key": "ui.steam.error.notInitialized",
+      "value": "Steamが初期化されていません"
+    },
+    {
+      "key": "ui.steam.error.metadata",
+      "value": "ロビー情報が利用できません"
+    },
+    {
+      "key": "ui.steam.error.password",
+      "value": "パスワードエラー"
+    },
+    {
+      "key": "ui.steam.error.generic",
+      "value": "ロビー参加失敗"
+    },
+    {
+      "key": "ui.transport.label",
+      "value": "転送モード"
+    },
+    {
+      "key": "ui.transport.mode.direct",
+      "value": "直接接続"
+    },
+    {
+      "key": "ui.transport.mode.steam",
+      "value": "Steam P2P"
+    },
+    {
+      "key": "ui.manualConnect.hint",
+      "value": "ヒント: 接続するにはレベルに入る必要があります"
+    },
+    {
+      "key": "ui.actions.quickActions",
+      "value": "クイックアクション"
+    },
+    {
+      "key": "ui.actions.settings",
+      "value": "協力設定"
+    },
+    {
+      "key": "ui.actions.lootSettings",
+      "value": "ドロップ調整"
+    },
+    {
+      "key": "ui.debug.lootBoxCount",
+      "value": "{0}個のルートボックスが出力されました"
+    },
+    {
+      "key": "ui.difficulty.title",
+      "value": "難易度"
+    },
+    {
+      "key": "ui.difficulty.hint",
+      "value": "ホストがAIの反応速度と戦闘力を調整します。"
+    },
+    {
+      "key": "ui.difficulty.current",
+      "value": "現在: {0}"
+    },
+    {
+      "key": "ui.difficulty.easy",
+      "value": "簡単"
+    },
+    {
+      "key": "ui.difficulty.normal",
+      "value": "普通"
+    },
+    {
+      "key": "ui.difficulty.hard",
+      "value": "難しい"
+    },
+    {
+      "key": "ui.difficulty.veryHard",
+      "value": "とても難しい"
+    },
+    {
+      "key": "ui.difficulty.impossible",
+      "value": "不可能"
+    },
+    {
+      "key": "ui.difficulty.custom",
+      "value": "カスタム"
+    },
+    {
+      "key": "ui.difficulty.section.title",
+      "value": "AI難易度"
+    },
+    {
+      "key": "ui.difficulty.section.subtitle",
+      "value": "プリセットを選ぶかカスタムを調整"
+    },
+    {
+      "key": "ui.difficulty.section.hint",
+      "value": "プリセットは閲覧のみ。カスタムに切り替えてスライダーを調整してください。"
+    },
+    {
+      "key": "ui.difficulty.value.on",
+      "value": "オン"
+    },
+    {
+      "key": "ui.difficulty.value.off",
+      "value": "オフ"
+    },
+    {
+      "key": "ui.difficulty.patrolTurnSpeed",
+      "value": "巡回旋回速度"
+    },
+    {
+      "key": "ui.difficulty.combatTurnSpeed",
+      "value": "戦闘旋回速度"
+    },
+    {
+      "key": "ui.difficulty.baseReactionTime",
+      "value": "基本反応時間"
+    },
+    {
+      "key": "ui.difficulty.scatterRunning",
+      "value": "走行目標時の拡散"
+    },
+    {
+      "key": "ui.difficulty.scatterOffScreen",
+      "value": "画面外拡散"
+    },
+    {
+      "key": "ui.difficulty.nightReaction",
+      "value": "夜間反応倍率"
+    },
+    {
+      "key": "ui.difficulty.hearing",
+      "value": "聴覚"
+    },
+    {
+      "key": "ui.difficulty.traceTarget",
+      "value": "追跡確率"
+    },
+    {
+      "key": "ui.difficulty.shootDelay",
+      "value": "発射前ディレイ倍率"
+    },
+    {
+      "key": "ui.difficulty.shootTime",
+      "value": "連射時間倍率"
+    },
+    {
+      "key": "ui.difficulty.shootInterval",
+      "value": "射撃間隔倍率"
+    },
+    {
+      "key": "ui.difficulty.combatMoveTime",
+      "value": "戦闘移動時間倍率"
+    },
+    {
+      "key": "ui.difficulty.sightAngle",
+      "value": "視角倍率"
+    },
+    {
+      "key": "ui.difficulty.sightDistance",
+      "value": "視距離倍率"
+    },
+    {
+      "key": "ui.difficulty.canDash",
+      "value": "ダッシュ許可"
+    },
+    {
+      "key": "ui.difficulty.dashCooldown",
+      "value": "ダッシュクールダウン倍率"
+    },
+    {
+      "key": "ui.difficulty.moveSpeed",
+      "value": "移動速度倍率"
+    },
+    {
+      "key": "ui.difficulty.bulletSpeed",
+      "value": "弾速倍率"
+    },
+    {
+      "key": "ui.difficulty.gunDistance",
+      "value": "射程倍率"
+    },
+    {
+      "key": "ui.difficulty.damage",
+      "value": "ダメージ倍率"
+    },
+    {
+      "key": "ui.difficulty.healthMultiplier",
+      "value": "AI体力倍率（最大2.5倍、人数で難易度補正）"
+    },
+    {
+      "key": "ui.hint.toggleUI",
+      "value": "{0} 表示/非表示"
+    },
+    {
+      "key": "ui.settings.title",
+      "value": "協力設定"
+    },
+    {
+      "key": "ui.settings.toggleHint",
+      "value": "{0} 表示/非表示"
+    },
+    {
+      "key": "ui.settings.applyChanges",
+      "value": "変更を適用"
+    },
+    {
+      "key": "ui.settings.saveGlobal",
+      "value": "グローバル設定を保存"
+    },
+    {
+      "key": "ui.settings.reset",
+      "value": "リセット"
+    },
+    {
+      "key": "ui.settings.nav.network",
+      "value": "ネットワーク"
+    },
+    {
+      "key": "ui.settings.nav.aiSync",
+      "value": "AI同期"
+    },
+    {
+      "key": "ui.settings.nav.aiDifficulty",
+      "value": "AI難易度"
+    },
+    {
+      "key": "ui.settings.nav.loot",
+      "value": "ドロップ"
+    },
+    {
+      "key": "ui.settings.section.network.title",
+      "value": "ネットワーク"
+    },
+    {
+      "key": "ui.settings.section.network.subtitle",
+      "value": "転送方式とブロードキャスト間隔（ホストのみ有効）"
+    },
+    {
+      "key": "ui.settings.transportMode",
+      "value": "通信方式"
+    },
+    {
+      "key": "ui.settings.transport.direct",
+      "value": "直接"
+    },
+    {
+      "key": "ui.settings.transport.steam",
+      "value": "Steam P2P"
+    },
+    {
+      "key": "ui.settings.port",
+      "value": "ポート"
+    },
+    {
+      "key": "ui.settings.broadcastInterval",
+      "value": "ビーコン間隔（秒）"
+    },
+    {
+      "key": "ui.settings.syncInterval",
+      "value": "同期間隔（秒）"
+    },
+    {
+      "key": "ui.settings.projectileSyncMaxDistance",
+      "value": "弾丸同期の最大距離（メートル）"
+    },
+    {
+      "key": "ui.settings.teleporterSpawnTogether",
+      "value": "テレポーターで一緒に出現"
+    },
+    {
+      "key": "ui.aiSettings.title",
+      "value": "協力AI同期"
+    },
+    {
+      "key": "ui.aiSettings.toggleHint",
+      "value": "{0} 表示/非表示"
+    },
+    {
+      "key": "ui.aiSettings.section.distance.title",
+      "value": "同期距離"
+    },
+    {
+      "key": "ui.aiSettings.section.distance.subtitle",
+      "value": "AI の起動/休眠判定範囲"
+    },
+    {
+      "key": "ui.aiSettings.activationRadius",
+      "value": "起動半径（メートル）"
+    },
+    {
+      "key": "ui.aiSettings.deactivationRadius",
+      "value": "休眠半径（メートル）"
+    },
+    {
+      "key": "ui.aiSettings.section.pacing.title",
+      "value": "同期リズム"
+    },
+    {
+      "key": "ui.aiSettings.section.pacing.subtitle",
+      "value": "ブロードキャストとサンプリング周期"
+    },
+    {
+      "key": "ui.aiSettings.activationRetryInterval",
+      "value": "起動再試行間隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.stateBroadcastInterval",
+      "value": "状態ブロードキャスト間隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.idleStateRecordInterval",
+      "value": "アイドルサンプル間隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.healthBroadcastInterval",
+      "value": "体力ブロードキャスト間隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.section.precision.title",
+      "value": "補間と精度"
+    },
+    {
+      "key": "ui.aiSettings.section.precision.subtitle",
+      "value": "閾値と速度補間"
+    },
+    {
+      "key": "ui.aiSettings.minPositionDelta",
+      "value": "最小位置変化（メートル）"
+    },
+    {
+      "key": "ui.aiSettings.minRotationDelta",
+      "value": "最小回転変化（度）"
+    },
+    {
+      "key": "ui.aiSettings.velocityLerp",
+      "value": "速度補間（係数）"
+    },
+    {
+      "key": "ui.aiSettings.section.snapshot.title",
+      "value": "スナップショットとキュー"
+    },
+    {
+      "key": "ui.aiSettings.section.snapshot.subtitle",
+      "value": "スナップショット更新、キュー上限、パケット損失補正"
+    },
+    {
+      "key": "ui.aiSettings.snapshotRefreshInterval",
+      "value": "スナップショット更新間隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.snapshotRequestTimeout",
+      "value": "スナップショット要求タイムアウト（秒）"
+    },
+    {
+      "key": "ui.aiSettings.snapshotRecoveryCooldown",
+      "value": "スナップショット回復クールダウン（秒）"
+    },
+    {
+      "key": "ui.aiSettings.snapshotChunkSize",
+      "value": "スナップショットチャンクサイズ（件数）"
+    },
+    {
+      "key": "ui.aiSettings.maxStoredBuffs",
+      "value": "最大保存バフ（件数）"
+    },
+    {
+      "key": "ui.aiSettings.maxSnapshotAppliesPerFrame",
+      "value": "フレーム毎スナップショット適用上限（回数）"
+    },
+    {
+      "key": "ui.aiSettings.maxClientEntryChecksPerFrame",
+      "value": "フレーム毎のエントリチェック上限（回数）"
+    },
+    {
+      "key": "ui.aiSettings.maxStateUpdatesPerFrame",
+      "value": "フレーム毎状態更新上限（回数）"
+    },
+    {
+      "key": "ui.aiSettings.maxPendingSnapshotQueue",
+      "value": "スナップショットキュー上限（件数）"
+    },
+    {
+      "key": "ui.aiSettings.maxPendingStateQueue",
+      "value": "状態キュー上限（件数）"
+    },
+    {
+      "key": "ui.aiSettings.snapshotDropResyncThreshold",
+      "value": "スナップショット損失再同期しきい値（回数）"
+    },
+    {
+      "key": "ui.aiSettings.stateDropResyncThreshold",
+      "value": "状態損失再同期しきい値（回数）"
+    },
+    {
+      "key": "ui.aiSettings.section.hostOnly.title",
+      "value": "ホスト専用"
+    },
+    {
+      "key": "ui.aiSettings.section.hostOnly.subtitle",
+      "value": "ホストの変更のみ反映されます"
+    },
+    {
+      "key": "ui.aiSettings.serverControllerRescanInterval",
+      "value": "コントローラー再スキャン間隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.serverSnapshotBroadcastInterval",
+      "value": "スナップショットブロードキャスト間隔（秒）"
+    },
+    {
+      "key": "ui.aiSettings.serverSnapshotRetryInterval",
+      "value": "スナップショット再試行間隔（秒）"
+    },
+    {
+      "key": "ui.settings.broadcastInterval.desc",
+      "value": "ホストがLANにロビーをアナウンスする頻度（秒）。数値が小さいほど頻繁。"
+    },
+    {
+      "key": "ui.settings.syncInterval.desc",
+      "value": "クライアントへの同期ティック間隔（秒）。"
+    },
+    {
+      "key": "ui.settings.projectileSyncMaxDistance.desc",
+      "value": "発射地点がこの距離を超える場合、リモート弾丸を生成しません。上限500m、0で制限を無効化。"
+    },
+    {
+      "key": "ui.settings.teleporterSpawnTogether.desc",
+      "value": "ホスト専用: テレポート投票開始時、クライアントがマップに入る際にホスト位置へスポーンさせます。"
+    },
+    {
+      "key": "ui.aiSettings.activationRadius.desc",
+      "value": "遠隔AIが有効化され同期を開始する距離（メートル）。"
+    },
+    {
+      "key": "ui.aiSettings.deactivationRadius.desc",
+      "value": "遠隔AIが休止し同期を止める距離（メートル）。"
+    },
+    {
+      "key": "ui.aiSettings.activationRetryInterval.desc",
+      "value": "以前失敗したAIを再有効化するまでの待ち時間（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.stateBroadcastInterval.desc",
+      "value": "AI状態スナップショットを送る基本間隔（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.idleStateRecordInterval.desc",
+      "value": "待機AIの位置を記録して滑らかにする頻度（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.healthBroadcastInterval.desc",
+      "value": "AIの体力変化を送信する間隔（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.minPositionDelta.desc",
+      "value": "位置変化がこの距離を超えたときだけ送信（メートル）。"
+    },
+    {
+      "key": "ui.aiSettings.minRotationDelta.desc",
+      "value": "向きの変化がこの角度を超えたときだけ送信（度）。"
+    },
+    {
+      "key": "ui.aiSettings.velocityLerp.desc",
+      "value": "AI速度を補間するときの係数。"
+    },
+    {
+      "key": "ui.aiSettings.snapshotRefreshInterval.desc",
+      "value": "ホストがAIスナップショットを更新する周期（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.snapshotRequestTimeout.desc",
+      "value": "スナップショット要求を再送するまでのタイムアウト（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.snapshotRecoveryCooldown.desc",
+      "value": "ドロップ後にスナップショット復旧を再試行するクールダウン（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.snapshotChunkSize.desc",
+      "value": "状態再構築時、1チャンクに含めるエントリー数。"
+    },
+    {
+      "key": "ui.aiSettings.maxStoredBuffs.desc",
+      "value": "各AIが保持するバフ記録の最大数。"
+    },
+    {
+      "key": "ui.aiSettings.maxSnapshotAppliesPerFrame.desc",
+      "value": "1フレームで適用するスナップショットの上限。"
+    },
+    {
+      "key": "ui.aiSettings.maxClientEntryChecksPerFrame.desc",
+      "value": "1フレームで実行されるAIエントリの起動/休止チェック上限。"
+    },
+    {
+      "key": "ui.aiSettings.maxStateUpdatesPerFrame.desc",
+      "value": "1フレームで処理する状態更新パケットの上限。"
+    },
+    {
+      "key": "ui.aiSettings.maxPendingSnapshotQueue.desc",
+      "value": "スナップショットパケットのキュー上限（古いものから破棄）。"
+    },
+    {
+      "key": "ui.aiSettings.maxPendingStateQueue.desc",
+      "value": "状態パケットのキュー上限（古いものから破棄）。"
+    },
+    {
+      "key": "ui.aiSettings.snapshotDropResyncThreshold.desc",
+      "value": "ドロップしたスナップショット数がこの値で再同期を要求。"
+    },
+    {
+      "key": "ui.aiSettings.stateDropResyncThreshold.desc",
+      "value": "ドロップした状態更新数がこの値で再同期を要求。"
+    },
+    {
+      "key": "ui.aiSettings.serverControllerRescanInterval.desc",
+      "value": "ホストが孤立したAIコントローラーを再スキャンする間隔（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.serverSnapshotBroadcastInterval.desc",
+      "value": "ホストが権威スナップショットを送信する間隔（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.serverSnapshotRetryInterval.desc",
+      "value": "スナップショット送信失敗後の再試行間隔（秒）。"
+    },
+    {
+      "key": "ui.aiSettings.badge.hostOnly",
+      "value": "ホストのみ"
+    },
+    {
+      "key": "ui.aiSettings.badge.hostOnlyShort",
+      "value": "ホスト"
+    },
+    {
+      "key": "ui.settings.search.placeholder",
+      "value": "設定を検索..."
+    },
+    {
+      "key": "ui.lootSettings.title",
+      "value": "ドロップ調整（ホストのみ）"
+    },
+    {
+      "key": "ui.lootSettings.hostOnly",
+      "value": "ホストだけが変更できます"
+    },
+    {
+      "key": "ui.lootSettings.spawnChanceMultiplier",
+      "value": "出現確率倍率"
+    },
+    {
+      "key": "ui.lootSettings.itemCountMultiplier",
+      "value": "アイテム数倍率"
+    },
+    {
+      "key": "ui.lootSettings.globalWeight",
+      "value": "全体重み倍率"
+    },
+    {
+      "key": "ui.lootSettings.qualityBias",
+      "value": "品質バイアス"
+    },
+    {
+      "key": "ui.lootSettings.apply",
+      "value": "適用（ホストのみ）"
+    },
+    {
+      "key": "ui.chat.title",
+      "value": "チャット"
+    },
+    {
+      "key": "ui.chat.inputPlaceholder",
+      "value": "メッセージを入力..."
+    },
+    {
+      "key": "ui.chat.send",
+      "value": "送信"
+    },
+    {
+      "key": "ui.chat.unknown",
+      "value": "不明"
+    },
+    {
+      "key": "ui.playerlist.kick",
+      "value": "キック"
+    },
+    {
+      "key": "ui.waiting.initializing",
+      "value": "初期化中..."
+    },
+    {
+      "key": "ui.waiting.syncComplete",
+      "value": "同期完了！"
+    },
+    {
+      "key": "ui.waiting.map",
+      "value": "マップ: {0}"
+    },
+    {
+      "key": "ui.waiting.time",
+      "value": "時間: {0}日目 {1:D2}:{2:D2}"
+    },
+    {
+      "key": "ui.waiting.timeUnknown",
+      "value": "時間: --:--"
+    },
+    {
+      "key": "ui.waiting.weather",
+      "value": "天気: {0}"
+    },
+    {
+      "key": "ui.waiting.weatherUnknown",
+      "value": "天気: 不明"
+    },
+    {
+      "key": "ui.waiting.loadingPlayers",
+      "value": "プレイヤーリストを取得中..."
+    },
+    {
+      "key": "ui.settings.friendlyFirePlayers",
+      "value": "プレイヤーへの同士討ち"
+    },
+    {
+      "key": "ui.settings.friendlyFirePlayers.desc",
+      "value": "Host only. Sets player proxies neutral so friendly fire is possible; disabling restores Player team."
+    },
+    {
+      "key": "ui.settings.themeMode",
+      "value": "UI テーマ"
+    },
+    {
+      "key": "ui.settings.themeMode.desc",
+      "value": "この端末の協力プレイパネルのテーマを変更します。"
+    },
+    {
+      "key": "ui.settings.theme.white",
+      "value": "白"
+    },
+    {
+      "key": "ui.settings.theme.black",
+      "value": "黒"
+    },
+    {
+      "key": "ui.settings.theme.spring",
+      "value": "春節"
+    },
+    {
+      "key": "ui.settings.theme.summer",
+      "value": "夏"
+    },
+    {
+      "key": "ui.difficulty.spawnBonus",
+      "value": "敵の出現倍率への加算"
+    },
+    {
+      "key": "ui.difficulty.spawnBonus.desc",
+      "value": "基本の敵出現倍率に加算します（例：+1 で出現数が2倍）。"
+    },
+    {
+      "key": "ui.difficulty.forceBoss",
+      "value": "ボスを必ず出現させる"
+    },
+    {
+      "key": "ui.difficulty.forceBoss.desc",
+      "value": "最高難易度またはカスタム難易度でのみ有効にしてください。"
+    },
+    {
+      "key": "vehicle.control.title",
+      "value": "車両制御"
+    },
+    {
+      "key": "vehicle.control.current",
+      "value": "操作者: {0}"
+    },
+    {
+      "key": "vehicle.control.unassigned",
+      "value": "割り当て待ち"
+    },
+    {
+      "key": "vehicle.control.riders",
+      "value": "同乗者: {0}"
+    },
+    {
+      "key": "vehicle.control.requester",
+      "value": "申請者: {0}"
+    },
+    {
+      "key": "vehicle.control.key",
+      "value": "F2"
+    },
+    {
+      "key": "vehicle.control.action.approve",
+      "value": "操作権申請を承認"
+    },
+    {
+      "key": "vehicle.control.action.controlling",
+      "value": "この車両を操作中"
+    },
+    {
+      "key": "vehicle.control.action.pending",
+      "value": "申請済み、承認待ち"
+    },
+    {
+      "key": "vehicle.control.action.request",
+      "value": "操作権を申請"
+    },
+    {
+      "key": "vehicle.control.tip.approved",
+      "value": "{0} の車両操作を承認しました"
+    },
+    {
+      "key": "vehicle.control.tip.requested",
+      "value": "車両操作権を申請しました。現在の操作者が F2 で承認するのを待っています"
+    },
+    {
+      "key": "vehicle.control.tip.incomingRequest",
+      "value": "{0} が車両操作権を申請しています。F2 で承認"
+    },
+    {
+      "key": "ui.teleporter.openInterfaceFirst",
+      "value": "先にテレポーター画面を開いてください。"
+    },
+    {
+      "key": "ui.sceneVote.alreadyActive",
+      "value": "すでにマップ投票が進行中です。"
+    },
     {
       "key": "ui.teleporter.busy",
       "value": "出発手続きが進行中です。先に完了するかキャンセルしてください。"
@@ -394,6 +1279,170 @@
     {
       "key": "ui.settings.configureOffline",
       "value": "この設定はシングルプレイで変更してください。"
+    },
+    {
+      "key": "ui.sharedHome",
+      "value": "プライベート共有モード"
+    },
+    {
+      "key": "ui.sharedHome.desc",
+      "value": "ホストが部屋を作る前に有効にすると、参加者は自動で共有します。経験値、レベル、スキル、クエスト、撃破数、マップとビーコン、レシピ、所持金、倉庫、建築、装飾はホストが保存します。外見、バッグ、装備もプレイヤー別に保存され、再参加時に復元されます。初参加時はキャラクターを作成し、チュートリアルはホストの進行に従います。個人セーブは保持され、退出後に復元されます。接続中は切り替えられません。"
+    },
+    {
+      "key": "ui.sharedHome.displayHostOnly",
+      "value": "共有モードでは陳列ケースの中身はホストが編集し、参加者には同期して表示されます。共用倉庫は全員が利用できます。"
+    },
+    {
+      "key": "net.sharedHome.title",
+      "value": "共有モード：接続失敗"
+    },
+    {
+      "key": "net.sharedHome.close",
+      "value": "閉じる"
+    },
+    {
+      "key": "net.sharedHome.rejectedHost",
+      "value": "プレイヤー {0} の接続に失敗しました：共有モードの互換性確認に失敗しました。"
+    },
+    {
+      "key": "net.sharedHome.rejectedClient",
+      "value": "部屋に参加できません：共有モードの互換性確認に失敗しました。"
+    },
+    {
+      "key": "net.sharedHome.invalid",
+      "value": "有効なMod一覧またはゲームバージョンを確認できません。双方のゲームを再起動し、すべての有効なModが正しく読み込まれるか確認してください。"
+    },
+    {
+      "key": "net.sharedHome.protocol",
+      "value": "共有モードの確認プロトコルが異なります。双方に同じ協力Modを導入してください。"
+    },
+    {
+      "key": "net.sharedHome.game",
+      "value": "ゲームバージョンが異なります。ホスト：{1}、クライアント：{2}。"
+    },
+    {
+      "key": "net.sharedHome.coop",
+      "value": "協力Modのバージョンが異なります。ホスト：{1}、クライアント：{2}。"
+    },
+    {
+      "key": "net.sharedHome.missing",
+      "value": "クライアントで有効になっていないMod：{0}（ホストのバージョン：{1}）。"
+    },
+    {
+      "key": "net.sharedHome.extra",
+      "value": "クライアントにのみ有効なMod：{0}（クライアントのバージョン：{2}）。"
+    },
+    {
+      "key": "net.sharedHome.version",
+      "value": "Modのバージョンが異なります：{0}。ホスト：{1}、クライアント：{2}。"
+    },
+    {
+      "key": "net.sharedHome.hash",
+      "value": "ModのDLLファイルが異なります：{0}。\nホストのSHA-256：\n{1}\nクライアントのSHA-256：\n{2}"
+    },
+    {
+      "key": "net.sharedHome.unreadable",
+      "value": "有効なModのDLLを読み込めません：{0}。Modファイルを復元し、ゲームを再起動してください。"
+    },
+    {
+      "key": "net.sharedHome.timeout",
+      "value": "共有モードの互換性確認がタイムアウトしました。接続を確認し、双方に同じ協力Modを導入してください。"
+    },
+    {
+      "key": "net.sharedHome.entryFailed",
+      "value": "共有の部屋を読み込めませんでした。接続を切断し、個人セーブを復元しました。ログを確認してください。"
+    },
+    {
+      "key": "ui.coopMode.title",
+      "value": "協力モードを選択"
+    },
+    {
+      "key": "ui.coopMode.hint",
+      "value": "カードにカーソルを合わせると詳細が表示されます。参加先ではホストのモードに従います。"
+    },
+    {
+      "key": "ui.coopMode.select",
+      "value": "選 択  ›"
+    },
+    {
+      "key": "ui.coopMode.independent.title",
+      "value": "独立協力モード"
+    },
+    {
+      "key": "ui.coopMode.independent.tag",
+      "value": "それぞれの成長 · 共に冒険"
+    },
+    {
+      "key": "ui.coopMode.independent.summary",
+      "value": "• 探索・戦闘・脱出を共に<br>• キャラクターの成長は個別<br>• 個人の倉庫と装備を使用"
+    },
+    {
+      "key": "ui.coopMode.independent.detail",
+      "value": "自分だけの冒険<br>経験値、スキル、クエスト、解放状況は個人のセーブで進行。<br><br>自分の物資<br>個人の倉庫、バッグ、装備を使います。<br><br>仲間と探索し、戦い、共に脱出しましょう。"
+    },
+    {
+      "key": "ui.coopMode.shared.title",
+      "value": "共有協力モード"
+    },
+    {
+      "key": "ui.coopMode.shared.tag",
+      "value": "ひとつの世界 · 共に進む"
+    },
+    {
+      "key": "ui.coopMode.shared.summary",
+      "value": "• ひとつの世界を共に進行<br>• 成長・倉庫・拠点を共有<br>• ホストがキャラクターを保存"
+    },
+    {
+      "key": "ui.coopMode.shared.detail",
+      "value": "共通の冒険<br>経験値、レベル、スキル、クエスト、マップ解放、倉庫、建築と装飾はホストの進行を共有します。<br><br>あなたのキャラクター<br>外見、バッグ、装備もホストが保存。初参加時はキャラクターを作成します。<br><br>個人セーブは別に保持されます。"
+    },
+    {
+      "key": "ui.steam.coopMode.shared",
+      "value": "共有協力"
+    },
+    {
+      "key": "ui.steam.coopMode.independent",
+      "value": "独立協力"
+    },
+    {
+      "key": "ui.steam.coopMode.unknown",
+      "value": "モード不明"
+    },
+    {
+      "key": "ui.coopMode.switch",
+      "value": "モード切替"
+    },
+    {
+      "key": "net.disconnect.returning",
+      "value": "メインメニューに戻ります。再接続するとホストのマップに戻れます。"
+    },
+    {
+      "key": "net.disconnect.reconnect",
+      "value": "接続を確認してホストに再接続してください。"
+    },
+    {
+      "key": "net.reconnect.cancel",
+      "value": "再接続をキャンセル"
+    },
+    {
+      "key": "net.reconnect.countdown",
+      "value": "{0} 秒後に再接続します"
+    },
+    {
+      "key": "net.reconnect.connecting",
+      "value": "再接続中（{0}/5）…"
+    },
+    {
+      "key": "net.reconnect.connected",
+      "value": "接続が復旧しました。"
+    },
+    {
+      "key": "net.reconnect.stopped",
+      "value": "自動再接続を終了しました。手動で再参加できます。"
+    },
+    {
+      "key": "ui.coopMode.eyebrow",
+      "value": "ESCAPE FROM DUCKOV  /  協力プレイ"
     }
   ]
 }

@@ -243,7 +243,7 @@ public static class LootboxDetectUtil
         if (DeadLootSpawnContext.LocalOnDead)
             return true;
 
-        if (ReferenceEquals(inv, PlayerStorage.Inventory)) return true; // 仓库
+        if (ReferenceEquals(inv, PlayerStorage.Inventory)) return !SharedHomeStorage.IsShared(inv); // 仓库
         if (ReferenceEquals(inv, PetProxy.PetInventory)) return true; // 宠物包
         var mainInv = LevelManager.Instance != null && LevelManager.Instance.MainCharacter != null
             ? LevelManager.Instance.MainCharacter.CharacterItem.Inventory
@@ -653,6 +653,7 @@ public class LootManager : MonoBehaviour
     public static bool TryGetLootInvByKeyEverywhere(int posKey, out Inventory inv)
     {
         inv = null;
+        if (!LevelManager.Instance) return false;
 
         // A) InteractableLootbox.Inventories
         var dictA = InteractableLootbox.Inventories;
@@ -748,6 +749,8 @@ public class LootManager : MonoBehaviour
     // 统一解析容器 Inventory：优先稳定ID，再回落到三元标识
     public Inventory ResolveLootInv(int scene, int posKey, int iid, int lootUid)
     {
+        if (lootUid == SharedHomeStorage.LootUid)
+            return SharedHome.Active ? PlayerStorage.Inventory : null;
         Inventory inv = null;
 
         // 先用稳定ID（主机用 _srvLootByUid；客户端用 _cliLootByUid）

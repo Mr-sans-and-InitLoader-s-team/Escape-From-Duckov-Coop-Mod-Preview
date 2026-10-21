@@ -4,13 +4,14 @@ using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
 
-[Rpc(Op.AI_SOUND_EVENT, DeliveryMethod.ReliableUnordered, RpcDirection.ServerToClient)]
+[Rpc(Op.AI_SOUND_EVENT, DeliveryMethod.Unreliable, RpcDirection.ServerToClient)]
 public struct AISoundEventRpc : IRpcMessage
 {
     public Vector3 Position;
     public float Radius;
     public Teams Team;
     public SoundTypes SoundType;
+    public int SourceAiId;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -20,6 +21,7 @@ public struct AISoundEventRpc : IRpcMessage
         writer.Put(Radius);
         writer.Put((int)Team);
         writer.Put((byte)SoundType);
+        writer.Put(SourceAiId);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -28,5 +30,6 @@ public struct AISoundEventRpc : IRpcMessage
         Radius = reader.GetFloat();
         Team = (Teams)reader.GetInt();
         SoundType = (SoundTypes)reader.GetByte();
+        SourceAiId = reader.AvailableBytes >= sizeof(int) ? reader.GetInt() : 0;
     }
 }

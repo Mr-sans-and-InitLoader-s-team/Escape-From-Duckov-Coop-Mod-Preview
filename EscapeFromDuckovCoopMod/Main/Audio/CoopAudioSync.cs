@@ -91,6 +91,7 @@ public static class CoopAudioSync
         "hit_organic_normal",
         "killmarker",
         "hitmarker",
+        CoopCombatAudio.FlybyEvent, // Each listener already evaluates native projectile flybys locally.
         "Kazoo" // 持续音由 KazooSync 管理开始/参数/停止，禁止通过一次性音效重复播放。
     };
 
@@ -141,7 +142,10 @@ public static class CoopAudioSync
             return;
 
         var rpc = new AudioEventRpc { Payload = payload };
-        CoopTool.SendRpc(in rpc);
+        if (CoopCombatAudio.IsTransientGunshot(payload))
+            CoopTool.SendUnreliableRpc(in rpc);
+        else
+            CoopTool.SendRpc(in rpc);
     }
 
     private static IDisposable BeginSuppress()
@@ -246,6 +250,9 @@ public static class CoopAudioSync
                 AudioManager.Post(payload.EventName);
                 return;
             }
+
+            if (CoopCombatAudio.TryPlayGunshot(payload))
+                return;
 
             var emitter = CoopAudioEmitter.Spawn();
             emitter.Play(payload);

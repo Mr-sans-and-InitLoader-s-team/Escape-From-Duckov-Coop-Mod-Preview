@@ -28,7 +28,9 @@ internal static class Patch_Level_StartInit_Gate
         var mod = ModBehaviourF.Instance;
         if (mod == null) return true;
         if (mod.IsServer) return true;
+        if (SharedHomeCharacterCreation.Creating || SharedHomeCharacterCreation.Joining) return true;
         var sid = SceneInfoCollection.GetSceneID(__instance.gameObject.scene.buildIndex);
+        if (LocalAppearanceTravel.Allows(sid)) return true;
         if (string.Equals(sid, SceneInfoCollection.BaseSceneID, StringComparison.OrdinalIgnoreCase))
         {
             WaitingSynchronizationUI.Instance?.Hide();

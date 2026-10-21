@@ -1,4 +1,4 @@
-﻿// Escape-From-Duckov-Coop-Mod-Preview
+// Escape-From-Duckov-Coop-Mod-Preview
 // Copyright (C) 2025  Mr.sans and InitLoader's team
 //
 // This program is not a free software.
@@ -134,59 +134,16 @@ public class Destructible
 
     public void Server_HandleHealthReport(RpcContext context, in EnvDestructibleHealthReportRpc message)
     {
-        if (!IsServer || context.Sender == null) return;
-        if (message.Id == 0u) return;
-
+        if (!IsServer || context.Sender == null || message.Id == 0u || !message.HasDamage) return;
+        if (message.Damage.DamageValue <= 0f || float.IsNaN(message.Damage.DamageValue) || float.IsInfinity(message.Damage.DamageValue)) return;
         var hs = FindDestructible(message.Id);
-        if (!hs) return;
-
-        var maxHealth = ReadMaxHealthValue(hs, message.MaxHealth);
-        if (maxHealth <= 0f)
-            maxHealth = message.MaxHealth;
-
-        var currentHealth = ReadHealthValue(hs, maxHealth);
-        var targetHealth = Mathf.Clamp(message.CurrentHealth, 0f, maxHealth > 0f ? maxHealth : float.MaxValue);
-        if (targetHealth >= currentHealth)
-            targetHealth = currentHealth; // 不允许被客户端上报“回血”覆盖主机权威
-        var isDead = message.IsDead || targetHealth <= 0.0001f;
-        var damagePayload = message.HasDamage ? message.Damage : (DamageForwardPayload?)null;
-        var damageInfo = BuildDamageInfo(hs, damagePayload);
-
-        damageInfo.fromCharacter = null;
-        damageInfo.crit = 0;
-        damageInfo.critRate = 0f;
-        damageInfo.critDamageFactor = 1f;
-
-        var delta = Mathf.Max(0f, currentHealth - targetHealth);
-        var multiplier = Mathf.Max(0.0001f, hs.damageMultiplierIfNotMainCharacter);
-        var adjustedDamage = delta > 0f ? delta / multiplier : 0f;
-
-        if (isDead)
-        {
-            adjustedDamage = Math.Max(adjustedDamage, currentHealth > 0f ? currentHealth / multiplier : 0f);
-            damageInfo.damageValue = Math.Max(Math.Max(damageInfo.damageValue, adjustedDamage), 999999f);
-        }
-        else if (adjustedDamage > 0f)
-        {
-            damageInfo.damageValue = Math.Max(damageInfo.damageValue, adjustedDamage);
-        }
-
-        damageInfo.finalDamage = Math.Max(damageInfo.finalDamage, damageInfo.damageValue);
-
-        if ((isDead && currentHealth > 0f) || adjustedDamage > 0f)
-            TryApplyDestructibleHurt(hs, damageInfo);
-
-        ForceHealthValue(hs, targetHealth);
-
-        if (isDead)
-        {
-            _deadDestructibleIds.Add(message.Id);
-            Server_BroadcastDestructibleDead(message.Id, damageInfo);
-        }
-        else
-        {
-            Server_BroadcastDestructibleHurt(message.Id, targetHealth, damageInfo);
-        }
+        if (!hs || !context.Service.remoteCharacters.TryGetValue(context.Sender, out var player) || !player) return;
+        var attacker = player.GetComponent<CharacterMainControl>();
+        if (!attacker) return;
+        var damageInfo = BuildDamageInfo(hs, message.Damage);
+        damageInfo.fromCharacter = attacker;
+        // Resolve each requested hit once on the host; predicted client HP cannot lose concurrent hits.
+        TryApplyDestructibleHurt(hs, damageInfo);
     }
 
     public void Server_RegisterDestructibleDeath(uint id)
@@ -238,6 +195,7 @@ public class Destructible
         if (_deadDestructibleIds.Contains(id)) return;
         var hs = FindDestructible(id);
         if (!hs) return;
+        ForceHealthValue(hs, 0f);
 
         // Breakable：关正常/危险外观，开破坏外观，关主碰撞体
         var br = hs.GetComponent<Breakable>();
@@ -392,6 +350,7 @@ public class Destructible
 
         var hs = FindDestructible(id);
         if (!hs) return;
+        ForceHealthValue(hs, 0f);
 
         // ★★ Breakable：复现 OnDead 里的可视化与爆炸（不做真正的扣血计算）
         var br = hs.GetComponent<Breakable>();
@@ -412,6 +371,10 @@ public class Destructible
                     // fromCharacter 在客户端可为空，不影响范围伤害的演出
                     var di = br.explosionDamageInfo;
                     di.fromCharacter = null;
+                    di.damageValue = 0f;
+                    di.buff = null;
+                    di.buffChance = 0f;
+                    di.bleedChance = 0f;
                     LevelManager.Instance.ExplosionManager.CreateExplosion(
                         hs.transform.position, br.explosionRadius, di
                     );
@@ -479,7 +442,7 @@ public class Destructible
         netManager.SendToAll(w, DeliveryMethod.ReliableOrdered);
     }
 
-    // 客户端：复现受击视觉（不改血量，不触发本地 OnHurt）
+    // 客户端：保存主机血量并复现受击视觉，不触发本地 OnHurt
     // 客户端：复现受击视觉 + Breakable 的“危险态”显隐
     public void Client_ApplyDestructibleHurt(NetPacketReader r)
     {
@@ -500,6 +463,7 @@ public class Destructible
 
         var hs = FindDestructible(id);
         if (!hs) return;
+        ForceHealthValue(hs, curHealth);
 
         // 播放受击火花（项目里已有的 HurtVisual）
         var hv = hs.GetComponent<HurtVisual>();

@@ -24,6 +24,7 @@ public class ClientPlayerApply
 
     private readonly Dictionary<string, string> _lastWeaponAppliedByPlayer = new();
     private readonly Dictionary<string, float> _lastWeaponAppliedTimeByPlayer = new();
+    private readonly WeaponReplayOrder _weaponOrder = new();
     private NetService Service => NetService.Instance;
 
     private bool IsServer => Service != null && Service.IsServer;
@@ -133,8 +134,8 @@ public class ClientPlayerApply
         var model = cm ? cm.characterModel : null;
         if (model == null) return;
 
-        var key = $"{model.GetInstanceID()}:{slotHash}";
-        var want = itemId ?? string.Empty;
+        var key = $"{model.GetInstanceID()}";
+        var want = $"{slotHash}:{itemId ?? string.Empty}";
         if (_lastWeaponAppliedByPlayer.TryGetValue(key, out var last) &&
             last == want &&
             _lastWeaponAppliedTimeByPlayer.TryGetValue(key, out var ts) &&
@@ -151,6 +152,8 @@ public class ClientPlayerApply
             if (typeId == 0 && !string.IsNullOrEmpty(itemId) && int.TryParse(itemId, out var parsed))
                 typeId = parsed;
 
+            var modelId = model.GetInstanceID();
+            var receipt = _weaponOrder.Receive(modelId, (int)socket, typeId != 0);
             if (typeId != 0)
             {
                 var item = snapshot.TypeId != 0
@@ -159,7 +162,7 @@ public class ClientPlayerApply
 
                 if (item == null)
                     item = await COOPManager.GetItemAsync(typeId);
-                if (!RemoteLoadoutReplay.IsCurrent(playerId, remoteObj, model))
+                if (!RemoteLoadoutReplay.IsCurrent(playerId, remoteObj, model) || !_weaponOrder.IsCurrent(modelId, receipt))
                 {
                     if (item != null) UnityEngine.Object.Destroy(item.gameObject);
                     return;
@@ -171,9 +174,9 @@ public class ClientPlayerApply
                     CoopTool.ClearWeaponSlot(model, socket);
                     await UniTask.NextFrame();
 
-                    if (!RemoteLoadoutReplay.IsCurrent(playerId, remoteObj, model))
+                    if (!RemoteLoadoutReplay.IsCurrent(playerId, remoteObj, model) || !_weaponOrder.IsCurrent(modelId, receipt))
                     {
-                        UnityEngine.Object.Destroy(item.gameObject);
+                        if (item) UnityEngine.Object.Destroy(item.gameObject);
                         return;
                     }
 
@@ -194,7 +197,7 @@ public class ClientPlayerApply
         }
         catch (Exception ex)
         {
-            Debug.LogError($"更新武器失败(客户端): {playerId}, Slot={socket}, ItemId={itemId}, 错误: {ex.Message}");
+            Debug.LogError($"更新武器失败(客户端): {playerId}, Slot={socket}, ItemId={itemId}, 错误: {ex}");
         }
     }
 }

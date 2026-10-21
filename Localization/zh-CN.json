@@ -1279,6 +1279,170 @@
     {
       "key": "ui.settings.configureOffline",
       "value": "请在单机模式下进行此项设置。"
+    },
+    {
+      "key": "ui.sharedHome",
+      "value": "自用共享模式"
+    },
+    {
+      "key": "ui.sharedHome.desc",
+      "value": "开房前由主机开启，玩家加入后自动共享。经验、等级、技能、任务、击杀、地图与信标、配方、金钱、公共仓库、建筑及装饰由主机保存。每人的外观、背包与穿戴也由主机分别保存，重进房间继续使用；首次加入创建新角色并捏脸，教程跟随主机进度。客机原存档保留，离房后恢复。房间运行期间不可切换。"
+    },
+    {
+      "key": "ui.sharedHome.displayHostOnly",
+      "value": "共享模式下，陈列柜物品由主机编辑，客机同步查看。公共仓库可由全队使用。"
+    },
+    {
+      "key": "net.sharedHome.title",
+      "value": "共享模式：连接失败"
+    },
+    {
+      "key": "net.sharedHome.close",
+      "value": "关闭"
+    },
+    {
+      "key": "net.sharedHome.rejectedHost",
+      "value": "玩家 {0} 连接出现错误：共享模式兼容性校验未通过。"
+    },
+    {
+      "key": "net.sharedHome.rejectedClient",
+      "value": "无法加入房间：共享模式兼容性校验未通过。"
+    },
+    {
+      "key": "net.sharedHome.invalid",
+      "value": "无法验证已启用的模组列表或游戏版本。请重启双方游戏，并检查已启用模组是否正常加载。"
+    },
+    {
+      "key": "net.sharedHome.protocol",
+      "value": "共享模式校验协议不一致，请双方安装同一份联机模组。"
+    },
+    {
+      "key": "net.sharedHome.game",
+      "value": "游戏版本不一致。主机：{1}；客机：{2}。"
+    },
+    {
+      "key": "net.sharedHome.coop",
+      "value": "联机模组版本不一致。主机：{1}；客机：{2}。"
+    },
+    {
+      "key": "net.sharedHome.missing",
+      "value": "客机缺少已启用模组：{0}（主机版本：{1}）。"
+    },
+    {
+      "key": "net.sharedHome.extra",
+      "value": "客机多出已启用模组：{0}（客机版本：{2}）。"
+    },
+    {
+      "key": "net.sharedHome.version",
+      "value": "模组版本不一致：{0}。主机：{1}；客机：{2}。"
+    },
+    {
+      "key": "net.sharedHome.hash",
+      "value": "模组 DLL 文件不一致：{0}。\n主机 SHA-256：\n{1}\n客机 SHA-256：\n{2}"
+    },
+    {
+      "key": "net.sharedHome.unreadable",
+      "value": "无法读取已启用模组的 DLL：{0}。请恢复模组文件并重启游戏。"
+    },
+    {
+      "key": "net.sharedHome.timeout",
+      "value": "共享模式兼容性校验超时。请检查连接，并确认双方使用同一份联机模组。"
+    },
+    {
+      "key": "net.sharedHome.entryFailed",
+      "value": "共享房间加载失败，已断开连接并恢复个人存档。请查看日志。"
+    },
+    {
+      "key": "ui.coopMode.title",
+      "value": "选择合作模式"
+    },
+    {
+      "key": "ui.coopMode.hint",
+      "value": "鼠标移到卡片上查看介绍。加入他人房间时，模式由主机决定。"
+    },
+    {
+      "key": "ui.coopMode.select",
+      "value": "选 择  ›"
+    },
+    {
+      "key": "ui.coopMode.independent.title",
+      "value": "独立合作模式"
+    },
+    {
+      "key": "ui.coopMode.independent.tag",
+      "value": "各自成长 · 并肩冒险"
+    },
+    {
+      "key": "ui.coopMode.independent.summary",
+      "value": "• 一起探索、战斗与撤离<br>• 各自保留角色成长<br>• 使用个人仓库与装备"
+    },
+    {
+      "key": "ui.coopMode.independent.detail",
+      "value": "各自的冒险<br>经验、技能、任务和解锁按个人存档推进。<br><br>各自的物资<br>使用自己的仓库、背包与穿戴装备。<br><br>与队友并肩探索、战斗，一起撤离。"
+    },
+    {
+      "key": "ui.coopMode.shared.title",
+      "value": "共享合作模式"
+    },
+    {
+      "key": "ui.coopMode.shared.tag",
+      "value": "同一个世界 · 同一段旅程"
+    },
+    {
+      "key": "ui.coopMode.shared.summary",
+      "value": "• 全队共同推进一个世界<br>• 共享成长、仓库与基地<br>• 主机保存每位玩家的角色"
+    },
+    {
+      "key": "ui.coopMode.shared.detail",
+      "value": "共同的冒险<br>经验、等级、技能、任务、地图解锁，以及仓库、建筑和装饰，统一使用主机进度。<br><br>属于你的角色<br>外观、背包和穿戴也由主机保存，新访客先创建角色。<br><br>个人原存档保留。"
+    },
+    {
+      "key": "ui.steam.coopMode.shared",
+      "value": "共享合作"
+    },
+    {
+      "key": "ui.steam.coopMode.independent",
+      "value": "独立合作"
+    },
+    {
+      "key": "ui.steam.coopMode.unknown",
+      "value": "模式未标明"
+    },
+    {
+      "key": "ui.coopMode.switch",
+      "value": "切换模式"
+    },
+    {
+      "key": "net.disconnect.returning",
+      "value": "正在返回主菜单。重新加入后将回到主机所在地图。"
+    },
+    {
+      "key": "net.disconnect.reconnect",
+      "value": "请检查网络，可重新连接主机。"
+    },
+    {
+      "key": "net.reconnect.cancel",
+      "value": "取消重连"
+    },
+    {
+      "key": "net.reconnect.countdown",
+      "value": "{0} 秒后自动重连"
+    },
+    {
+      "key": "net.reconnect.connecting",
+      "value": "正在重连（{0}/5）…"
+    },
+    {
+      "key": "net.reconnect.connected",
+      "value": "连接已恢复。"
+    },
+    {
+      "key": "net.reconnect.stopped",
+      "value": "自动重连已停止，可手动重新加入。"
+    },
+    {
+      "key": "ui.coopMode.eyebrow",
+      "value": "逃离鸭科夫  /  合作模式"
     }
   ]
 }

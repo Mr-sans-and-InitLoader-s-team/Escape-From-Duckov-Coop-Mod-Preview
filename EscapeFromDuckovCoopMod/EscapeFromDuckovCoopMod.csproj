@@ -10,6 +10,9 @@
 
     <ItemGroup>
         <!-- Shared Dependencies -->
+        <Reference Include="EasySave3">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\EasySave3.dll</HintPath>
+        </Reference>
         <Reference Include="0Harmony">
             <HintPath>..\Shared\0Harmony.dll</HintPath>
         </Reference>
@@ -40,6 +43,10 @@
         </Reference>
         <Reference Include="Cinemachine">
             <HintPath>$(DUCKOV_GAME_MANAGED)\Cinemachine.dll</HintPath>
+        </Reference>
+        <Reference Include="Unity.RenderPipelines.Core.Runtime">
+            <HintPath>$(DUCKOV_GAME_MANAGED)\Unity.RenderPipelines.Core.Runtime.dll</HintPath>
+            <Private>false</Private>
         </Reference>
         <Reference Include="Clipper2Lib">
             <HintPath>$(DUCKOV_GAME_MANAGED)\Clipper2Lib.dll</HintPath>
@@ -291,6 +298,7 @@
     </ItemGroup>
 
     <ItemGroup>
+        <EmbeddedResource Include="Assets\ModeSelection\Portraits.json" LogicalName="EscapeFromDuckovCoopMod.ModePortraits.json" />
         <EmbeddedResource Include="Assets\NewYear1.png" LogicalName="EscapeFromDuckovCoopMod.Assets.NewYear1.png" />
         <EmbeddedResource Include="Assets\NewYear2.png" LogicalName="EscapeFromDuckovCoopMod.Assets.NewYear2.png" />
         <EmbeddedResource Include="Assets\NewYear3.png" LogicalName="EscapeFromDuckovCoopMod.Assets.NewYear3.png" />

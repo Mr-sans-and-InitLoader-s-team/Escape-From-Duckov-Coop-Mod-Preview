@@ -185,6 +185,7 @@ internal static class GunUnloadPatch
 
         var inv = gun.InInventory;
         if (inv == null) return;
+        if (SharedHomeStorage.Hold(inv)) return;
 
         if (!LootboxDetectUtil.TryResolveLootOwner(inv, out var lootInv, out var ownerSlot, out var master)) return;
         if (LootboxDetectUtil.IsPrivateInventory(lootInv)) return;
@@ -229,7 +230,7 @@ internal static class ClientLootAddAtPatch
         if (service == null || !service.networkStarted || lootNet == null)
             return true;
 
-        if (lootNet.ApplyingLootState || LootUiGuards.InLootAddAt) return true;
+        if (lootNet.ApplyingLootState || LootUiGuards.InLootAddAt || ClientLootAddItemPatch.IsPutting(item)) return true;
         if (!LootboxDetectUtil.TryResolveLootOwner(__instance, out var lootInv, out var ownerSlot, out var master))
             return true;
         if (LootboxDetectUtil.IsPrivateInventory(lootInv)) return true;
@@ -251,8 +252,12 @@ internal static class ClientLootAddAtPatch
 [HarmonyPatch(typeof(Inventory), nameof(Inventory.AddItem))]
 internal static class ClientLootAddItemPatch
 {
-    private static bool Prefix(Inventory __instance, Item item)
+    [ThreadStatic] private static Item _puttingItem;
+    internal static bool IsPutting(Item item) => item != null && ReferenceEquals(item, _puttingItem);
+
+    private static bool Prefix(Inventory __instance, Item item, out Item __state)
     {
+        __state = _puttingItem;
        // if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var service = NetService.Instance;
         var lootNet = COOPManager.LootNet;
@@ -265,7 +270,7 @@ internal static class ClientLootAddItemPatch
             return true;
         }
 
-        if (lootNet.ApplyingLootState || LootUiGuards.InLootAddAt) return true;
+        if (lootNet.ApplyingLootState || LootUiGuards.InLootAddAt || IsPutting(item)) return true;
         if (!LootboxDetectUtil.TryResolveLootOwner(__instance, out var lootInv, out var ownerSlot, out var master))
             return true;
         if (LootboxDetectUtil.IsPrivateInventory(lootInv)) return true;
@@ -278,10 +283,13 @@ internal static class ClientLootAddItemPatch
         }
 
         lootNet.Client_SendLootPutRequest(lootInv, item, -1);
+        _puttingItem = item;
         // Allow the local add path to proceed so the UI can hand off the item; the
         // server delta will reconcile the authoritative slot contents.
         return true;
     }
+
+    private static void Finalizer(Item __state) => _puttingItem = __state;
 }
 
 [HarmonyPatch(typeof(Inventory), nameof(Inventory.RemoveAt))]
@@ -388,6 +396,16 @@ internal static class ItemDropPatch
             return true;
 
         if (item == null) return false;
+
+        if (SharedHomeStorage.RequestEdit(item, new
+        {
+            operation = "drop", x = pos.x, y = pos.y, z = pos.z, rigidbody = createRigidbody,
+            dx = dropDirection.x, dy = dropDirection.y, dz = dropDirection.z, angle = randomAngle
+        }))
+        {
+            __result = null;
+            return false;
+        }
 
         if (service.IsServer)
         {

@@ -13,6 +13,9 @@ namespace EscapeFromDuckovCoopMod
         public readonly struct LobbyInfo
         {
             public LobbyInfo(CSteamID lobbyId, string lobbyName, string hostName, int memberCount, int maxMembers, bool requiresPassword)
+                : this(lobbyId, lobbyName, hostName, memberCount, maxMembers, requiresPassword, null) { }
+
+            public LobbyInfo(CSteamID lobbyId, string lobbyName, string hostName, int memberCount, int maxMembers, bool requiresPassword, bool? sharedMode)
             {
                 LobbyId = lobbyId;
                 LobbyName = lobbyName;
@@ -20,6 +23,7 @@ namespace EscapeFromDuckovCoopMod
                 MemberCount = memberCount;
                 MaxMembers = maxMembers;
                 RequiresPassword = requiresPassword;
+                SharedMode = sharedMode;
             }
 
             public CSteamID LobbyId { get; }
@@ -28,6 +32,7 @@ namespace EscapeFromDuckovCoopMod
             public int MemberCount { get; }
             public int MaxMembers { get; }
             public bool RequiresPassword { get; }
+            public bool? SharedMode { get; }
         }
 
         public enum LobbyJoinError
@@ -53,6 +58,7 @@ namespace EscapeFromDuckovCoopMod
         private const string LobbyHostKey = "host";
         private const string LobbyVersionKey = "version";
         private const string LobbyProtocolKey = "transport_protocol";
+        private const string LobbyCoopModeKey = "coop_mode";
         private const string LobbyModIdentifier = "EscapeFromDuckovCoopMod_v1.0";
 
         private CSteamID _currentLobbyId = CSteamID.Nil;
@@ -69,6 +75,8 @@ namespace EscapeFromDuckovCoopMod
         public event Action? LobbyJoined;  // 新增：Lobby 加入成功事件
 
         public bool IsInLobby => _currentLobbyId != CSteamID.Nil;
+        public bool IsLobbyRequestPending { get; private set; }
+        private bool _cancelledLobbyRequest;
         public bool IsHost => _isHost;
         public CSteamID CurrentLobbyId => _currentLobbyId;
 
@@ -127,6 +135,8 @@ namespace EscapeFromDuckovCoopMod
 
             Debug.Log($"[SteamLobby] 创建Lobby，最大玩家数: {_pendingLobbyOptions.MaxPlayers}，可见性: {_pendingLobbyOptions.Visibility}");
 
+            _cancelledLobbyRequest = false;
+            IsLobbyRequestPending = true;
             SteamAPICall_t apiCall = SteamMatchmaking.CreateLobby(
                 lobbyType,
                 _pendingLobbyOptions.MaxPlayers
@@ -207,6 +217,8 @@ namespace EscapeFromDuckovCoopMod
             }
 
             Debug.Log($"[SteamLobby] 加入Lobby: {lobbyId}");
+            _cancelledLobbyRequest = false;
+            IsLobbyRequestPending = true;
             SteamMatchmaking.JoinLobby(lobbyId);
         }
 
@@ -222,6 +234,8 @@ namespace EscapeFromDuckovCoopMod
 
         public void LeaveLobby()
         {
+            if (IsLobbyRequestPending) _cancelledLobbyRequest = true;
+            IsLobbyRequestPending = false;
             if (_currentLobbyId != CSteamID.Nil)
             {
                 Debug.Log($"[SteamLobby] 离开Lobby: {_currentLobbyId}");
@@ -297,6 +311,13 @@ namespace EscapeFromDuckovCoopMod
 
         private void OnLobbyCreated(LobbyCreated_t callback, bool bIOFailure)
         {
+            IsLobbyRequestPending = false;
+            if (_cancelledLobbyRequest)
+            {
+                if (!bIOFailure && callback.m_eResult == EResult.k_EResultOK)
+                    SteamMatchmaking.LeaveLobby(new CSteamID(callback.m_ulSteamIDLobby));
+                return;
+            }
             if (bIOFailure || callback.m_eResult != EResult.k_EResultOK)
             {
                 Debug.LogError($"[SteamLobby] 创建Lobby失败: {callback.m_eResult}");
@@ -330,6 +351,8 @@ namespace EscapeFromDuckovCoopMod
             SteamMatchmaking.SetLobbyData(_currentLobbyId, LobbyVersionKey, BuildInfo.ModVersion);
             SteamMatchmaking.SetLobbyData(_currentLobbyId, LobbyProtocolKey, SteamPacketCodec.LobbyProtocol);
             SteamMatchmaking.SetLobbyData(_currentLobbyId, LobbyNameKey, lobbyName);
+            var sharedMode = SharedHome.Enabled;
+            SteamMatchmaking.SetLobbyData(_currentLobbyId, LobbyCoopModeKey, sharedMode ? "shared" : "independent");
 
             var hostName = SteamFriends.GetPersonaName();
             if (string.IsNullOrWhiteSpace(hostName))
@@ -351,7 +374,8 @@ namespace EscapeFromDuckovCoopMod
                     hostName,
                     SteamMatchmaking.GetNumLobbyMembers(_currentLobbyId),
                     maxPlayers,
-                    !string.IsNullOrEmpty(passwordHash)
+                    !string.IsNullOrEmpty(passwordHash),
+                    sharedMode
                 ),
                 PasswordHash = passwordHash
             };
@@ -362,6 +386,12 @@ namespace EscapeFromDuckovCoopMod
 
         private void OnLobbyEnter(LobbyEnter_t callback)
         {
+            IsLobbyRequestPending = false;
+            if (_cancelledLobbyRequest)
+            {
+                SteamMatchmaking.LeaveLobby(new CSteamID(callback.m_ulSteamIDLobby));
+                return;
+            }
             _currentLobbyId = new CSteamID(callback.m_ulSteamIDLobby);
 
             if (callback.m_EChatRoomEnterResponse == (uint)EChatRoomEnterResponse.k_EChatRoomEnterResponseSuccess)
@@ -413,6 +443,7 @@ namespace EscapeFromDuckovCoopMod
             else
             {
                 Debug.LogError($"[SteamLobby] 加入Lobby失败: {callback.m_EChatRoomEnterResponse}");
+                _currentLobbyId = CSteamID.Nil;
             }
         }
 
@@ -469,7 +500,8 @@ namespace EscapeFromDuckovCoopMod
                     meta.Info.HostName,
                     SteamMatchmaking.GetNumLobbyMembers(lobbyId),
                     SteamMatchmaking.GetLobbyMemberLimit(lobbyId),
-                    meta.Info.RequiresPassword
+                    meta.Info.RequiresPassword,
+                    meta.Info.SharedMode
                 );
                 _lobbyMetadata[lobbyId] = meta;
                 RefreshLobbyListCache();
@@ -528,6 +560,12 @@ namespace EscapeFromDuckovCoopMod
             var passwordHash = SteamMatchmaking.GetLobbyData(lobbyId, LobbyPasswordKey);
             var passwordProtectedFlag = SteamMatchmaking.GetLobbyData(lobbyId, LobbyPasswordProtectedKey);
             var requiresPassword = !string.IsNullOrEmpty(passwordHash) || passwordProtectedFlag == "1";
+            bool? sharedMode = SteamMatchmaking.GetLobbyData(lobbyId, LobbyCoopModeKey) switch
+            {
+                "shared" => true,
+                "independent" => false,
+                _ => null
+            };
             var memberCount = SteamMatchmaking.GetNumLobbyMembers(lobbyId);
             var maxMembers = SteamMatchmaking.GetLobbyMemberLimit(lobbyId);
             if (maxMembers <= 0)
@@ -537,7 +575,7 @@ namespace EscapeFromDuckovCoopMod
 
             _lobbyMetadata[lobbyId] = new LobbyMetadata
             {
-                Info = new LobbyInfo(lobbyId, lobbyName, hostName, memberCount, maxMembers, requiresPassword),
+                Info = new LobbyInfo(lobbyId, lobbyName, hostName, memberCount, maxMembers, requiresPassword, sharedMode),
                 PasswordHash = passwordHash
             };
 

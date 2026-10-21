@@ -57,6 +57,7 @@ public sealed class CoopAISettings : MonoBehaviour
         }
 
         COOPManager.FriendlyFire?.OnGeneralSettingsApplied(GeneralSettings);
+        SharedHome.OnSettingsApplied();
 
         if (previousTheme != GeneralSettings.UiThemeMode && MModUITheme.SetThemeMode(GeneralSettings.UiThemeMode))
         {
@@ -77,6 +78,7 @@ public sealed class CoopGeneralSettings
     public float ProjectileSyncMaxDistance = 120f;
     public bool TeleporterSpawnTogether = false;
     public bool FriendlyFirePlayers = false;
+    public bool PrivateSharedHome = false;
     public UIThemeMode UiThemeMode = UIThemeMode.White;
 
     public CoopGeneralSettings Clone() => (CoopGeneralSettings)MemberwiseClone();

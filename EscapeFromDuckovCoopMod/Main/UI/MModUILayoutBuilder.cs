@@ -305,14 +305,15 @@ public class MModUILayoutBuilder
     private void BuildModeToggleCard(Transform parent)
     {
         var modeCard = _ui.CreateModernCard(parent, "ModeCard");
-        var modeCardLayout = modeCard.GetComponent<LayoutElement>();
-        modeCardLayout.preferredHeight = 120;  // 120 * 0.8 = 96
-        modeCardLayout.minHeight = 120;
 
         _ui.CreateSectionHeader(modeCard.transform, CoopLocalization.Get("ui.server.management"));
         _components.ModeInfoText = _ui.CreateText("ModeInfo", modeCard.transform,
             _ui.IsServer ? CoopLocalization.Get("ui.server.hint.waiting") : CoopLocalization.Get("ui.client.hint.browse"),
             14, MModUI.ModernColors.TextSecondary);
+
+        _components.CoopModeSelectButton = _ui.CreateModernButton("SelectCoopMode", modeCard.transform,
+            CoopLocalization.Get("ui.coopMode.switch"), _ui.OnChooseCoopMode, -1, MModUI.ModernColors.Primary, 38, 15);
+        CoopLocalizedText.Bind(_components.CoopModeSelectButton.GetComponentInChildren<TMP_Text>(), "ui.coopMode.switch");
 
         _components.ModeToggleButton = _ui.CreateModernButton("ToggleMode", modeCard.transform,
             _ui.IsServer ? CoopLocalization.Get("ui.server.close") : CoopLocalization.Get("ui.server.create"),
@@ -359,24 +360,15 @@ public class MModUILayoutBuilder
 
         // 手动连接卡片
         var connectCard = _ui.CreateModernCard(_components.DirectModePanel.transform, "ConnectCard");
-        var connectCardLayout = connectCard.GetComponent<LayoutElement>();
-        connectCardLayout.preferredHeight = 306;
-        connectCardLayout.minHeight = 306;
 
         _ui.CreateSectionHeader(connectCard.transform, CoopLocalization.Get("ui.manualConnect.title"));
         _components.IpInputField = _ui.CreateModernInputField("IPInput", connectCard.transform, CoopLocalization.Get("ui.manualConnect.ip"), _ui.manualIP);
         _components.IpInputField.onValueChanged.AddListener((value) => _ui.manualIP = value);
 
-        var streamerRow = _ui.CreateHorizontalGroup(connectCard.transform, "StreamerModeRow");
-        _ui.CreateText("StreamerLabel", streamerRow.transform, CoopLocalization.Get("ui.streamerMode"), 13, MModUI.ModernColors.TextSecondary);
-        _components.StreamerModeToggle = _ui.CreateModernToggle("StreamerModeToggle", streamerRow.transform, _ui.StreamerMode);
-        var streamerRowLayout = streamerRow.GetComponent<LayoutElement>();
-        streamerRowLayout.minHeight = 30;
-        streamerRowLayout.preferredHeight = 32;
-        _components.StreamerModeToggle.onValueChanged.AddListener(_ui.SetStreamerMode);
-
         _components.PortInputField = _ui.CreateModernInputField("PortInput", connectCard.transform, CoopLocalization.Get("ui.manualConnect.port"), _ui.manualPort);
         _components.PortInputField.onValueChanged.AddListener((value) => _ui.manualPort = value);
+
+        BuildStreamerRow(connectCard.transform);
 
         _ui.CreateModernButton("ManualConnect", connectCard.transform, CoopLocalization.Get("ui.manualConnect.button"), _ui.OnManualConnect, -1, MModUI.ModernColors.Primary, 45, 17);
 
@@ -389,8 +381,17 @@ public class MModUILayoutBuilder
     }
 
     /// <summary>
-    /// 创建Steam模式面板
+    /// 创建主播模式选项
     /// </summary>
+    private void BuildStreamerRow(Transform parent)
+    {
+        var streamerRow = _ui.CreateHorizontalGroup(parent, "StreamerModeRow");
+        _ui.CreateText("StreamerLabel", streamerRow.transform, CoopLocalization.Get("ui.streamerMode"), 13, MModUI.ModernColors.TextSecondary);
+        _components.StreamerModeToggle = _ui.CreateModernToggle("StreamerModeToggle", streamerRow.transform, _ui.StreamerMode);
+        streamerRow.GetComponent<LayoutElement>().preferredHeight = 32;
+        _components.StreamerModeToggle.onValueChanged.AddListener(_ui.SetStreamerMode);
+    }
+
     private void BuildSteamModePanel(Transform parent)
     {
         _components.SteamModePanel = new GameObject("SteamModePanel");

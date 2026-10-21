@@ -370,7 +370,7 @@ public static class InteractableEventNet
 
         foreach (var interactable in interactables)
         {
-            if (!interactable)
+            if (!interactable || !CanRunRequestedPhase(interactable, message.Phase))
                 continue;
 
             var key = ComputeInteractableKey(interactable);
@@ -390,7 +390,7 @@ public static class InteractableEventNet
 
         foreach (var interactable in interactables)
         {
-            if (!interactable)
+            if (!interactable || !CanRunRequestedPhase(interactable, message.Phase))
                 continue;
 
             if (!string.IsNullOrEmpty(message.Name) &&
@@ -406,6 +406,13 @@ public static class InteractableEventNet
         }
 
         return best;
+    }
+
+    private static bool CanRunRequestedPhase(InteractableBase interactable, byte phase)
+    {
+        return phase == PhaseTimeout
+            ? HasAuthoritativeTargets(interactable.OnInteractTimeoutEvent)
+            : ShouldForwardFinish(interactable);
     }
 
     private static List<InteractableBase> CollectInteractables()

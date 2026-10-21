@@ -29,6 +29,13 @@ public sealed class AISyncTracker : MonoBehaviour
 
     public void Initialize(AISyncService service, AICharacterController controller, AISyncEntry entry)
     {
+        if (_service == service && _controller == controller && ReferenceEquals(_entry, entry))
+            return;
+        if (_health != null)
+        {
+            _health.OnHealthChange.RemoveListener(OnHealthChange);
+            _health.OnDeadEvent.RemoveListener(OnDeadEvent);
+        }
         _service = service;
         _controller = controller;
         _entry = entry;

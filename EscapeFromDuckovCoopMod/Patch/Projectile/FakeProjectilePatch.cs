@@ -20,17 +20,29 @@ using HarmonyLib;
 
 namespace EscapeFromDuckovCoopMod;
 
-[HarmonyPatch(typeof(Projectile), "UpdateMoveAndCheck")]
-internal static class Patch_Projectile_UpdateMoveAndCheck_Fake
+[HarmonyPatch(typeof(Projectile), "Update")]
+internal static class Patch_Projectile_Update_Fake
 {
     private static void Prefix(Projectile __instance)
     {
         FakeProjectileRegistry.BeginFrame(__instance);
     }
 
-    private static void Postfix(Projectile __instance)
+    private static void Finalizer(Projectile __instance)
     {
         FakeProjectileRegistry.EndFrame(__instance);
+    }
+}
+
+[HarmonyPatch(typeof(DamageReceiver), nameof(DamageReceiver.Hurt))]
+internal static class Patch_DamageReceiver_Hurt_Fake
+{
+    [HarmonyPriority(Priority.First)]
+    private static bool Prefix(ref bool __result)
+    {
+        if (!FakeProjectileRegistry.IsCurrentFake) return true;
+        __result = false;
+        return false;
     }
 }
 

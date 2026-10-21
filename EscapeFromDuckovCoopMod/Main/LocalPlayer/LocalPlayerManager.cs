@@ -388,11 +388,18 @@ public class LocalPlayerManager : MonoBehaviour
 
         if (currentIsInGame)
         {
-            Service.localPlayerStatus.CustomFaceJson = CustomFace.LoadLocalCustomFaceJson();
+            var face = CustomFace.LoadLocalCustomFaceJson();
+            var faceChanged = Service.localPlayerStatus.CustomFaceJson != face;
+            Service.localPlayerStatus.CustomFaceJson = face;
             var steamName = Service.ResolveLocalSteamName();
             Service.localPlayerStatus.SteamName = steamName;
             if (!string.IsNullOrEmpty(steamName))
                 Service.localPlayerStatus.PlayerName = steamName;
+            if (faceChanged)
+            {
+                if (IsServer) SendLocalPlayerStatus.Instance.SendPlayerStatusUpdate();
+                else Send_ClientStatus.Instance.SendClientStatusUpdate();
+            }
         }
 
         TickPendingLoadoutSync();

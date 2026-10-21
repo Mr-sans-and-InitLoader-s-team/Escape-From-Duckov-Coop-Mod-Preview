@@ -28,6 +28,7 @@ public class DeadLootBox : MonoBehaviour
     public static DeadLootBox Instance;
 
     private readonly Dictionary<string, GameObject> _prefabCache = new();
+    private readonly Dictionary<InteractableLootbox, DeadLootSpawnRpc> _serverSpawns = new();
 
     private NetService Service => NetService.Instance;
     private bool IsServer => Service != null && Service.IsServer;
@@ -49,13 +50,16 @@ public class DeadLootBox : MonoBehaviour
         SceneManager.sceneLoaded -= OnSceneLoaded;
     }
 
+    private void Update() => CorpseRecovery.Tick();
+
     private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         _prefabCache.Clear();
     }
 
-    public void SpawnDeadLootboxAt(int lootUid, Vector3 pos, Quaternion rot, bool useTombPrefab, string prefabName)
+    public void SpawnDeadLootboxAt(int lootUid, Vector3 pos, Quaternion rot, bool useTombPrefab, string prefabName, string playerId = null)
     {
+        if (CoopSyncDatabase.Loot.TryGetByLootUid(lootUid, out var existing) && existing.Inventory) return;
         try
         {
             var prefab = ResolveDeadLootPrefab(prefabName, useTombPrefab);
@@ -77,6 +81,7 @@ public class DeadLootBox : MonoBehaviour
             }
 
             WorldLootPrime.PrimeIfClient(box);
+            CorpseInspection.Initialize(box, useTombPrefab, playerId);
 
             CoopSyncDatabase.Loot.Register(box, inv, lootUid);
 
@@ -244,12 +249,13 @@ public class DeadLootBox : MonoBehaviour
         return string.Empty;
     }
 
-    public void Server_OnDeadLootboxSpawned(InteractableLootbox box, CharacterMainControl whoDied, bool useTombPrefab = false, string playerId = null)
+    public void Server_OnDeadLootboxSpawned(InteractableLootbox box, CharacterMainControl whoDied, bool useTombPrefab = false, string playerId = null, string ownerId = null)
     {
         if (!IsServer || box == null) return;
         try
         {
             var prefabName = NormalizePrefabName(TryGetPrefabNameFromVictim(whoDied));
+            var corpseOwnerId = useTombPrefab ? ownerId ?? playerId ?? Service.GetPlayerId(null) : string.Empty;
 
             // 生成稳定 ID 并登记
             var lootUid = LootManager.Instance._nextLootUid++;
@@ -258,26 +264,7 @@ public class DeadLootBox : MonoBehaviour
             CoopSyncDatabase.Loot.Register(box, inv, lootUid);
             if (inv) CoopSyncDatabase.Loot.SetLootUid(inv, lootUid);
 
-            // >>> 放在 writer.Reset() 之前 <<<
-            if (inv != null)
-            {
-                inv.NeedInspection = true;
-                // 尝试把“这个箱子以前被搜过”的标记也清空（有的版本有这个字段）
-                try
-                {
-                    Traverse.Create(inv).Field<bool>("hasBeenInspectedInLootBox").Value = false;
-                }
-                catch
-                {
-                }
-
-                // 把当前内容全部标记为“未鉴定”
-                for (var i = 0; i < inv.Content.Count; ++i)
-                {
-                    var it = inv.GetItemAt(i);
-                    if (it) it.Inspected = false;
-                }
-            }
+            CorpseInspection.Initialize(box, useTombPrefab, corpseOwnerId);
 
 
             var rpc = new DeadLootSpawnRpc
@@ -288,15 +275,31 @@ public class DeadLootBox : MonoBehaviour
                 Rotation = box.transform.rotation,
                 UseTombPrefab = useTombPrefab,
                 PlayerId = playerId ?? string.Empty,
-                PrefabName = prefabName
+                PrefabName = prefabName,
+                OwnerId = corpseOwnerId
             };
 
+            foreach (var stale in _serverSpawns.Keys.Where(b => !b).ToArray()) _serverSpawns.Remove(stale);
+            _serverSpawns[box] = rpc;
             CoopTool.SendRpc(in rpc);
 
         }
         catch (Exception e)
         {
             Debug.LogError("[LOOT] Server_OnDeadLootboxSpawned failed: " + e);
+        }
+    }
+
+    internal void Server_ReplayToPeer(NetPeer peer)
+    {
+        foreach (var pair in _serverSpawns.ToArray())
+        {
+            if (!pair.Key) { _serverSpawns.Remove(pair.Key); continue; }
+            var message = pair.Value;
+            message.Position = pair.Key.transform.position;
+            message.Rotation = pair.Key.transform.rotation;
+            message.PlayerId = string.Empty;
+            CoopTool.SendRpcTo(peer, in message);
         }
     }
 }

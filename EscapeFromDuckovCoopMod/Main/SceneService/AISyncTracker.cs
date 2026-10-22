@@ -35,6 +35,7 @@ public sealed class AISyncTracker : MonoBehaviour
         {
             _health.OnHealthChange.RemoveListener(OnHealthChange);
             _health.OnDeadEvent.RemoveListener(OnDeadEvent);
+            _health.OnHurtEvent.RemoveListener(OnHurtEvent);
         }
         _service = service;
         _controller = controller;
@@ -52,6 +53,7 @@ public sealed class AISyncTracker : MonoBehaviour
         {
             _health.OnHealthChange.AddListener(OnHealthChange);
             _health.OnDeadEvent.AddListener(OnDeadEvent);
+            _health.OnHurtEvent.AddListener(OnHurtEvent);
         }
     }
 
@@ -67,6 +69,7 @@ public sealed class AISyncTracker : MonoBehaviour
         {
             _health.OnHealthChange.RemoveListener(OnHealthChange);
             _health.OnDeadEvent.RemoveListener(OnDeadEvent);
+            _health.OnHurtEvent.RemoveListener(OnHurtEvent);
         }
 
         if (_entry != null)
@@ -99,6 +102,11 @@ public sealed class AISyncTracker : MonoBehaviour
             SafeGetBodyArmor(_health),
             SafeGetHeadArmor(_health),
             info);
+    }
+
+    private void OnHurtEvent(DamageInfo info)
+    {
+        if (_entry != null) AiQuestCredit.Record(_entry.Id, info);
     }
 
     private static float SafeGetMax(Health health)

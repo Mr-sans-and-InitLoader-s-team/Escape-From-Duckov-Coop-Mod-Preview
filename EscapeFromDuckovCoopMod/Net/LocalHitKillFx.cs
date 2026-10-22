@@ -223,4 +223,15 @@ public static class LocalHitKillFx
         var hv = FindHurtVisualOn(target);
         PlayHurtVisual(hv, di, predictedDead);
     }
+
+    internal static void ClientPlayForAi(CharacterMainControl target, DamageInfo di)
+    {
+        PlayHurtVisual(FindHurtVisualOn(target), di, false);
+    }
+
+    internal static void ClientPlayConfirmedAiHit(DamageInfo di)
+    {
+        if (!di.isFromBuffOrEffect && di.damageValue > 1.01f)
+            PlayUiHitKill(di, false, true);
+    }
 }

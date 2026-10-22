@@ -15,6 +15,8 @@ public struct AIHealthBroadcastRpc : IRpcMessage
     public DamageForwardPayload Damage;
     public bool KillerCredit;
     public float ConfirmedDamage;
+    public bool AssistCredit;
+    public DamageForwardPayload[] QuestEvidence;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -29,6 +31,10 @@ public struct AIHealthBroadcastRpc : IRpcMessage
             Damage.Serialize(writer);
         writer.Put(KillerCredit);
         writer.Put(ConfirmedDamage);
+        writer.Put(AssistCredit);
+        var count = Math.Min(QuestEvidence?.Length ?? 0, AiQuestCredit.MaxEvidence);
+        writer.Put((byte)count);
+        for (var i = 0; i < count; i++) QuestEvidence[i].Serialize(writer);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -47,5 +53,10 @@ public struct AIHealthBroadcastRpc : IRpcMessage
         }
         KillerCredit = reader.AvailableBytes > 0 && reader.GetBool();
         ConfirmedDamage = reader.AvailableBytes >= sizeof(float) ? reader.GetFloat() : 0f;
+        AssistCredit = reader.AvailableBytes > 0 && reader.GetBool();
+        var count = reader.AvailableBytes > 0 ? reader.GetByte() : 0;
+        if (count > AiQuestCredit.MaxEvidence) throw new InvalidOperationException("Invalid AI quest evidence count");
+        QuestEvidence = count == 0 ? null : new DamageForwardPayload[count];
+        for (var i = 0; i < count; i++) QuestEvidence[i].Deserialize(reader);
     }
 }

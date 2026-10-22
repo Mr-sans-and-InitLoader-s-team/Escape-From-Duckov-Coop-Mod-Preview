@@ -84,8 +84,6 @@ public sealed partial class AISyncService
     public bool IsHostHurt { get; set; }
 
     private readonly Dictionary<int, HashSet<NetPeer>> _serverWatchers = new();
-    private readonly Dictionary<NetPeer, Dictionary<int, DamageForwardPayload>> _serverLastDamageByPeer = new();
-    private readonly Dictionary<int, NetPeer> _serverLastHitPeer = new();
     private readonly Dictionary<int, Queue<(int weaponTypeId, int buffId)>> _serverPendingBuffs = new();
     private readonly Dictionary<int, RemoteAIReplica> _clientReplicas = new();
     private readonly HashSet<int> _clientQuestKillCreditRaised = new();
@@ -233,6 +231,7 @@ public sealed partial class AISyncService
 
     public void Reset()
     {
+        AiQuestCredit.Reset();
         _serverSnapshotChunks.Clear();
         ResetNativeAreas();
         _clientBuffOrder.Clear();
@@ -243,8 +242,6 @@ public sealed partial class AISyncService
             foreach (var watcher in _serverWatchers.Values)
                 watcher.Clear();
             _serverWatchers.Clear();
-            _serverLastDamageByPeer.Clear();
-            _serverLastHitPeer.Clear();
             _serverPendingBuffs.Clear();
             _serverBuffQueueKeys.Clear();
             _drainingBuffIds.Clear();
@@ -345,6 +342,7 @@ public sealed partial class AISyncService
         if (!IsServer || entry == null) return;
         if (CheckAndHandleSyncBlock()) return;
 
+        AiQuestCredit.Forget(entry.Id);
         CoopSyncDatabase.AI.RemoveController(controller);
         entry.Controller = null;
         if (entry.Status != AIStatus.Dead)
@@ -383,8 +381,9 @@ public sealed partial class AISyncService
         entry.BodyArmor = bodyArmor;
         entry.HeadArmor = headArmor;
         RefreshEntryPose(entry);
+        AiQuestCredit.PublishAssists(entry, damage);
         if (damage.HasValue && damage.Value.fromCharacter && damage.Value.fromCharacter.GetComponent<RemoteReplicaTag>())
-            NotifyKillerOfServerDeath(entry);
+            NotifyKillerOfServerDeath(entry, damagePayload.Value, damage.Value.fromCharacter);
         BroadcastState(entry);
         QueueHealthBroadcast(entry, damagePayload, true);
         BroadcastDespawn(entry);
@@ -420,6 +419,7 @@ public sealed partial class AISyncService
     {
         if (!IsServer || Service == null || !Service.networkStarted) return;
         if (CheckAndHandleSyncBlock()) return;
+        AiQuestCredit.CleanupDeaths();
         Server_FlushSnapshotChunks();
 
         if (_serverPendingBuffs.Count > 0)
@@ -775,6 +775,11 @@ public sealed partial class AISyncService
 
         if (!IsClientEntryInRange(in message.Entry, GetClientSnapshotRange(message.Entry.IsVehicle)) && !HasNativeArea(message.Entry.CharacterPresetKey))
             return;
+
+        // Reliable spawn notifications distinguish a new living actor from a repeated death credit.
+        if (message.Entry.Status != AIStatus.Dead && message.Entry.CurrentHealth > 0f &&
+            _clientQuestKillCreditRaised.Remove(message.Entry.Id))
+            _clientLastDamage.Remove(message.Entry.Id);
 
         var entry = CoopSyncDatabase.AI.GetOrCreate(message.Entry.Id);
         var snapshot = message.Entry;
@@ -1624,9 +1629,6 @@ public sealed partial class AISyncService
         _serverWatchers.Remove(entry.Id);
         _serverNextWatcherRefresh.Remove(entry.Id);
         _serverAnimatorCache.Remove(entry.Id);
-        _serverLastHitPeer.Remove(entry.Id);
-        foreach (var kv in _serverLastDamageByPeer.Values)
-            kv?.Remove(entry.Id);
     }
 
     private void BroadcastActivationState(AISyncEntry entry)
@@ -2147,15 +2149,12 @@ public sealed partial class AISyncService
         }
     }
 
-    private void NotifyKillerOfServerDeath(AISyncEntry entry)
+    private void NotifyKillerOfServerDeath(AISyncEntry entry, DamageForwardPayload payload, CharacterMainControl attacker)
     {
         if (!IsServer || entry == null) return;
 
-        if (!_serverLastHitPeer.TryGetValue(entry.Id, out var peer) || peer == null)
-            return;
-
-        if (!_serverLastDamageByPeer.TryGetValue(peer, out var lastDamage) || lastDamage == null ||
-            !lastDamage.TryGetValue(entry.Id, out var payload))
+        var peer = AiQuestCredit.FindPeer(entry.Id, attacker);
+        if (peer == null)
             return;
 
         var descriptor = RpcRegistry.GetDescriptor<AIHealthBroadcastRpc>();
@@ -2169,7 +2168,8 @@ public sealed partial class AISyncService
             IsDead = true,
             HasDamage = true,
             Damage = payload,
-            KillerCredit = true
+            KillerCredit = true,
+            QuestEvidence = SharedHome.Active ? null : AiQuestCredit.Evidence(entry.Id, peer)
         };
 
         var writer = RpcWriterPool.Rent();
@@ -2969,35 +2969,39 @@ public sealed partial class AISyncService
 
     private void Client_RaiseQuestKillCredit(int id, in AIHealthBroadcastRpc message)
     {
-        if (!message.HasDamage)
+        if (!message.HasDamage || SharedHome.Active)
             return;
-        if (!_clientReplicas.TryGetValue(id, out var replica) || replica == null)
-            return;
-
-        var cmc = replica.Character;
-        var health = cmc ? cmc.Health : null;
-        if (!health)
-            return;
-
-        var receiver = cmc ? cmc.mainDamageReceiver : null;
-        if (!receiver && cmc)
-            receiver = cmc.GetComponentInChildren<DamageReceiver>(true);
-
         var attacker = CharacterMainControl.Main;
-        if (!attacker)
-            return;
-
-        var info = message.Damage.ToDamageInfo(attacker, receiver);
-        if (info.toDamageReceiver == null)
-            info.toDamageReceiver = receiver;
-        if (info.fromCharacter == null)
-            info.fromCharacter = attacker;
-
-        _clientLastDamage[id] = info;
-        Client_RaiseQuestKillCredit(id, health, info);
+        if (!attacker) return;
+        _clientReplicas.TryGetValue(id, out var replica);
+        var cmc = replica?.Character;
+        GameObject temporary = null;
+        try
+        {
+            if (!cmc)
+            {
+                if (!CoopSyncDatabase.AI.TryGet(id, out var entry)) return;
+                // A distant assist only needs native quest metadata, not another rendered AI.
+                temporary = new GameObject("AIQuestVictim");
+                temporary.SetActive(false);
+                cmc = temporary.AddComponent<CharacterMainControl>();
+                cmc.characterPreset = ResolveCharacterPreset(entry.CharacterPresetKey);
+                var contextHealth = temporary.AddComponent<Health>();
+                contextHealth.team = entry.Team;
+                HealthTool.BindHealthToCharacter(contextHealth, cmc);
+            }
+            var health = temporary ? temporary.GetComponent<Health>() : cmc.Health;
+            if (!health) return;
+            var receiver = temporary ? null : cmc.mainDamageReceiver;
+            var info = message.Damage.ToDamageInfo(attacker, receiver);
+            if (!temporary) _clientLastDamage[id] = info;
+            var evidence = message.QuestEvidence?.Select(d => d.ToDamageInfo(attacker, receiver)).ToArray();
+            Client_RaiseQuestKillCredit(id, health, info, evidence, message.AssistCredit);
+        }
+        finally { if (temporary) Object.Destroy(temporary); }
     }
 
-    private bool Client_RaiseQuestKillCredit(int id, Health health, DamageInfo info)
+    private bool Client_RaiseQuestKillCredit(int id, Health health, DamageInfo info, DamageInfo[] evidence, bool assist)
     {
         if (SharedHome.Active) return false;
         if (IsServer || !health || !CharacterMainControl.Main)
@@ -3011,9 +3015,9 @@ public sealed partial class AISyncService
             return false;
 
         var item = health.TryGetCharacter()?.CharacterItem;
-        if (item && health.team != Teams.player)
+        if (!assist && item && health.team != Teams.player)
             Duckov.EXPManager.AddExp(item.GetInt("Exp"));
-        RaiseStaticHealthOnDead(health, info);
+        AiQuestCredit.ApplyClient(health, evidence ?? new[] { info }, assist ? null : () => RaiseStaticHealthOnDead(health, info));
         return true;
     }
 

@@ -340,7 +340,7 @@ public class COOPManager
         {
             item = await GetItemAsync(itemId);
             if (item == null) return null;
-            var skill = item.GetComponent<Skill_Grenade>();
+            var skill = PickupThrowableSync.GetSkill(item);
             return skill != null ? skill.grenadePfb : null;
         }
         finally

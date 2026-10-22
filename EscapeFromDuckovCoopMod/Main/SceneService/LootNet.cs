@@ -42,7 +42,7 @@ namespace EscapeFromDuckovCoopMod;
     private readonly HashSet<Inventory> _cliInitializedLoot = new(new InventoryRefEq());
 
     internal bool Client_WaitingForLootState(Inventory inv) => !IsServer && networkStarted && inv &&
-        !_cliInitializedLoot.Contains(inv) && LootSearchWorldGate.IsWorldLootByInventory(inv);
+        !LootboxDetectUtil.IsPrivateInventory(inv) && !_cliInitializedLoot.Contains(inv) && LootSearchWorldGate.IsWorldLootByInventory(inv);
 
     private sealed class InventoryRefEq : IEqualityComparer<Inventory>
     {
@@ -370,8 +370,7 @@ namespace EscapeFromDuckovCoopMod;
 
         if (need && !inspected)
         {
-            // 保留已经鉴定过的物品，未鉴定的保持迷雾，只是停止检查动画
-            item.Inspecting = false;
+            // 保留本地搜索状态，容器同步不应中断正在搜索的同一件物品。
             if (inspectedLocally.HasValue) item.Inspected = inspectedLocally.Value;
         }
         else
@@ -421,6 +420,7 @@ namespace EscapeFromDuckovCoopMod;
     public void Server_SendLootboxState(NetPeer toPeer, Inventory inv)
     {
         if (!IsServer || toPeer == null || inv == null) return;
+        if (PersonalFormulaLoot.IsPersonal(inv)) return;
         var lm = LootManagerInstance;
         if (lm == null) return;
 
@@ -692,7 +692,7 @@ namespace EscapeFromDuckovCoopMod;
         if (IsServer || lm == null) return;
 
         var inv = lm.ResolveLootInv(rpc.Id.Scene, rpc.Id.PositionKey, rpc.Id.InstanceId, rpc.Id.LootUid);
-        if (!inv) return;
+        if (!inv || LootboxDetectUtil.IsPrivateInventory(inv)) return;
 
         Client_ForceSearchMode(inv);
 
@@ -1035,6 +1035,7 @@ namespace EscapeFromDuckovCoopMod;
     {
         var lm = LootManagerInstance;
         if (!IsServer || inv == null || lm == null) return;
+        if (PersonalFormulaLoot.IsPersonal(inv)) return;
         CorpseRecovery.QueueSnapshot(inv);
 
         Item item = null;
@@ -1266,6 +1267,8 @@ namespace EscapeFromDuckovCoopMod;
             var key = keys[i];
             var active = states[i];
             if (key == 0) continue;
+            if (CoopSyncDatabase.Loot.TryGetByPositionKey(key, out var personal) &&
+                LootboxDetectUtil.IsPrivateInventory(personal.Inventory)) continue;
 
             _cliLootVisibility[key] = active;
 

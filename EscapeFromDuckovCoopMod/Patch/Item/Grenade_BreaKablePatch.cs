@@ -27,6 +27,7 @@ public static class Patch_Grenade_Sync
     {
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted) return true;
+        if (__instance.createPickup) return true;
 
         // —— 无论主机/客户端，都先缓存一次 ——
         try
@@ -178,6 +179,7 @@ public static class Patch_Grenade_Sync
     [HarmonyPatch(typeof(Grenade), nameof(Grenade.Launch))]
     private static void Grenade_Launch_Postfix(Grenade __instance, Vector3 startPoint, Vector3 velocity, CharacterMainControl fromCharacter)
     {
+        if (PickupThrowableSync.Launched(__instance, startPoint, velocity)) return;
         var mod = ModBehaviourF.Instance;
         if (mod == null || !mod.networkStarted || !mod.IsServer) return;
 

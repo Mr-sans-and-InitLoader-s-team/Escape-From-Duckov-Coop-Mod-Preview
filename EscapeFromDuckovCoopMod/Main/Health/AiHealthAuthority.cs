@@ -37,6 +37,8 @@ public sealed partial class AISyncService
                 look.color, critical ? look.critSize : look.normalSize,
                 critical ? GameplayDataSettings.UIStyle.CritPopSprite : null);
         }
+        if (message.ConfirmedDamage > 0f && message.HasDamage)
+            LocalHitKillFx.ClientPlayConfirmedAiHit(message.Damage.ToDamageInfo(CharacterMainControl.Main));
         if (message.IsDead)
         {
             entry.Status = AIStatus.Dead;
@@ -78,9 +80,6 @@ public sealed partial class AISyncService
             !CoopSyncDatabase.AI.TryGet(entry.Id, out var currentEntry) || !ReferenceEquals(currentEntry, entry)) return;
 
         var info = payload.ToDamageInfo(attacker, character.mainDamageReceiver, buff);
-        if (!_serverLastDamageByPeer.TryGetValue(context.Sender, out var damageById))
-            _serverLastDamageByPeer[context.Sender] = damageById = new Dictionary<int, DamageForwardPayload>();
-        damageById[entry.Id] = payload;
         _serverLastHitPeer[entry.Id] = context.Sender;
         var resolvedDamage = info;
         var processors = FinalDamageProcessors?.GetValue(health) as List<Func<float, float>>;

@@ -266,7 +266,7 @@ internal static class Patch_Health_Hurt_RemoteAnti
                 if (COOPManager.AI != null)
                     COOPManager.AI._clientLastDamage[remoteAi.Id] = damageInfo;
                 COOPManager.AI?.Client_ReportAiHealth(remoteAi.Id, __instance, damageInfo);
-                LocalHitKillFx.ClientPlayForPlayer(character, damageInfo, false);
+                LocalHitKillFx.ClientPlayForAi(character, damageInfo);
             }
             // Only the host runs armor, crit, buffs, HP changes and death processing.
             __result = false;

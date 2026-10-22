@@ -84,7 +84,6 @@ public sealed partial class AISyncService
     public bool IsHostHurt { get; set; }
 
     private readonly Dictionary<int, HashSet<NetPeer>> _serverWatchers = new();
-    private readonly Dictionary<NetPeer, Dictionary<int, DamageForwardPayload>> _serverLastDamageByPeer = new();
     private readonly Dictionary<int, NetPeer> _serverLastHitPeer = new();
     private readonly Dictionary<int, Queue<(int weaponTypeId, int buffId)>> _serverPendingBuffs = new();
     private readonly Dictionary<int, RemoteAIReplica> _clientReplicas = new();
@@ -243,7 +242,6 @@ public sealed partial class AISyncService
             foreach (var watcher in _serverWatchers.Values)
                 watcher.Clear();
             _serverWatchers.Clear();
-            _serverLastDamageByPeer.Clear();
             _serverLastHitPeer.Clear();
             _serverPendingBuffs.Clear();
             _serverBuffQueueKeys.Clear();
@@ -384,7 +382,7 @@ public sealed partial class AISyncService
         entry.HeadArmor = headArmor;
         RefreshEntryPose(entry);
         if (damage.HasValue && damage.Value.fromCharacter && damage.Value.fromCharacter.GetComponent<RemoteReplicaTag>())
-            NotifyKillerOfServerDeath(entry);
+            NotifyKillerOfServerDeath(entry, damagePayload.Value);
         BroadcastState(entry);
         QueueHealthBroadcast(entry, damagePayload, true);
         BroadcastDespawn(entry);
@@ -1625,8 +1623,6 @@ public sealed partial class AISyncService
         _serverNextWatcherRefresh.Remove(entry.Id);
         _serverAnimatorCache.Remove(entry.Id);
         _serverLastHitPeer.Remove(entry.Id);
-        foreach (var kv in _serverLastDamageByPeer.Values)
-            kv?.Remove(entry.Id);
     }
 
     private void BroadcastActivationState(AISyncEntry entry)
@@ -2147,15 +2143,11 @@ public sealed partial class AISyncService
         }
     }
 
-    private void NotifyKillerOfServerDeath(AISyncEntry entry)
+    private void NotifyKillerOfServerDeath(AISyncEntry entry, DamageForwardPayload payload)
     {
         if (!IsServer || entry == null) return;
 
         if (!_serverLastHitPeer.TryGetValue(entry.Id, out var peer) || peer == null)
-            return;
-
-        if (!_serverLastDamageByPeer.TryGetValue(peer, out var lastDamage) || lastDamage == null ||
-            !lastDamage.TryGetValue(entry.Id, out var payload))
             return;
 
         var descriptor = RpcRegistry.GetDescriptor<AIHealthBroadcastRpc>();

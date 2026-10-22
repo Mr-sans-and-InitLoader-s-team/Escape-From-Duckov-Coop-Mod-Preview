@@ -88,9 +88,10 @@ public sealed class ItemNet
             try
             {
                 InNetworkDrop = true;
-                agent = item.Drop(entry.Position, entry.CreateRigidbody, entry.Direction, entry.Angle);
+                agent = entry.PickupThrowable ? PickupThrowableSync.Spawn(item, entry.Position, entry.Velocity) :
+                    item.Drop(entry.Position, entry.CreateRigidbody, entry.Direction, entry.Angle);
                 if (agent && entry.SceneBuildIndex >= 0)
-                    MultiSceneCore.MoveToActiveWithScene(agent.gameObject, entry.SceneBuildIndex);
+                    MultiSceneCore.MoveToActiveWithScene(entry.PickupThrowable ? agent.transform.parent.gameObject : agent.gameObject, entry.SceneBuildIndex);
             }
             finally
             {
@@ -171,7 +172,9 @@ public sealed class ItemNet
         try
         {
             InNetworkDrop = true;
-            agent = item.Drop(message.Position, message.CreateRigidbody, message.Direction, message.Angle);
+            agent = message.PickupThrowable ? PickupThrowableSync.Spawn(item, message.Position, message.Velocity,
+                CoopTool.TryGetRemoteCharacterForPeer(context.Sender)) :
+                item.Drop(message.Position, message.CreateRigidbody, message.Direction, message.Angle);
         }
         finally
         {
@@ -190,7 +193,9 @@ public sealed class ItemNet
             Direction = message.Direction,
             Angle = message.Angle,
             CreateRigidbody = message.CreateRigidbody,
-            Snapshot = ItemTool.MakeSnapshot(item)
+            Snapshot = ItemTool.MakeSnapshot(item),
+            PickupThrowable = message.PickupThrowable,
+            Velocity = message.Velocity
         };
 
         CoopTool.SendRpc(in rpc);
@@ -207,7 +212,8 @@ public sealed class ItemNet
         try
         {
             InNetworkDrop = true;
-            agent = item.Drop(message.Position, message.CreateRigidbody, message.Direction, message.Angle);
+            agent = message.PickupThrowable ? PickupThrowableSync.Spawn(item, message.Position, message.Velocity) :
+                item.Drop(message.Position, message.CreateRigidbody, message.Direction, message.Angle);
         }
         finally
         {
@@ -218,7 +224,14 @@ public sealed class ItemNet
         CoopSyncDatabase.Drops.Register(message.DropId, item, agent ? agent.gameObject : item.gameObject);
     }
 
-    public void Server_RegisterLocalDrop(Item item, DuckovItemAgent agent, Vector3 pos, bool createRigidbody, Vector3 dir, float angle)
+    public void Server_RegisterLocalDrop(Item item, DuckovItemAgent agent, Vector3 pos, bool createRigidbody, Vector3 dir, float angle) =>
+        Server_RegisterDrop(item, agent, pos, createRigidbody, dir, angle, false, Vector3.zero);
+
+    internal void Server_RegisterPickupThrowable(Item item, DuckovItemAgent agent, Vector3 position, Vector3 velocity) =>
+        Server_RegisterDrop(item, agent, position, true, Vector3.zero, 0f, true, velocity);
+
+    private void Server_RegisterDrop(Item item, DuckovItemAgent agent, Vector3 pos, bool createRigidbody, Vector3 dir, float angle,
+        bool pickupThrowable, Vector3 velocity)
     {
         var service = NetService.Instance;
         if (service == null || !service.IsServer || !service.networkStarted || item == null) return;
@@ -257,7 +270,9 @@ public sealed class ItemNet
             Position = pos,
             Direction = dir,
             Angle = angle,
-            CreateRigidbody = createRigidbody
+            CreateRigidbody = createRigidbody,
+            PickupThrowable = pickupThrowable,
+            Velocity = velocity
         };
 
         CoopTool.SendRpc(in spawnRpc);
@@ -441,6 +456,9 @@ public sealed class ItemNet
                     Direction = Vector3.zero,
                     Angle = 0f,
                     CreateRigidbody = false,
+                    PickupThrowable = e.Agent && e.Agent.GetComponentInParent<PickupThrowableTag>(),
+                    Velocity = e.Agent && e.Agent.GetComponentInParent<PickupThrowableTag>() ?
+                        e.Agent.GetComponentInParent<Rigidbody>()?.velocity ?? Vector3.zero : Vector3.zero,
                     SceneBuildIndex = GetDropSceneBuildIndex(e.Agent),
                     Snapshot = ItemTool.MakeSnapshot(e.Item)
                 };
@@ -473,7 +491,14 @@ public sealed class ItemNet
         return agent.scene.buildIndex;
     }
 
-    public void Client_RequestDrop(Item item, Vector3 pos, bool createRigidbody, Vector3 dir, float angle, bool allowSlotOwned = false)
+    public void Client_RequestDrop(Item item, Vector3 pos, bool createRigidbody, Vector3 dir, float angle, bool allowSlotOwned = false) =>
+        Client_RequestDrop(item, pos, createRigidbody, dir, angle, allowSlotOwned, false, Vector3.zero);
+
+    internal void Client_RequestPickupThrowable(Item item, Vector3 position, Vector3 velocity) =>
+        Client_RequestDrop(item, position, true, Vector3.zero, 0f, true, true, velocity);
+
+    private void Client_RequestDrop(Item item, Vector3 pos, bool createRigidbody, Vector3 dir, float angle, bool allowSlotOwned,
+        bool pickupThrowable, Vector3 velocity)
     {
         var service = NetService.Instance;
         if (service == null || service.IsServer || !service.networkStarted || item == null) return;
@@ -483,7 +508,7 @@ public sealed class ItemNet
         // on the host if the client keeps interacting while full.
         var inv = item.InInventory ?? item.Slots?.Master?.InInventory;
         var hasOwnership = inv != null || (allowSlotOwned && item.Slots != null);
-        if (!hasOwnership)
+        if (!hasOwnership && !pickupThrowable)
             return;
 
         if (!allowSlotOwned && !item.InInventory)
@@ -499,7 +524,9 @@ public sealed class ItemNet
             Direction = dir,
             Angle = angle,
             CreateRigidbody = createRigidbody,
-            Snapshot = ItemTool.MakeSnapshot(item)
+            Snapshot = ItemTool.MakeSnapshot(item),
+            PickupThrowable = pickupThrowable,
+            Velocity = velocity
         };
 
         CoopTool.SendRpc(in rpc);

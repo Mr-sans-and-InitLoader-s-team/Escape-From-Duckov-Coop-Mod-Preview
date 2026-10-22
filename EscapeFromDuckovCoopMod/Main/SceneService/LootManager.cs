@@ -240,6 +240,7 @@ public static class LootboxDetectUtil
     public static bool IsPrivateInventory(Inventory inv)
     {
         if (inv == null) return false;
+        if (PersonalFormulaLoot.IsPersonal(inv)) return true;
         if (DeadLootSpawnContext.LocalOnDead)
             return true;
 

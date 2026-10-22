@@ -333,7 +333,9 @@ public sealed class LootSyncRegistry
     public void Register(InteractableLootbox lootbox, Inventory inventory, int lootUid = -1)
     {
         if (!inventory) return;
-        if (LootboxDetectUtil.IsPrivateInventory(inventory)) return;
+        PersonalFormulaLoot.Observe(lootbox, inventory);
+        var formulaBox = PersonalFormulaLoot.IsFormulaBox(inventory);
+        if (LootboxDetectUtil.IsPrivateInventory(inventory) && !formulaBox) return;
 
         var instanceId = lootbox ? lootbox.GetInstanceID() : 0;
         var posKey = 0;
@@ -364,7 +366,7 @@ public sealed class LootSyncRegistry
         entry.InstanceId = instanceId;
         entry.SceneIndex = sceneIndex;
         entry.WorldPosition = worldPos;
-        entry.IsWorldLoot = !LootboxDetectUtil.IsPrivateInventory(inventory);
+        entry.IsWorldLoot = formulaBox || !LootboxDetectUtil.IsPrivateInventory(inventory);
 
         if (lootUid >= 0) entry.LootUid = lootUid;
 

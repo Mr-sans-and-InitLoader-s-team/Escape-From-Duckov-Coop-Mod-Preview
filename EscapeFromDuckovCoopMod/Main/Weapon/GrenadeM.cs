@@ -448,7 +448,7 @@ public class GrenadeM
         try
         {
             item = await COOPManager.GetItemAsync(typeId);
-            var skill = item ? item.GetComponent<Skill_Grenade>() : null;
+            var skill = PickupThrowableSync.GetSkill(item);
 
             // 安全默认
             DamageInfo di = default;

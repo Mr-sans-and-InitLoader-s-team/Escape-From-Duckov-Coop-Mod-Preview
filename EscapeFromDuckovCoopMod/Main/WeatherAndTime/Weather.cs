@@ -455,6 +455,7 @@ public class Weather
         foreach (var entry in CoopSyncDatabase.Loot.Entries)
         {
             if (entry == null) continue;
+            if (LootboxDetectUtil.IsPrivateInventory(entry.Inventory)) continue;
             var key = entry.PositionKey;
             if (key == 0) continue;
 

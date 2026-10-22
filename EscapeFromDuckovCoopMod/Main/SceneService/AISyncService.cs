@@ -1336,9 +1336,9 @@ public sealed partial class AISyncService
             entry.CustomFaceJson = TryCaptureFaceJson(cmc.characterModel);
             if (cmc.characterPreset)
             {
-                entry.CharacterPresetKey = string.IsNullOrEmpty(cmc.characterPreset.nameKey)
-                    ? cmc.characterPreset.name
-                    : cmc.characterPreset.nameKey;
+                entry.CharacterPresetKey = string.IsNullOrEmpty(cmc.characterPreset.name)
+                    ? cmc.characterPreset.nameKey
+                    : cmc.characterPreset.name;
             }
             entry.Team = cmc.Team;
             ApplyNativeAreaScene(entry, cmc);

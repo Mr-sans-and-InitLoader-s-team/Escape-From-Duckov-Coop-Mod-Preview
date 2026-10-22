@@ -28,6 +28,11 @@ public struct ItemDropSnapshotChunkRpc : IRpcMessage
         {
             writer.Put(Entries[i].SceneBuildIndex);
         }
+        for (var i = 0; i < count; i++)
+        {
+            writer.Put(Entries[i].PickupThrowable);
+            if (Entries[i].PickupThrowable) writer.PutV3cm(Entries[i].Velocity);
+        }
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -46,6 +51,14 @@ public struct ItemDropSnapshotChunkRpc : IRpcMessage
             for (var i = 0; i < count; i++)
                 Entries[i].SceneBuildIndex = reader.GetInt();
         }
+        if (reader.AvailableBytes >= count)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                Entries[i].PickupThrowable = reader.GetBool();
+                if (Entries[i].PickupThrowable) Entries[i].Velocity = reader.GetV3cm();
+            }
+        }
     }
 }
 
@@ -58,6 +71,8 @@ public struct ItemDropSnapshotEntry
     public bool CreateRigidbody;
     public ItemSnapshot Snapshot;
     public int SceneBuildIndex;
+    public bool PickupThrowable;
+    public Vector3 Velocity;
 
     public void Serialize(NetDataWriter writer)
     {

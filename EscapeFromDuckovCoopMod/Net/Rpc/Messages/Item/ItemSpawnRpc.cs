@@ -14,6 +14,8 @@ public struct ItemSpawnRpc : IRpcMessage
     public float Angle;
     public bool CreateRigidbody;
     public ItemSnapshot Snapshot;
+    public bool PickupThrowable;
+    public Vector3 Velocity;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -24,6 +26,8 @@ public struct ItemSpawnRpc : IRpcMessage
         writer.Put(Angle);
         writer.Put(CreateRigidbody);
         ItemTool.WriteItemSnapshot(writer, Snapshot);
+        writer.Put(PickupThrowable);
+        if (PickupThrowable) writer.PutV3cm(Velocity);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -35,5 +39,7 @@ public struct ItemSpawnRpc : IRpcMessage
         Angle = reader.GetFloat();
         CreateRigidbody = reader.GetBool();
         Snapshot = ItemTool.ReadItemSnapshot(reader);
+        PickupThrowable = reader.AvailableBytes > 0 && reader.GetBool();
+        Velocity = PickupThrowable ? reader.GetV3cm() : Vector3.zero;
     }
 }

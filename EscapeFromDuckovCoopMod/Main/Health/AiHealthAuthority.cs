@@ -42,7 +42,7 @@ public sealed partial class AISyncService
         if (message.IsDead)
         {
             entry.Status = AIStatus.Dead;
-            if (message.KillerCredit) Client_RaiseQuestKillCredit(entry.Id, in message);
+            if (message.KillerCredit || message.AssistCredit) Client_RaiseQuestKillCredit(entry.Id, in message);
             Client_DestroyReplica(entry.Id, AIStatus.Dead);
             return;
         }
@@ -80,7 +80,6 @@ public sealed partial class AISyncService
             !CoopSyncDatabase.AI.TryGet(entry.Id, out var currentEntry) || !ReferenceEquals(currentEntry, entry)) return;
 
         var info = payload.ToDamageInfo(attacker, character.mainDamageReceiver, buff);
-        _serverLastHitPeer[entry.Id] = context.Sender;
         var resolvedDamage = info;
         var processors = FinalDamageProcessors?.GetValue(health) as List<Func<float, float>>;
         var confirmedDamage = 0f;

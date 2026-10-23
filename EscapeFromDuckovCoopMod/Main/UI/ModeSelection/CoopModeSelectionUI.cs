@@ -85,7 +85,7 @@ internal sealed class CoopModeSelectionUI : MonoBehaviour
         SharedHome.SetEnabled(shared);
         _chosen = true;
         Close();
-        if (_manual) _ui.ShowConnectionPanel();
+        _ui.ShowConnectionPanel();
         _manual = false;
     }
 

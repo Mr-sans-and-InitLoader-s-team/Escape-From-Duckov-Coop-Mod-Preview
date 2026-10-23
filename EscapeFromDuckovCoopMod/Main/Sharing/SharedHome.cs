@@ -117,6 +117,13 @@ public static class SharedHome
         if (!Active || SceneLoader.IsSceneLoading || !LevelManager.LevelInited) return;
         if (Guest && _pendingState != null && !Reloading && !SharedHomeLoadouts.Restoring)
         {
+            if (!SharedHomeSave.OverlayActive)
+            {
+                // Re-enter through the menu so the personal scene cannot retain NPCs or inventory slots.
+                Apply(SharedHomeSave.Begin);
+                SceneLoader.LoadMainMenu();
+                return;
+            }
             var state = _pendingState;
             _pendingState = null;
             Apply(() => SharedHomeSave.Apply(state));

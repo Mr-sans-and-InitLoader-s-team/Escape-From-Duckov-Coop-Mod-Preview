@@ -77,12 +77,13 @@ internal static class SharedHomeSave
         foreach (var key in incoming.GetKeys()) combined.Save(key, incoming.Load(key));
         return combined.LoadRawBytes();
     }
-    private static void Begin()
+    internal static void Begin()
     {
         if (_personal != null) return;
         SavesSystem.KeyExisits("Created");
         // Preserve the current unsaved personal state as well as the disk save.
-        SavesSystem.CollectSaveData();
+        if (LevelManager.Instance && LevelManager.LevelInited) LevelManager.Instance.NotifySaveBeforeLoadScene(false);
+        else SavesSystem.CollectSaveData();
         _path = SavesSystem.CurrentFilePath;
         _personal = ES3File.cachedFiles[_path];
         ES3File.cachedFiles[_path] = new ES3File(_personal.LoadRawBytes(), _personal.settings);

@@ -39,12 +39,31 @@ internal static class SharedHomeStorageOperations
     {
         if (!item) return string.Empty;
         var writer = new NetDataWriter();
-        ItemTool.WriteItemSnapshot(writer, ItemTool.MakeSnapshot(item));
+        ItemTool.WriteItemSnapshot(writer, WithoutInspection(ItemTool.MakeSnapshot(item)));
         using var hash = System.Security.Cryptography.SHA256.Create();
         return Convert.ToBase64String(hash.ComputeHash(writer.CopyData()));
     }
 
-    internal static void Execute(JObject args, NetPeer peer)
+    private static ItemSnapshot WithoutInspection(ItemSnapshot snapshot)
+    {
+        // Search progress is local to each player and must not invalidate an otherwise identical item.
+        if (snapshot.CustomDataKeys != null)
+        {
+            var indices = Enumerable.Range(0, snapshot.CustomDataKeys.Length)
+                .Where(i => snapshot.CustomDataKeys[i] != "core.var.Inspected").ToArray();
+            snapshot.CustomDataValues = indices.Select(i => snapshot.CustomDataValues[i]).ToArray();
+            snapshot.CustomDataKeys = indices.Select(i => snapshot.CustomDataKeys[i]).ToArray();
+        }
+        if (snapshot.Inventory != null)
+            for (var i = 0; i < snapshot.Inventory.Length; i++)
+                snapshot.Inventory[i].Item = WithoutInspection(snapshot.Inventory[i].Item);
+        if (snapshot.Slots != null)
+            for (var i = 0; i < snapshot.Slots.Length; i++)
+                if (snapshot.Slots[i].HasItem) snapshot.Slots[i].Item = WithoutInspection(snapshot.Slots[i].Item);
+        return snapshot;
+    }
+
+    internal static async UniTaskVoid Execute(JObject args, NetPeer peer)
     {
         var token = (string)args["token"];
         if (string.IsNullOrEmpty(token) || token.Length > 64) return;
@@ -58,6 +77,12 @@ internal static class SharedHomeStorageOperations
             var details = (JObject)args["details"];
             switch ((string)details["operation"])
             {
+                case "sell":
+                    var shop = SharedHomeWorld.Shops.FirstOrDefault(s => s && s.MerchantID == (string)details["merchant"]);
+                    if (!shop || shop.Busy || !item.CanBeSold) return;
+                    await (UniTask)AccessTools.Method(typeof(Duckov.Economy.StockShop), "Sell").Invoke(shop, new object[] { item });
+                    SharedHome.MarkDirty();
+                    break;
                 case "drop":
                     if (!item.CanDrop) return;
                     item.Drop(new Vector3((float)details["x"], (float)details["y"], (float)details["z"]),

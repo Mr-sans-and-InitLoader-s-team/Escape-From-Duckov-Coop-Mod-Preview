@@ -26,7 +26,6 @@ internal static class SharedHomeProgress
         PlayerStorage.OnPlayerStorageChange += (_, _, _) => SharedHome.MarkDirty();
         PlayerStorage.OnTakeBufferItem += SharedHome.MarkDirty;
         PlayerStorage.OnItemAddedToBuffer += _ => SharedHome.MarkDirty();
-        StockShop.OnItemPurchased += (_, item) => SharedHomeCommerce.StoreOutput(item);
         CraftingManager.OnItemCrafted += (_, item) => SharedHomeCommerce.StoreOutput(item);
         LevelManager.OnLevelInitialized += SharedHome.MarkDirty;
         Health.OnDead += OnDead;

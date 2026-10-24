@@ -68,8 +68,7 @@ internal static class SharedHomeShopBuyPatch
     private static bool Prefix(StockShop __instance, int itemTypeID, int amount, ref UniTask<bool> __result)
     {
         if (!SharedHome.Guest || SharedHome.Applying) return true;
-        SharedHome.Request("shopBuy", new { merchant = __instance.MerchantID, type = itemTypeID, amount });
-        __result = UniTask.FromResult(false);
+        __result = SharedHomeShopPurchase.Request(__instance, itemTypeID, amount);
         return false;
     }
 }

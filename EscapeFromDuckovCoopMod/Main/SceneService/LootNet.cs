@@ -629,6 +629,14 @@ namespace EscapeFromDuckovCoopMod;
     {
         if (!inv) return;
 
+        if (SharedHomeStorage.IsShared(inv))
+        {
+            inv.NeedInspection = false;
+            var box = PlayerStorage.Instance.InteractableLootBox;
+            if (box) box.needInspect = false;
+            return;
+        }
+
         if (!LootSearchWorldGate.IsWorldLootByInventory(inv))
             return;
 

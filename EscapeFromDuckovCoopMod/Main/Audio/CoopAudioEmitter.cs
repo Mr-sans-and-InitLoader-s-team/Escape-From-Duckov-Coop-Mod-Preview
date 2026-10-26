@@ -77,6 +77,10 @@ public sealed class CoopAudioEmitter : MonoBehaviour
             _playing = AudioManager.Post(payload.EventName, gameObject);
         }
 
+        if (_playing.HasValue && _playing.Value.getDescription(out var description) == FMOD.RESULT.OK &&
+            description.isOneshot(out var oneShot) == FMOD.RESULT.OK && !oneShot)
+            _stopAfterLife = true;
+
         if (_isKazoo)
         {
             var pitch = payload.HasKazooPitch ? payload.KazooPitch : 0f;

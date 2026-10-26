@@ -40,6 +40,7 @@ public static class RpcRegistry
         Register<ChatSendRequestRpc>(RPCChat.HandleChatSend);
         Register<ChatMessageRpc>(RPCChat.HandleChatMessage);
         Register<AudioEventRpc>(RPCAudio.HandleAudioEvent);
+        Register<FootstepRpc>(FootstepSync.Handle);
         Register<KazooStateRpc>(KazooSync.Handle);
         Register<SceneVoteStartRpc>(RPCScene.HandleSceneVoteStart);
         Register<TeleporterFlowRpc>(TeleporterTravel.Handle);
@@ -56,6 +57,9 @@ public static class RpcRegistry
         Register<EnvDestructibleStateRpc>(RPCEnvironment.HandleDestructibleState);
         Register<EnvExplosiveOilBarrelStateRpc>(RPCEnvironment.HandleExplosiveOilBarrelState);
         Register<EnvLevelDataBoolRpc>(RPCEnvironment.HandleLevelDataBool);
+        Register<EnvLevelDataBoolSnapshotRpc>(LevelDataBoolSnapshot.Apply);
+        Register<StarterLootContextRpc>(PersonalStarterLoot.ReceiveContext);
+        Register<DeadLootVisibilityRpc>(CorpseRecovery.ApplyVisibility);
         Register<InteractableFinishRequestRpc>(RPCEnvironment.HandleInteractableFinishRequest);
         Register<LotteryBoxStateRpc>(RPCEnvironment.HandleLotteryBoxState);
         Register<EnvExitSnapshotRequestRpc>(RPCEnvironment.HandleExitSnapshotRequest);

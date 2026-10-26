@@ -76,7 +76,9 @@ internal static class SharedHomeActions
                 AccessTools.Method(typeof(Duckov.Quests.Task), "ReportStatusChanged").Invoke(task, null);
                 break;
             case "taskInteract":
-                FindQuest(args)?.Tasks.FirstOrDefault(t => t.ID == (int)args["task"])?.Interact();
+                var interaction = FindQuest(args)?.Tasks.FirstOrDefault(t => t.ID == (int)args["task"]);
+                if (interaction is Duckov.Quests.Tasks.SubmitItems submit) SharedHomeQuestItems.SubmitWarehouse(submit);
+                else interaction?.Interact();
                 break;
             case "build":
                 var area = (string)args["area"];

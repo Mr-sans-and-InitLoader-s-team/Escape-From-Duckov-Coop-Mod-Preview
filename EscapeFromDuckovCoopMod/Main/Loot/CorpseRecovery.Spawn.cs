@@ -1,5 +1,6 @@
 using Duckov;
 using Duckov.Utilities;
+using Duckov.Scenes;
 using ItemStatsSystem;
 using ItemStatsSystem.Data;
 using UnityEngine.SceneManagement;
@@ -8,11 +9,9 @@ namespace EscapeFromDuckovCoopMod;
 
 internal static partial class CorpseRecovery
 {
-    private static readonly HashSet<(NetPeer Owner, string Record, int Scene)> Reported = new();
-    private static readonly HashSet<(NetPeer Owner, string Record)> PendingSpawns = new();
+    private static readonly HashSet<(string Identity, string Record)> PendingSpawns = new();
     private static readonly Dictionary<string, CorpseSpawnRequestRpc> PendingReports = new();
     private static float _nextReport;
-    private static void PruneReported() => Reported.RemoveWhere(key => key.Scene != SceneManager.GetActiveScene().handle);
 
     internal static void Tick()
     {
@@ -60,7 +59,7 @@ internal static partial class CorpseRecovery
         var rpc = new CorpseSpawnRequestRpc
         {
             RecordId = id, SceneIndex = SceneManager.GetActiveScene().buildIndex,
-            Position = position, Data = bytes
+            Position = position, Data = bytes, PlayerIdentity = SharedHomeLoadouts.LocalIdentity()
         };
         PendingReports[id] = rpc;
         CoopTool.SendRpc(in rpc);
@@ -69,29 +68,48 @@ internal static partial class CorpseRecovery
     internal static void HandleSpawnRequest(NetPeer owner, CorpseSpawnRequestRpc rpc)
     {
         if (NetService.Instance?.IsServer != true || owner == null || string.IsNullOrEmpty(rpc.RecordId) ||
-            rpc.Data == null || !PendingSpawns.Add((owner, rpc.RecordId))) return;
+            rpc.Data == null) return;
+        if (string.IsNullOrEmpty(rpc.PlayerIdentity)) rpc.PlayerIdentity = NetService.Instance.GetPlayerId(owner);
+        if (rpc.PlayerIdentity.Length > 128 || owner.SteamId != 0 && rpc.PlayerIdentity != owner.SteamId.ToString() ||
+            !PendingSpawns.Add((rpc.PlayerIdentity, rpc.RecordId))) return;
         SpawnReported(owner, rpc, _epoch).Forget();
     }
 
     private static async UniTask SpawnReported(NetPeer owner, CorpseSpawnRequestRpc rpc, int epoch)
     {
-        var deadline = Time.unscaledTime + 60f;
-        await UniTask.WaitUntil(() => epoch != _epoch || !NetService.Instance.networkStarted ||
-            owner.ConnectionState != ConnectionState.Connected || Time.unscaledTime >= deadline ||
-            (SceneManager.GetActiveScene().buildIndex == rpc.SceneIndex && LevelManager.LevelInited));
-        PendingSpawns.Remove((owner, rpc.RecordId));
-        if (epoch != _epoch) return;
-        if (!NetService.Instance.networkStarted || owner.ConnectionState != ConnectionState.Connected ||
-            SceneManager.GetActiveScene().buildIndex != rpc.SceneIndex || !LevelManager.LevelInited)
+        try
         {
-            Debug.LogWarning($"[CORPSE] Recovery spawn could not enter scene {rpc.SceneIndex}");
-            return;
+            var deadline = Time.unscaledTime + 60f;
+            await UniTask.WaitUntil(() => epoch != _epoch || !NetService.Instance.networkStarted ||
+                owner.ConnectionState != ConnectionState.Connected || Time.unscaledTime >= deadline ||
+                (SceneManager.GetActiveScene().buildIndex == rpc.SceneIndex && LevelManager.LevelInited));
+            if (epoch != _epoch) return;
+            if (!NetService.Instance.networkStarted || owner.ConnectionState != ConnectionState.Connected ||
+                SceneManager.GetActiveScene().buildIndex != rpc.SceneIndex || !LevelManager.LevelInited)
+            {
+                Debug.LogWarning($"[CORPSE] Recovery spawn could not enter scene {rpc.SceneIndex}");
+                return;
+            }
+            foreach (var pair in ServerBodies)
+            {
+                var body = pair.Value;
+                if (!pair.Key || body.RecordId != rpc.RecordId || body.PlayerIdentity != rpc.PlayerIdentity) continue;
+                body.Owner = owner;
+                DeadLootBox.Instance?.UpdateCorpseOwner(pair.Key, owner);
+                var update = new CorpseInventoryRpc { RecordId = body.RecordId, Revision = ++_revision,
+                    Data = ES3.Serialize(InventoryData.FromInventory(pair.Key)) };
+                CoopTool.SendRpcTo(owner, in update);
+                return;
+            }
+            await SpawnContainer(owner, rpc.RecordId, rpc.Position, rpc.Data, rpc.PlayerIdentity);
         }
-        if (Reported.Add((owner, rpc.RecordId, SceneManager.GetActiveScene().handle)))
-            await SpawnContainer(owner, rpc.RecordId, rpc.Position, rpc.Data);
+        finally
+        {
+            if (epoch == _epoch) PendingSpawns.Remove((rpc.PlayerIdentity, rpc.RecordId));
+        }
     }
 
-    private static async UniTask SpawnContainer(NetPeer owner, string id, Vector3 position, byte[] bytes)
+    private static async UniTask SpawnContainer(NetPeer owner, string id, Vector3 position, byte[] bytes, string identity = null)
     {
         var data = ES3.Deserialize<InventoryData>(bytes);
         if (data.entries.Count == 0)
@@ -106,6 +124,7 @@ internal static partial class CorpseRecovery
         var epoch = _epoch;
         var go = UnityEngine.Object.Instantiate(prefab.gameObject, position, Quaternion.identity);
         go.SetActive(false);
+        MultiSceneCore.MoveToActiveWithScene(go, scene.buildIndex);
         var box = go.GetComponent<InteractableLootbox>();
         var inv = go.AddComponent<Inventory>();
         AccessTools.Field(typeof(InteractableLootbox), "inventoryReference").SetValue(box, inv);
@@ -125,7 +144,7 @@ internal static partial class CorpseRecovery
                     throw new InvalidOperationException("Failed to restore corpse item");
             }
             DeadLootBox.Instance.Server_OnDeadLootboxSpawned(box, null, true, ownerId: NetService.Instance.GetPlayerId(owner));
-            RegisterServerBody(box, owner, id);
+            RegisterServerBody(box, owner, id, identity);
             go.SetActive(true);
         }
         catch (Exception error)

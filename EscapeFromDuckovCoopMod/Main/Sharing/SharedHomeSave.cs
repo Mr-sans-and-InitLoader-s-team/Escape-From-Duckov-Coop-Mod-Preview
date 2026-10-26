@@ -24,7 +24,7 @@ internal static class SharedHomeSave
     private static readonly HashSet<string> Keys = new()
     {
         "EXP_Value", "QuestData", "BuildingData", "BeaconManager", "Crafting/UnlockedFormulaIDs",
-        "EconomyData", "BlackMarket_Data", "CommonVariablesData", "HasFished", "Endowment_SelectedIndex",
+        "EconomyData", "BlackMarket_Data", "CommonVariablesData", "HasFished",
         "MasterKeys", "BaseSceneOverride", "GameRulesManager_RuleIndex", "Rule_Custom", "CustomDifficultyMarker"
     };
     internal static bool SharedKey(string key) => Keys.Contains(key) || key.StartsWith("PerkTree_") ||
@@ -87,6 +87,7 @@ internal static class SharedHomeSave
         _path = SavesSystem.CurrentFilePath;
         _personal = ES3File.cachedFiles[_path];
         ES3File.cachedFiles[_path] = new ES3File(_personal.LoadRawBytes(), _personal.settings);
+        SharedHomeSafeInventory.ClearPersonal(ES3File.cachedFiles[_path]);
         SavesSystem.LoadGlobal<bool>("SharedHome_CacheProbe");
         if (ES3File.cachedFiles.TryGetValue(SavesSystem.GlobalSaveDataFilePath, out _personalGlobal))
             ES3File.cachedFiles[SavesSystem.GlobalSaveDataFilePath] = new ES3File(_personalGlobal.LoadRawBytes(), _personalGlobal.settings);

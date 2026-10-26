@@ -170,7 +170,7 @@ internal static class SharedHomeQuestSubmitPatch
     private static bool Prefix(SubmitItems __instance)
     {
         if (!SharedHome.Guest || SharedHome.Applying) return true;
-        SharedHome.Request("taskInteract", new { quest = __instance.Master.ID, task = __instance.ID });
+        SharedHomeQuestItems.SubmitPersonal(__instance);
         return false;
     }
 }

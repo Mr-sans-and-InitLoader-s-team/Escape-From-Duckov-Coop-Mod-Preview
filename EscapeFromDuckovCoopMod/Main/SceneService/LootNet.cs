@@ -155,10 +155,12 @@ namespace EscapeFromDuckovCoopMod;
                 itemSnapshots.Add(snapshot);
             }
             var recordId = reader.AvailableBytes > 0 ? reader.GetString() : string.Empty;
-            if (reader.AvailableBytes != 0) return;
+            var identity = reader.AvailableBytes > 0 ? reader.GetString() : Service.GetPlayerId(sender);
+            if (reader.AvailableBytes != 0 || identity.Length > 128 ||
+                sender.SteamId != 0 && identity != sender.SteamId.ToString()) return;
             // Consume before entering the asynchronous item creation path.
             if (!HealthM.Instance.Server_ConsumeDeathLoot(sender, lifeId)) return;
-            Server_SpawnDeadPlayerLoot(pos, itemSnapshots, sender, recordId);
+            Server_SpawnDeadPlayerLoot(pos, itemSnapshots, sender, recordId, identity);
         }
         catch (Exception ex)
         {
@@ -166,7 +168,7 @@ namespace EscapeFromDuckovCoopMod;
         }
     }
 
-    private async void Server_SpawnDeadPlayerLoot(Vector3 position, List<ItemSnapshot> itemSnapshots, NetPeer owner, string recordId)
+    private async void Server_SpawnDeadPlayerLoot(Vector3 position, List<ItemSnapshot> itemSnapshots, NetPeer owner, string recordId, string identity)
     {
         try
         {            
@@ -182,6 +184,7 @@ namespace EscapeFromDuckovCoopMod;
             var lootObj = GameObject.Instantiate(prefab.gameObject, position, Quaternion.identity);
             lootObj.SetActive(false);
             var scene = SceneManager.GetActiveScene();
+            Duckov.Scenes.MultiSceneCore.MoveToActiveWithScene(lootObj, scene.buildIndex);
 
             var lootBox = lootObj.GetComponent<InteractableLootbox>();
             if (!lootBox)
@@ -191,6 +194,7 @@ namespace EscapeFromDuckovCoopMod;
                 return;
             }
             
+            AccessTools.Method(typeof(InteractableLootbox), "CreateLocalInventory").Invoke(lootBox, null);
             var inventory = lootBox.Inventory;
             if (!inventory)
             {
@@ -252,7 +256,7 @@ namespace EscapeFromDuckovCoopMod;
             
             Debug.Log($"[DEATH] Loot container spawned successfully!");
             DeadLootBox.Instance?.Server_OnDeadLootboxSpawned(lootBox, null, true, Service.GetPlayerId(owner));
-            CorpseRecovery.RegisterServerBody(lootBox, owner, recordId);
+            CorpseRecovery.RegisterServerBody(lootBox, owner, recordId, identity);
             lootObj.SetActive(true);
             
         }
@@ -420,7 +424,7 @@ namespace EscapeFromDuckovCoopMod;
     public void Server_SendLootboxState(NetPeer toPeer, Inventory inv)
     {
         if (!IsServer || toPeer == null || inv == null) return;
-        if (PersonalFormulaLoot.IsPersonal(inv)) return;
+        if (PersonalFormulaLoot.IsPersonal(inv) || PersonalStarterLoot.IsPersonal(inv)) return;
         var lm = LootManagerInstance;
         if (lm == null) return;
 
@@ -711,7 +715,7 @@ namespace EscapeFromDuckovCoopMod;
             return;
         }
 
-        _cliVersions[inv] = Mathf.Max(rpc.Version, curVersion);
+        _cliVersions[inv] = rpc.IsSnapshot ? rpc.Version : Mathf.Max(rpc.Version, curVersion);
 
         _applyingLootState = true;
         try
@@ -1043,7 +1047,7 @@ namespace EscapeFromDuckovCoopMod;
     {
         var lm = LootManagerInstance;
         if (!IsServer || inv == null || lm == null) return;
-        if (PersonalFormulaLoot.IsPersonal(inv)) return;
+        if (PersonalFormulaLoot.IsPersonal(inv) || PersonalStarterLoot.IsPersonal(inv)) return;
         CorpseRecovery.QueueSnapshot(inv);
 
         Item item = null;

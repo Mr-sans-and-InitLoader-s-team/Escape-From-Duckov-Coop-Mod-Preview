@@ -27,7 +27,6 @@ internal static class SharedHomeUnlocks
         ["note"] = AccessTools.Method(typeof(NoteIndex), nameof(NoteIndex.SetNoteUnlocked)),
         ["noteRead"] = AccessTools.Method(typeof(NoteIndex), nameof(NoteIndex.SetNoteRead)),
         ["endowment"] = AccessTools.Method(typeof(EndowmentManager), nameof(EndowmentManager.UnlockEndowment)),
-        ["selectedEndowment"] = AccessTools.PropertySetter(typeof(EndowmentManager), nameof(EndowmentManager.SelectedIndex)),
         ["worldBool"] = AccessTools.Method(typeof(CommonVariables), nameof(CommonVariables.SetBool)),
         ["worldInt"] = AccessTools.Method(typeof(CommonVariables), nameof(CommonVariables.SetInt)),
         ["worldFloat"] = AccessTools.Method(typeof(CommonVariables), nameof(CommonVariables.SetFloat)),

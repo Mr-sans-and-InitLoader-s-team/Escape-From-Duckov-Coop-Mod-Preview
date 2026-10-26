@@ -478,7 +478,7 @@ public static class CoopTool
 
             if (!string.IsNullOrEmpty(hostSceneId) && !string.IsNullOrEmpty(peerScene))
             {
-                if (peerScene == hostSceneId)
+                if (Spectator.AreSameMap(peerScene, hostSceneId))
                 {
                     var pid = NetService.Instance.GetPlayerId(peer);
                     if (!string.IsNullOrEmpty(pid)) list.Add(pid);

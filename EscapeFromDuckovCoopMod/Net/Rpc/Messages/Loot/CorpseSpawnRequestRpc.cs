@@ -4,6 +4,7 @@ namespace EscapeFromDuckovCoopMod;
 public struct CorpseSpawnRequestRpc : IRpcMessage
 {
     public string RecordId;
+    public string PlayerIdentity;
     public int SceneIndex;
     public Vector3 Position;
     public byte[] Data;
@@ -13,6 +14,7 @@ public struct CorpseSpawnRequestRpc : IRpcMessage
         writer.Put(SceneIndex);
         writer.PutVector3(Position);
         CorpsePayload.Write(writer, Data);
+        writer.Put(PlayerIdentity ?? string.Empty);
     }
     public void Deserialize(NetPacketReader reader)
     {
@@ -20,5 +22,6 @@ public struct CorpseSpawnRequestRpc : IRpcMessage
         SceneIndex = reader.GetInt();
         Position = reader.GetVector3();
         Data = CorpsePayload.Read(reader);
+        PlayerIdentity = reader.AvailableBytes > 0 ? reader.GetString() : string.Empty;
     }
 }

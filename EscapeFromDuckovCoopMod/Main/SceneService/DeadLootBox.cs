@@ -17,13 +17,14 @@
 using System;
 using System.Collections.Generic;
 using Duckov.Utilities;
+using Duckov.Scenes;
 using ItemStatsSystem;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace EscapeFromDuckovCoopMod;
 
-public class DeadLootBox : MonoBehaviour
+public partial class DeadLootBox : MonoBehaviour
 {
     public static DeadLootBox Instance;
 
@@ -59,7 +60,12 @@ public class DeadLootBox : MonoBehaviour
 
     public void SpawnDeadLootboxAt(int lootUid, Vector3 pos, Quaternion rot, bool useTombPrefab, string prefabName, string playerId = null)
     {
-        if (CoopSyncDatabase.Loot.TryGetByLootUid(lootUid, out var existing) && existing.Inventory) return;
+        if (CoopSyncDatabase.Loot.TryGetByLootUid(lootUid, out var existing) && existing.Inventory)
+        {
+            if (useTombPrefab && existing.Lootbox && existing.Lootbox.needInspect && Service.IsSelfId(playerId))
+                CorpseInspection.Initialize(existing.Lootbox, true, playerId);
+            return;
+        }
         try
         {
             var prefab = ResolveDeadLootPrefab(prefabName, useTombPrefab);
@@ -70,8 +76,11 @@ public class DeadLootBox : MonoBehaviour
             }
 
             var go = Instantiate(prefab, pos, rot);
+            MultiSceneCore.MoveToActiveWithScene(go, SceneManager.GetActiveScene().buildIndex);
             var box = go ? go.GetComponent<InteractableLootbox>() : null;
             if (!box) return;
+
+            AccessTools.Method(typeof(InteractableLootbox), "CreateLocalInventory").Invoke(box, null);
 
             var inv = box.Inventory;
             if (!inv)
@@ -79,6 +88,8 @@ public class DeadLootBox : MonoBehaviour
                 Debug.LogWarning("[Client DeadLootBox Spawn] Inventory is null!");
                 return;
             }
+
+            _clientSpawns[lootUid] = box;
 
             WorldLootPrime.PrimeIfClient(box);
             CorpseInspection.Initialize(box, useTombPrefab, playerId);
@@ -295,6 +306,7 @@ public class DeadLootBox : MonoBehaviour
         foreach (var pair in _serverSpawns.ToArray())
         {
             if (!pair.Key) { _serverSpawns.Remove(pair.Key); continue; }
+            if (!pair.Key.gameObject.activeSelf) continue;
             var message = pair.Value;
             message.Position = pair.Key.transform.position;
             message.Rotation = pair.Key.transform.rotation;

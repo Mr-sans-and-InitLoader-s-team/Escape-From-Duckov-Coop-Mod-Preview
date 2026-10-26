@@ -15,6 +15,7 @@
 // GNU Affero General Public License for more details.
 
 using Duckov.Buffs;
+using Duckov.Scenes;
 using Duckov.Utilities;
 using ItemStatsSystem;
 using Object = UnityEngine.Object;
@@ -628,6 +629,9 @@ public class COOPManager
                     continue;
 
                 }
+                if (MultiSceneCore.MainSceneID == SceneInfoCollection.BaseSceneID && !i.GetComponent<RemoteReplicaTag>() &&
+                    !i.GetComponent<RemoteAIReplicaTag>())
+                    continue;
                 GameObject.Destroy(i.gameObject);
             }
             catch

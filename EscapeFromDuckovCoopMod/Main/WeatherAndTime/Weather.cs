@@ -120,6 +120,8 @@ public class Weather
         DeadLootBox.Instance?.Server_ReplayToPeer(context.Sender);
         SendDoorSnapshot(context.Sender);
         LevelDataBoolNet.Server_SendCostTakerSnapshot(context.Sender);
+        LevelDataBoolSnapshot.Send(context.Sender);
+        PersonalStarterLoot.SendContext(context.Sender);
         SendDestructibleSnapshot(context.Sender);
         SendExplosiveBarrelSnapshot(context.Sender);
     }
@@ -455,6 +457,7 @@ public class Weather
         foreach (var entry in CoopSyncDatabase.Loot.Entries)
         {
             if (entry == null) continue;
+            if (entry.LootUid >= 0) continue;
             if (LootboxDetectUtil.IsPrivateInventory(entry.Inventory)) continue;
             var key = entry.PositionKey;
             if (key == 0) continue;

@@ -552,7 +552,7 @@ internal static class ClientLootSlotUnplugPatch
 {
     private static void Postfix(Slot __instance, Item __result)
     {
-        if (SceneLoader.IsSceneLoading) return;
+        if (SceneLoader.IsSceneLoading || __instance?.Master?.IsBeingDestroyed == true) return;
       //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var service = NetService.Instance;
         var lootNet = COOPManager.LootNet;

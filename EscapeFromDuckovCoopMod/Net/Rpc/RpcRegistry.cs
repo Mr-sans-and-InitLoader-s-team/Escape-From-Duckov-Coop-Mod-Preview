@@ -49,6 +49,7 @@ public static class RpcRegistry
         Register<SceneBeginLoadRpc>(RPCScene.HandleSceneBeginLoad);
         Register<SceneJoinRpc>(LateJoinScene.Handle);
         Register<SceneVoteCancelRpc>(RPCScene.HandleSceneVoteCancel);
+        Register<SpectatorForceEndRpc>(RPCScene.HandleSpectatorForceEnd);
         Register<EnvSnapshotRequestRpc>(RPCEnvironment.HandleSnapshotRequest);
         Register<EnvClockStateRpc>(RPCEnvironment.HandleClockState);
         Register<EnvWeatherStateRpc>(RPCEnvironment.HandleWeatherState);

@@ -23,7 +23,9 @@ public sealed class MountedRiderLock : MonoBehaviour
         enabled = false;
     }
 
-    private void LateUpdate()
+    private void LateUpdate() => SyncPose();
+
+    internal void SyncPose()
     {
         if (!enabled || !Rider || !Vehicle)
             return;

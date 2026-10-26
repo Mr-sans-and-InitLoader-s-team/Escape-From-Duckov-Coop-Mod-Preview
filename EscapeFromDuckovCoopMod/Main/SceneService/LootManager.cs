@@ -298,7 +298,8 @@ public static class LootboxDetectUtil
         slot = -1;
         master = null;
 
-        if (inv == null) return false;
+        // Item.OnDestroy detaches contents after the level manager has been destroyed.
+        if (inv == null || SceneLoader.IsSceneLoading) return false;
         if (IsPrivateInventory(inv)) return false;
 
         if (IsLootboxInventory(inv))

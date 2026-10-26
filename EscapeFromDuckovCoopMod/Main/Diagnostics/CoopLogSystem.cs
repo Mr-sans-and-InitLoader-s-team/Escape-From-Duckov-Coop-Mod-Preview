@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using UnityEngine;
 
 namespace EscapeFromDuckovCoopMod;
@@ -12,6 +13,7 @@ internal static class CoopLogSystem
     // available even when the release build suppresses ordinary verbose logs.
     internal static void WriteNetworkDiagnostic(string message)
     {
+        CoopSessionLog.Write("Network", message);
         var handler = _networkDiagnosticHandler ?? Debug.unityLogger.logHandler;
         handler?.LogFormat(LogType.Log, null, "{0}", message);
     }
@@ -22,6 +24,9 @@ internal static class CoopLogSystem
             return;
 
         _installed = true;
+        CoopSessionLog.Start(Path.Combine(Application.persistentDataPath, "CoopLogs"), BuildInfo.ModVersion);
+        CoopSceneLog.Install();
+        Application.quitting += () => CoopSessionLog.Write("Session", "Game exiting");
         _networkDiagnosticHandler = Debug.unityLogger?.logHandler;
 
         if (BuildInfo.RuntimeVerboseLoggingEnabled)
@@ -45,6 +50,8 @@ internal static class CoopLogSystem
 
         public void LogFormat(LogType logType, UnityEngine.Object context, string format, params object[] args)
         {
+            if (logType != LogType.Log)
+                CoopSessionLog.Write(logType.ToString(), args == null || args.Length == 0 ? format : string.Format(format, args));
             if (!ShouldWrite(logType))
                 return;
 
@@ -53,6 +60,7 @@ internal static class CoopLogSystem
 
         public void LogException(Exception exception, UnityEngine.Object context)
         {
+            CoopSessionLog.Write("Exception", exception.ToString());
             if (!BuildInfo.RuntimeCriticalLoggingEnabled)
                 return;
 

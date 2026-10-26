@@ -179,6 +179,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
     public void OnPeerConnected(NetPeer peer)
     {
+        CoopSessionLog.Write("Connection", $"Connected peer={peer.EndPoint} role={(IsServer ? "host" : "client")} shared={SharedHome.Enabled}");
         Debug.Log(CoopLocalization.Get("net.connectionSuccess", peer.EndPoint.ToString()));
         connectedPeer = peer;
 
@@ -226,6 +227,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
+        CoopSessionLog.Write("Connection", $"Disconnected peer={peer.EndPoint} reason={disconnectInfo.Reason}");
         var returnToMenu = SharedHome.Guest;
         var disconnectedNetwork = netManager;
         SharedHomeCompatibility.PeerDisconnected(peer);
@@ -424,6 +426,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
         _selfNetworkId = ComputeSelfNetworkId();
         networkStarted = true;
+        CoopSessionLog.Write("Connection", $"Started role={(IsServer ? "host" : "client")} transport={TransportMode} version={BuildInfo.ModVersion}");
         status = CoopLocalization.Get("net.networkStarted");
         hostList.Clear();
         hostSet.Clear();
@@ -491,6 +494,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
     public void StopNetwork(bool leaveSteamLobby = true)
     {
+        if (networkStarted) CoopSessionLog.Write("Connection", $"Stopping role={(IsServer ? "host" : "client")}");
         using var stopping = ConnectionRecovery.Stopping();
         var returnToMenu = SharedHome.Guest;
         var disconnectedNetwork = netManager;

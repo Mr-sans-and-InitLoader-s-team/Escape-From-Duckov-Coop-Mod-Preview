@@ -552,6 +552,7 @@ internal static class ClientLootSlotUnplugPatch
 {
     private static void Postfix(Slot __instance, Item __result)
     {
+        if (SceneLoader.IsSceneLoading) return;
       //  if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var service = NetService.Instance;
         var lootNet = COOPManager.LootNet;
@@ -634,6 +635,7 @@ internal static class PlayerWeaponSlotUnplugPatch
 {
     private static void Postfix(Slot __instance, Item __result)
     {
+        if (SceneLoader.IsSceneLoading) return;
        // if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return;
         var serverLoading = NetService.Instance.IsServer && SceneNet.Instance.IsServerLoadInProgress();
         if (serverLoading)

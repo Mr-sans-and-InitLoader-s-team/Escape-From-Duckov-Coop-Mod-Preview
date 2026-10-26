@@ -274,16 +274,35 @@ internal static class SharedHomeStorage
         if (!item || !CanTransfer) return;
         var data = new ES3File(false);
         data.Save("item", ItemStatsSystem.Data.ItemTreeData.FromItem(item));
+        var source = item.InInventory;
+        var sourcePosition = source ? source.GetIndex(item) : -1;
         item.Detach();
-        var character = SharedHomeLoadouts.Report();
-        item.DestroyTree();
-        SharedHome.Request("storageBufferPut", new { item = Convert.ToBase64String(data.LoadRawBytes()), character = Convert.ToBase64String(character), toBuffer, position });
+        var sent = false;
+        try
+        {
+            var character = SharedHomeLoadouts.Report();
+            sent = SharedHome.Request("storageBufferPut", new { item = Convert.ToBase64String(data.LoadRawBytes()), character = Convert.ToBase64String(character), toBuffer, position });
+            if (sent) item.DestroyTree();
+        }
+        finally
+        {
+            if (!sent && item)
+            {
+                SharedHome.Apply(() =>
+                {
+                    if (source && sourcePosition >= 0 && !source.GetItemAt(sourcePosition) && source.AddAt(item, sourcePosition)) return;
+                    if (!ItemUtilities.SendToPlayerCharacterInventory(item)) item.Drop(CharacterMainControl.Main, true);
+                });
+                CoopSessionLog.Write("Storage", "Deposit request unavailable; original item returned");
+            }
+        }
     }
     internal static async UniTaskVoid PutBuffer(JObject args, NetPeer peer)
     {
         var data = new ES3File(Convert.FromBase64String((string)args["item"]));
         var tree = data.Load<ItemStatsSystem.Data.ItemTreeData>("item");
         if (tree?.entries == null || tree.entries.Count == 0 || tree.entries.Count > 10000) return;
+        CoopSessionLog.Write("Storage", $"Deposit received peer={peer.EndPoint} type={tree.RootTypeID} count={tree.RootData.StackCount}");
         SharedHomeLoadouts.Receive(peer, 6, Convert.FromBase64String((string)args["character"]));
         var item = await ItemStatsSystem.Data.ItemTreeData.InstantiateAsync(tree);
         if (item)

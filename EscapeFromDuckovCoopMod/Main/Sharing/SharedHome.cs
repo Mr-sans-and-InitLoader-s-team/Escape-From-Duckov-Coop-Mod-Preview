@@ -161,13 +161,15 @@ public static class SharedHome
         try { action(); }
         finally { Applying = previous; }
     }
-    internal static void Request(string action, object arguments)
+    internal static bool Request(string action, object arguments)
     {
-        if (!Guest || Applying || string.IsNullOrEmpty(_session)) return;
-        if (action != "storageTaken" && (!SharedHomeLoadouts.Ready || SharedHomeCharacterCreation.Joining)) return;
+        if (!Guest || Applying || string.IsNullOrEmpty(_session) ||
+            NetService.Instance.connectedPeer?.ConnectionState != ConnectionState.Connected) return false;
+        if (action != "storageTaken" && (!SharedHomeLoadouts.Ready || SharedHomeCharacterCreation.Joining)) return false;
         var data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new { action, arguments }));
         var message = new SharedHomeRpc { Kind = 2, Session = _session, Revision = ++_requestSerial, Data = data };
         CoopTool.SendRpc(in message);
+        return true;
     }
     internal static void SendPrivate(byte kind, byte[] data, NetPeer peer = null)
     {

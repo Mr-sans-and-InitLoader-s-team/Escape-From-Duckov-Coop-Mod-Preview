@@ -146,6 +146,8 @@ echo %DUCKOV_GAME_DIRECTORY%
 - 问题复现步骤
 - 相关日志、截图或视频
 
+联机专用日志位于游戏存档目录下的 `CoopLogs` 文件夹。Windows 默认路径为 `%USERPROFILE%\AppData\LocalLow\TeamSoda\Duckov\CoopLogs`；`latest.log` 记录本次运行，`previous.log` 保留上一次运行。每次启动游戏轮换覆盖，只保留这两份日志。
+
 ## 💡 致谢
 
 特别感谢以下开发者和测试者对项目的支持：

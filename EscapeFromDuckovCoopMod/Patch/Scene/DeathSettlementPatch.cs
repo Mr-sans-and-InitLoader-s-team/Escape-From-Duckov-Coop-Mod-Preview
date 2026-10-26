@@ -29,3 +29,14 @@ internal static class Patch_ClosureView_ShowAndReturnTask_SpectatorGate
         return false;
     }
 }
+
+[HarmonyPatch(typeof(Duckov.UI.ClosureView), nameof(Duckov.UI.ClosureView.ShowAndReturnTask), typeof(float))]
+internal static class SpectatorTravelClosurePatch
+{
+    private static bool Prefix(ref UniTask __result)
+    {
+        if (!SpectatorTravel.Travelling) return true;
+        __result = UniTask.CompletedTask;
+        return false;
+    }
+}

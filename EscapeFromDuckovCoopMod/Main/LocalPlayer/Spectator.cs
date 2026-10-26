@@ -60,7 +60,7 @@ public class Spectator : MonoBehaviour
         BuildSpectateList(main);
         Debug.Log("观战: " + _spectateList.Count);
 
-        if (_spectateList.Count <= 0) return false; // 没人可观战 -> 让结算继续
+        if (_spectateList.Count <= 0 && !SpectatorTravel.TryGetSurvivor(out _)) return false;
 
         _lastDeathInfo = dmgInfo;
         _spectatorActive = true;
@@ -128,7 +128,8 @@ public class Spectator : MonoBehaviour
                 }
             }
 
-        Debug.Log($"[SPECTATE] 候选={cand}, 可观战保留={kept}, mySceneId={mySceneId} (canon={myK})");
+        if (!_spectatorActive)
+            Debug.Log($"[SPECTATE] 候选={cand}, 可观战保留={kept}, mySceneId={mySceneId} (canon={myK})");
     }
 
     //说实话这个方法没多大用   //说实话这个方法没多大用   //说实话这个方法没多大用   //说实话这个方法没多大用

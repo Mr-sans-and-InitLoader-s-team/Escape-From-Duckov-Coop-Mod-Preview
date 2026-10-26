@@ -38,7 +38,7 @@ public class HealthM : MonoBehaviour
 
     public static HealthM Instance;
 
-    private readonly Dictionary<string, (float max, float cur)> _srvPlayerSnapshots = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (float max, float cur)> _playerSnapshots = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, float> _srvNextBroadcast = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, float> _srvNextDamageRequestBySenderTarget = new(StringComparer.Ordinal);
 
@@ -61,6 +61,12 @@ public class HealthM : MonoBehaviour
     public void Init()
     {
         Instance = this;
+    }
+
+    internal bool IsKnownPlayerAlive(string playerId, GameObject remote)
+    {
+        if (_playerSnapshots.TryGetValue(playerId, out var snapshot)) return snapshot.cur > 0.0001f;
+        return remote && LocalPlayerManager.Instance.IsAlive(remote.GetComponent<CharacterMainControl>());
     }
 
     public void NotifyLocalHealthChanged(Health health, DamageInfo? damage)
@@ -177,6 +183,7 @@ public class HealthM : MonoBehaviour
         }
     
         w.Put(CorpseRecovery.GetLocalRecordId(main));
+        w.Put(SharedHomeLoadouts.LocalIdentity());
         CoopTool.SendReliable(w);
         Debug.Log($"Reporting Death message to server!");
     }
@@ -208,7 +215,7 @@ public class HealthM : MonoBehaviour
     {
         if (!IsServer || string.IsNullOrEmpty(playerId) || max <= 0f) return;
 
-        _srvPlayerSnapshots[playerId] = (max, cur);
+        _playerSnapshots[playerId] = (max, cur);
         _srvNextBroadcast[playerId] = Time.time + SERVER_SEND_INTERVAL;
 
         var rpc = new PlayerHealthBroadcastRpc
@@ -242,7 +249,7 @@ public class HealthM : MonoBehaviour
             ApplyHealthAndEnsureBar(go, max, cur);
         else
         {
-            _srvPlayerSnapshots[playerId] = (max, cur);
+            _playerSnapshots[playerId] = (max, cur);
 
             Server_TrySpawnMissingRemote(sender, playerId, max, cur);
         }
@@ -264,7 +271,7 @@ public class HealthM : MonoBehaviour
         HealthSyncDiagnostics.Reset();
         _localDeathReport.Reset();
         _deathReports.Clear();
-        _srvPlayerSnapshots.Clear();
+        _playerSnapshots.Clear();
         _srvNextBroadcast.Clear();
         _srvNextDamageRequestBySenderTarget.Clear();
         _cliLastSentHp = default;
@@ -321,6 +328,7 @@ public class HealthM : MonoBehaviour
 
         var max = Mathf.Max(1f, message.MaxHealth);
         var cur = Mathf.Clamp(message.CurrentHealth, 0f, max);
+        _playerSnapshots[message.PlayerId] = (max, cur);
 
         if (clientRemoteCharacters != null && clientRemoteCharacters.TryGetValue(message.PlayerId, out var go) && go)
             ApplyHealthAndEnsureBar(go, max, cur);
@@ -381,7 +389,7 @@ public class HealthM : MonoBehaviour
         var service = Service;
         var playerId = service?.GetPlayerId(peer);
         if (string.IsNullOrEmpty(playerId)) return;
-        if (!_srvPlayerSnapshots.TryGetValue(playerId, out var snap)) return;
+        if (!_playerSnapshots.TryGetValue(playerId, out var snap)) return;
         var health = instance.GetComponent<CharacterMainControl>()?.Health;
         var state = RemoteHealthState.Get(health);
         if (state?.HasSnapshot == true && state.MaxHealth == snap.max && state.CurrentHealth == snap.cur) return;
@@ -403,7 +411,7 @@ public class HealthM : MonoBehaviour
     {
         if (!IsServer || peer == null) return;
 
-        foreach (var kv in _srvPlayerSnapshots)
+        foreach (var kv in _playerSnapshots)
         {
             var playerId = kv.Key;
             if (string.IsNullOrEmpty(playerId))

@@ -334,46 +334,14 @@ public class ModBehaviourF : MonoBehaviour
             HealthTool.Client_HookSelfHealth();
         }
 
-        if (Spectator.Instance._spectatorActive)
+        if (Spectator.Instance._spectatorActive && !SpectatorTravel.WaitForTarget())
         {
             ClosureView.Instance.gameObject.SetActive(false);
             var previousTarget = GameCamera.Instance ? GameCamera.Instance.target : null;
-            // 动态剔除“已死/被销毁/不在本地图”的目标
-            Spectator.Instance._spectateList = Spectator.Instance._spectateList.Where(c =>
-            {
-                if (!LocalPlayerManager.Instance.IsAlive(c)) return false;
-
-                var mySceneId = localPlayerStatus != null ? localPlayerStatus.SceneId : null;
-                if (string.IsNullOrEmpty(mySceneId))
-                    LocalPlayerManager.Instance.ComputeIsInGame(out mySceneId);
-
-                // 反查该 CMC 对应的 peer 的 SceneId
-                string peerScene = null;
-                if (IsServer)
-                {
-                    foreach (var kv in remoteCharacters)
-                        if (kv.Value != null && kv.Value.GetComponent<CharacterMainControl>() == c)
-                        {
-                            if (!SceneM._srvPeerScene.TryGetValue(kv.Key, out peerScene) && playerStatuses.TryGetValue(kv.Key, out var st))
-                                peerScene = st?.SceneId;
-                            break;
-                        }
-                }
-                else
-                {
-                    foreach (var kv in clientRemoteCharacters)
-                        if (kv.Value != null && kv.Value.GetComponent<CharacterMainControl>() == c)
-                        {
-                            if (clientPlayerStatuses.TryGetValue(kv.Key, out var st)) peerScene = st?.SceneId;
-                            break;
-                        }
-                }
-
-                return Spectator.AreSameMap(mySceneId, peerScene);
-            }).ToList();
+            Spectator.Instance.BuildSpectateList(CharacterMainControl.Main);
 
             // 全员阵亡 → 退出观战并弹出结算
-            if (Spectator.Instance._spectateList.Count == 0 || SceneM.AllPlayersDead())
+            if (!SpectatorTravel.TryGetSurvivor(out _) && (Spectator.Instance._spectateList.Count == 0 || SceneM.AllPlayersDead()))
             {
                 Spectator.Instance.EndSpectatorAndShowClosure();
 
@@ -445,6 +413,7 @@ public class ModBehaviourF : MonoBehaviour
 
     private void LevelManager_OnAfterLevelInitialized()
     {
+        SpectatorTravel.RestoreDeath();
         LocalPlayerManager.Instance?.RequestFullLoadoutSync();
         ColdBuffSync.PublishAllLocal();
         if (IsServer && networkStarted)
@@ -489,6 +458,7 @@ public class ModBehaviourF : MonoBehaviour
         COOPManager.LootNet?.Reset();
         COOPManager.ExitSync?.Reset();
         COOPManager.GrenadeM?.Reset();
+        DeadLootBox.Instance?.RebindPersistentLoot();
     }
 
     //arg!!!!!!!!!!!

@@ -92,7 +92,8 @@ public static class CoopAudioSync
         "killmarker",
         "hitmarker",
         CoopCombatAudio.FlybyEvent, // Each listener already evaluates native projectile flybys locally.
-        "Kazoo" // 持续音由 KazooSync 管理开始/参数/停止，禁止通过一次性音效重复播放。
+        "Kazoo", // 持续音由 KazooSync 管理开始/参数/停止，禁止通过一次性音效重复播放。
+        "Char/Footstep/" // FootstepSync replays the native event on the owning character.
     };
 
     private static bool ShouldBlockUi(string eventName, bool hasEmitter)
@@ -148,7 +149,7 @@ public static class CoopAudioSync
             CoopTool.SendRpc(in rpc);
     }
 
-    private static IDisposable BeginSuppress()
+    internal static IDisposable BeginSuppress()
     {
         Interlocked.Increment(ref _suppressCount);
         return new SuppressScope();
@@ -179,6 +180,7 @@ public static class CoopAudioSync
     internal static void NotifyLocalPost(string eventName, GameObject emitter, string switchName, string soundKey)
     {
         if (IsSuppressed) return;
+        if (emitter && emitter.GetComponentInParent<NetworkEffectAudio>(true)) return;
         if (string.IsNullOrEmpty(eventName)) return;
         if (!ShouldSend) return;
         var hasEmitter = emitter != null;

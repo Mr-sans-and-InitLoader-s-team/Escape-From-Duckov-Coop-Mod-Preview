@@ -324,6 +324,14 @@ public sealed partial class AISyncService
         if (!IsServer || !controller) return;
         if (CheckAndHandleSyncBlock()) return;
 
+        if (CoopSyncDatabase.AI.TryGet(controller, out var registered))
+        {
+            PopulateEntryMetadata(registered, controller);
+            AttachTracker(controller, registered);
+            RefreshEntryPose(registered);
+            return;
+        }
+
         var entry = CoopSyncDatabase.AI.RegisterController(controller);
         if (entry == null) return;
 
@@ -2791,7 +2799,6 @@ public sealed partial class AISyncService
             var modelRoot = cmc.characterModel;
             if (modelRoot != null && modelRoot.name.Contains("0_CharacterModel_Custom_Enemy_Invisable"))
             {
-                modelRoot.gameObject.SetActive(false);
                 entry.ShowHealthBar = false;
             }
             

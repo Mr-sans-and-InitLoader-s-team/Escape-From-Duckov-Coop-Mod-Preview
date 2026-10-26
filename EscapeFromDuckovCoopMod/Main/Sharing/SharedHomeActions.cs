@@ -17,14 +17,14 @@ internal static class SharedHomeActions
         {
             case "storageTake": SharedHomeStorage.Take(args, sender); break;
             case "storageTaken": SharedHomeStorage.FinishTake(args, sender); break;
-            case "storageEdit": SharedHomeStorageOperations.Execute(args, sender); break;
+            case "storageEdit": SharedHomeStorageOperations.Execute(args, sender).Forget(); break;
             case "storageSort": PlayerStorage.Inventory?.Sort(); break;
             case "storageBufferTake": SharedHomeStorage.TakeBuffer((int)args["index"], (string)args["expected"]).Forget(); break;
             case "storageBufferPut": SharedHomeStorage.PutBuffer(args, sender).Forget(); break;
             case "worldFlag": SharedHomeWorld.SetFlag((string)args["key"], (bool)args["value"]); break;
             case "count": SavesCounter.AddCount((string)args["key"]); break;
             case "craft": SharedHomeCommerce.Craft((string)args["id"]).Forget(); break;
-            case "shopBuy": SharedHomeCommerce.Buy((string)args["merchant"], (int)args["type"], (int)args["amount"]).Forget(); break;
+            case "shopBuy": SharedHomeShopPurchase.Buy((string)args["token"], (string)args["merchant"], (int)args["type"], (int)args["amount"], sender).Forget(); break;
             case "unlock": SharedHomeUnlocks.Execute(args); break;
             case "xp":
                 var amount = (int)args["amount"];
@@ -76,7 +76,9 @@ internal static class SharedHomeActions
                 AccessTools.Method(typeof(Duckov.Quests.Task), "ReportStatusChanged").Invoke(task, null);
                 break;
             case "taskInteract":
-                FindQuest(args)?.Tasks.FirstOrDefault(t => t.ID == (int)args["task"])?.Interact();
+                var interaction = FindQuest(args)?.Tasks.FirstOrDefault(t => t.ID == (int)args["task"]);
+                if (interaction is Duckov.Quests.Tasks.SubmitItems submit) SharedHomeQuestItems.SubmitWarehouse(submit);
+                else interaction?.Interact();
                 break;
             case "build":
                 var area = (string)args["area"];

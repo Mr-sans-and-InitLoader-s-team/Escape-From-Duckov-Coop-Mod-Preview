@@ -495,6 +495,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
         var returnToMenu = SharedHome.Guest;
         var disconnectedNetwork = netManager;
         LateJoinScene.Reset();
+        SpectatorTravel.Reset();
         LocalAppearanceTravel.Reset();
         SharedHome.Reset();
         CorpseRecovery.StopNetwork();

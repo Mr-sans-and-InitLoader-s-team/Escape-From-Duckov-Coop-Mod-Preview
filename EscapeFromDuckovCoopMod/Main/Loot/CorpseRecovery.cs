@@ -22,6 +22,7 @@ internal static partial class CorpseRecovery
     {
         public NetPeer Owner;
         public string RecordId;
+        public string PlayerIdentity;
         public byte[] LastData;
     }
 
@@ -79,11 +80,11 @@ internal static partial class CorpseRecovery
         Debug.Log($"[CORPSE] Saved remainder record={rpc.RecordId} items={data.entries.Count} revision={rpc.Revision}");
     }
 
-    internal static void RegisterServerBody(InteractableLootbox box, NetPeer owner, string recordId)
+    internal static void RegisterServerBody(InteractableLootbox box, NetPeer owner, string recordId, string identity = null)
     {
         if (!box || !box.Inventory || string.IsNullOrEmpty(recordId)) return;
         foreach (var inv in ServerBodies.Keys.Where(inv => !inv).ToArray()) ServerBodies.Remove(inv);
-        ServerBodies[box.Inventory] = new Body { Owner = owner, RecordId = recordId };
+        ServerBodies[box.Inventory] = new Body { Owner = owner, RecordId = recordId, PlayerIdentity = identity };
         if (owner == null && FindRecord(recordId) is { } info) MarkSpawned(info);
         COOPManager.LootNet.Server_EnsureInventoryHook(box.Inventory);
         Capture(box.Inventory);
@@ -127,7 +128,9 @@ internal static partial class CorpseRecovery
     private static void Capture(Inventory inventory)
     {
         if (!ServerBodies.TryGetValue(inventory, out var body)) return;
-        var bytes = ES3.Serialize(InventoryData.FromInventory(inventory));
+        var data = InventoryData.FromInventory(inventory);
+        UpdateVisibility(inventory, data.entries.Count > 0);
+        var bytes = ES3.Serialize(data);
         if (body.LastData != null && body.LastData.SequenceEqual(bytes)) return;
         body.LastData = bytes;
         var rpc = new CorpseInventoryRpc { RecordId = body.RecordId, Revision = ++_revision, Data = bytes };
@@ -139,7 +142,6 @@ internal static partial class CorpseRecovery
     {
         Flush();
         foreach (var inv in ServerBodies.Keys.Where(inv => !inv).ToArray()) ServerBodies.Remove(inv);
-        PruneReported();
     }
 
     internal static void StopNetwork()
@@ -149,7 +151,6 @@ internal static partial class CorpseRecovery
         _flushScheduled = false;
         Pending.Clear();
         ServerBodies.Clear();
-        Reported.Clear();
         PendingSpawns.Clear();
         Received.Clear();
         PendingReports.Clear();

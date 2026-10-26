@@ -48,6 +48,8 @@ internal static class SharedHomeLoadouts
         data.Save("character", ItemTreeData.FromItem(item));
         data.Save("face", LevelManager.Instance.CustomFaceManager.LoadMainCharacterSetting());
         data.Save("created", _ready);
+        SharedHomeEndowments.Capture(data);
+        SharedHomeSafeInventory.Capture(data);
         if (ES3File.cachedFiles.TryGetValue(SavesSystem.CurrentFilePath, out var cache))
             foreach (var key in DeathKeys)
                 if (cache.KeyExists(key)) data.Save(key, cache.Load(key));
@@ -97,7 +99,7 @@ internal static class SharedHomeLoadouts
             }
             ReloadDeaths();
             RestoreItem(incoming.Load<ItemTreeData>("character"), character.CharacterItem, _generation, false,
-                incoming.Load<bool>("createCharacter")).Forget();
+                incoming.Load<bool>("createCharacter"), incoming).Forget();
         }
         if (_watched != character.CharacterItem)
         {
@@ -109,7 +111,7 @@ internal static class SharedHomeLoadouts
     }
     internal static void Flush()
     {
-        if (!SharedHome.Guest || !_ready || Restoring || !CharacterMainControl.Main?.CharacterItem) return;
+        if (!SharedHome.Guest || !_ready || Restoring || !SharedHomeSafeInventory.Ready || !CharacterMainControl.Main?.CharacterItem) return;
         var bytes = Serialize(CharacterMainControl.Main.CharacterItem);
         _nextReport = Time.unscaledTime + (_changed ? .25f : 1f);
         _changed = false;
@@ -146,7 +148,15 @@ internal static class SharedHomeLoadouts
                 if (LastReports.TryGetValue(sender, out var previous) && previous.SequenceEqual(bytes)) return;
                 var firstReport = !LastReports.ContainsKey(sender);
                 LastReports[sender] = bytes;
-                SavesSystem.Save(ContextKey(key, context), bytes);
+                var saveKey = ContextKey(key, context);
+                if (!report.KeyExists(SharedHomeSafeInventory.ProfileKey))
+                {
+                    var saved = SavesSystem.Load<byte[]>(saveKey);
+                    var previousProfile = saved == null ? null : new ES3File(saved);
+                    if (previousProfile?.KeyExists(SharedHomeSafeInventory.ProfileKey) == true)
+                        report.Save(SharedHomeSafeInventory.ProfileKey, previousProfile.Load<InventoryData>(SharedHomeSafeInventory.ProfileKey));
+                }
+                SavesSystem.Save(saveKey, report.LoadRawBytes());
                 if (report.KeyExists("face")) SavesSystem.Save(key + "/Face", report.Load<CustomFaceSettingData>("face"));
                 var deaths = new ES3File(false);
                 foreach (var deathKey in DeathKeys)
@@ -173,7 +183,11 @@ internal static class SharedHomeLoadouts
         var create = !SavesSystem.KeyExisits(key) && !SavesSystem.Load<bool>(key + "/Created");
         var data = SavesSystem.Load<byte[]>(ContextKey(key, context));
         var reply = data == null ? new ES3File(false) : new ES3File(data);
-        if (data == null) reply.Save("character", await SharedHomeCharacterCreation.NewEquipment());
+        if (data == null)
+        {
+            reply.Save("character", await SharedHomeCharacterCreation.NewEquipment());
+            reply.Save(SharedHomeEndowments.Key, (Duckov.Endowment.EndowmentIndex)0);
+        }
         if (!SharedHome.Active || sender.ConnectionState != ConnectionState.Connected ||
             !Players.TryGetValue(sender, out var current) || current != key) return;
         if (create)
@@ -195,7 +209,7 @@ internal static class SharedHomeLoadouts
         SharedHome.SendPrivate(5, reply.LoadRawBytes(), sender);
     }
     private static bool ValidContext(string context) => context != null && context.Length <= 128 && context.StartsWith("MainCharacterItemData");
-    private static async UniTaskVoid RestoreItem(ItemTreeData data, Item target, int generation, bool personal, bool create = false)
+    private static async UniTaskVoid RestoreItem(ItemTreeData data, Item target, int generation, bool personal, bool create = false, ES3File profile = null)
     {
         try
         {
@@ -203,6 +217,9 @@ internal static class SharedHomeLoadouts
             if (generation != _generation || !target) return;
             if (create) await SharedHomeCharacterCreation.Create(() => generation == _generation && SharedHome.Guest);
             if (generation != _generation || !create && !target) return;
+            if (profile != null) SharedHomeEndowments.Restore(profile);
+            if (profile != null) await SharedHomeSafeInventory.Restore(profile, () => generation == _generation && SharedHome.Guest);
+            if (generation != _generation) return;
             if (!personal) { _ready = true; _changed = true; Flush(); }
         }
         catch (Exception e) when (create && generation == _generation)

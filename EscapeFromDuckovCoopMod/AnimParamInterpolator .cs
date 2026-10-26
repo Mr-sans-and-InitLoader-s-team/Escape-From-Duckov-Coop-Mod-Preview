@@ -36,6 +36,9 @@ public class AnimParamInterpolator : MonoBehaviour
     private readonly List<AnimSample> _buf = new(64);
 
     private Animator anim;
+    private RuntimeAnimatorController _parameterController;
+    private readonly Dictionary<int, AnimatorControllerParameterType> _parameterTypes = new();
+    private bool _parametersCached;
 
     private float curSpeed, curDirX, curDirY;
     private int hMoveSpeed, hDirX, hDirY, hHand, hGunReady, hDashing, hAttack, hVehicleType;
@@ -95,6 +98,7 @@ public class AnimParamInterpolator : MonoBehaviour
             return;
         }
 
+        CacheParameters();
         var renderT = Time.unscaledTimeAsDouble - interpolationBackTime;
         var i = 0;
         while (i < _buf.Count && _buf[i].t < renderT) i++;
@@ -234,37 +238,36 @@ public class AnimParamInterpolator : MonoBehaviour
         if (_buf.Count > 64) _buf.RemoveAt(0);
     }
 
+    private void CacheParameters()
+    {
+        var controller = anim.runtimeAnimatorController;
+        if (controller is AnimatorOverrideController overrides) controller = overrides.runtimeAnimatorController;
+        if (_parametersCached && _parameterController == controller) return;
+        _parameterController = controller;
+        _parametersCached = true;
+        _parameterTypes.Clear();
+        foreach (var parameter in anim.parameters) _parameterTypes[parameter.nameHash] = parameter.type;
+    }
+
     private void TrySetBool(int hash, bool v)
     {
         if (!anim) return;
-        foreach (var p in anim.parameters)
-            if (p.nameHash == hash && p.type == AnimatorControllerParameterType.Bool)
-            {
-                anim.SetBool(hash, v);
-                return;
-            }
+        if (_parameterTypes.TryGetValue(hash, out var type) && type == AnimatorControllerParameterType.Bool)
+            anim.SetBool(hash, v);
     }
 
     private void TrySetInt(int hash, int v)
     {
         if (!anim) return;
-        foreach (var p in anim.parameters)
-            if (p.nameHash == hash && p.type == AnimatorControllerParameterType.Int)
-            {
-                anim.SetInteger(hash, v);
-                return;
-            }
+        if (_parameterTypes.TryGetValue(hash, out var type) && type == AnimatorControllerParameterType.Int)
+            anim.SetInteger(hash, v);
     }
 
     private void TrySetFloat(int hash, float v)
     {
         if (!anim) return;
-        foreach (var p in anim.parameters)
-            if (p.nameHash == hash && p.type == AnimatorControllerParameterType.Float)
-            {
-                anim.SetFloat(hash, v);
-                return;
-            }
+        if (_parameterTypes.TryGetValue(hash, out var type) && type == AnimatorControllerParameterType.Float)
+            anim.SetFloat(hash, v);
     }
 }
 

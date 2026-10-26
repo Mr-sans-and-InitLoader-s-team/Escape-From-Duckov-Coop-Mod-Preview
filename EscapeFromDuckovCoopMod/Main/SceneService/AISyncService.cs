@@ -3979,6 +3979,9 @@ public sealed partial class AISyncService
         private readonly bool _isVehicle;
         private bool _deathNotified;
         private bool _suppressHealthReport;
+        private bool _hasAppliedHealth;
+        private (float Max, float Current, float BodyArmor, float HeadArmor) _lastAppliedHealth;
+        private bool _lastHealthHidden;
         private int _lastEntryApplySignature = int.MinValue;
         private int _lastActiveWeaponTypeId;
         private int _pendingActiveWeaponTypeId;
@@ -4376,10 +4379,21 @@ public sealed partial class AISyncService
         public void ApplyHealth(float max, float current, float bodyArmor, float headArmor)
         {
             if (!_health) return;
+            max = max > 0f ? max : Mathf.Max(1f, current);
+            var values = (max, current, bodyArmor, headArmor);
+            var hidden = _health.Hidden;
+            // Pose updates also carry the last health snapshot. Avoid restarting
+            // health-bar retries and UI callbacks when only the pose changed.
+            if (_hasAppliedHealth && _lastAppliedHealth.Equals(values) && _lastHealthHidden == hidden &&
+                _health.CurrentHealth == Mathf.Clamp(current, 0f, max) &&
+                _health.BodyArmor == bodyArmor && _health.HeadArmor == headArmor) return;
             _suppressHealthReport = true;
             try
             {
-                HealthM.Instance.ForceSetHealth(_health, max > 0f ? max : Mathf.Max(1f, current), current, true, bodyArmor, headArmor);
+                HealthM.Instance.ForceSetHealth(_health, max, current, true, bodyArmor, headArmor);
+                _lastAppliedHealth = values;
+                _lastHealthHidden = hidden;
+                _hasAppliedHealth = true;
             }
             finally
             {

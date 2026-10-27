@@ -24,7 +24,10 @@ internal static class SharedHomePerks
             var begin = (long)AccessTools.Field(type, "unlockingBeginTime").GetValue(entry);
             var beginField = AccessTools.Field(typeof(Perk), "unlockingBeginTimeRaw");
             var changed = perk.Unlocked != unlocked || perk.Unlocking != unlocking || (long)beginField.GetValue(perk) != begin;
-            if (perk.Unlocked != unlocked)
+            var unlockChanged = perk.Unlocked != unlocked;
+            AccessTools.Field(typeof(Perk), "unlocking").SetValue(perk, unlocking);
+            beginField.SetValue(perk, begin);
+            if (unlockChanged || changed && !unlocked)
             {
                 if (!unlocked && perk.EnabledInCurrentLevel && LevelBuffType != null)
                     foreach (var effect in perk.GetComponents(LevelBuffType))
@@ -32,8 +35,6 @@ internal static class SharedHomePerks
                             CharacterMainControl.Main?.RemoveBuff(prefab.ID, true);
                 AccessTools.PropertySetter(typeof(Perk), nameof(Perk.Unlocked)).Invoke(perk, new object[] { unlocked });
             }
-            AccessTools.Field(typeof(Perk), "unlocking").SetValue(perk, unlocking);
-            beginField.SetValue(perk, begin);
             if (changed) AccessTools.Method(typeof(PerkTree), "NotifyChildStateChanged").Invoke(tree, new object[] { perk });
         }
     }

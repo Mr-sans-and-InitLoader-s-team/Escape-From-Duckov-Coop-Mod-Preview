@@ -1443,6 +1443,10 @@
     {
       "key": "ui.coopMode.eyebrow",
       "value": "逃离鸭科夫  /  合作模式"
+    },
+    {
+      "key": "ui.sharedHome.consoleHostOnly",
+      "value": "共享模式下由主机安装游戏机设备，所有玩家均可游玩已安装的游戏。"
     }
   ]
 }

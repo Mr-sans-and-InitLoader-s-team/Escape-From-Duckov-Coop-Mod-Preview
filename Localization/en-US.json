@@ -1443,6 +1443,10 @@
     {
       "key": "ui.coopMode.eyebrow",
       "value": "ESCAPE FROM DUCKOV  /  COOPERATIVE"
+    },
+    {
+      "key": "ui.sharedHome.consoleHostOnly",
+      "value": "In shared mode, the host installs console equipment. All players can play the installed games."
     }
   ]
 }

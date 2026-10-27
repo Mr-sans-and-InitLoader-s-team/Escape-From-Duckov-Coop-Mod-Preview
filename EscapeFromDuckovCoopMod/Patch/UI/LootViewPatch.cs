@@ -22,6 +22,11 @@ namespace EscapeFromDuckovCoopMod.Patch.UI;
 [HarmonyPatch(typeof(Duckov.UI.LootView), "OnStartLoot")]
 internal static class LootViewPatch
 {
+    private static void Prefix(InteractableLootbox lootbox)
+    {
+        if (lootbox) COOPManager.LootNet?.Client_PrepareLootOpen(lootbox.Inventory);
+    }
+
     private static void Postfix(InteractableLootbox lootbox)
     {
         var service = NetService.Instance;

@@ -111,7 +111,7 @@ internal static class SharedHomeLoadouts
     }
     internal static void Flush()
     {
-        if (!SharedHome.Guest || !_ready || Restoring || !SharedHomeSafeInventory.Ready || !CharacterMainControl.Main?.CharacterItem) return;
+        if (!SharedHome.Guest || !_ready || Restoring || SharedHomeAtm.Busy || !SharedHomeSafeInventory.Ready || !CharacterMainControl.Main?.CharacterItem) return;
         var bytes = Serialize(CharacterMainControl.Main.CharacterItem);
         _nextReport = Time.unscaledTime + (_changed ? .25f : 1f);
         _changed = false;

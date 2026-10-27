@@ -21,6 +21,7 @@ public struct SceneBeginLoadRpc : IRpcMessage
     public Quaternion HostSpawnRotation;
     public string TeleporterToken;
     public int BeaconIndex;
+    public bool SyncSpawnEntry;
 
     public void Serialize(NetDataWriter writer)
     {
@@ -45,6 +46,7 @@ public struct SceneBeginLoadRpc : IRpcMessage
         }
         writer.Put(TeleporterToken ?? string.Empty);
         writer.Put(BeaconIndex);
+        writer.Put(SyncSpawnEntry);
     }
 
     public void Deserialize(NetPacketReader reader)
@@ -73,5 +75,6 @@ public struct SceneBeginLoadRpc : IRpcMessage
         }
         TeleporterToken = reader.AvailableBytes > 0 ? reader.GetString() : string.Empty;
         BeaconIndex = reader.AvailableBytes >= 4 ? reader.GetInt() : -1;
+        SyncSpawnEntry = reader.AvailableBytes > 0 && reader.GetBool();
     }
 }

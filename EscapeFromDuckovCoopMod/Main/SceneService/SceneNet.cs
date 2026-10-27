@@ -167,7 +167,8 @@ public class SceneNet : MonoBehaviour
             UseLocation = sceneUseLocation,
             LocationName = sceneLocationName ?? string.Empty,
             TeleporterToken = _teleporterToken,
-            BeaconIndex = _teleporterBeaconIndex
+            BeaconIndex = _teleporterBeaconIndex,
+            SyncSpawnEntry = sceneLocationName == "OnPointerClick"
         };
 
         if (sceneLocationName == "OnPointerClick" && CoopAISettings.ActiveGeneral.TeleporterSpawnTogether)
@@ -184,6 +185,7 @@ public class SceneNet : MonoBehaviour
         }
 
         if (!string.IsNullOrEmpty(_teleporterToken) && !TeleporterTravel.AcceptCommit(_teleporterToken)) return;
+        TeleporterSpawnEntry.Begin(message);
         if (dead && !returningFromDeath) SpectatorTravel.Begin();
         if (returningFromDeath)
         {
@@ -410,6 +412,7 @@ public class SceneNet : MonoBehaviour
     public void Client_OnBeginSceneLoad(SceneBeginLoadRpc message)
     {
         if (message.LocationName == "OnPointerClick" && !TeleporterTravel.AcceptCommit(message.TeleporterToken)) return;
+        TeleporterSpawnEntry.Begin(message);
         _teleporterBeaconIndex = message.BeaconIndex;
         sceneTargetId = message.SceneId ?? sceneTargetId ?? string.Empty;
         sceneCurtainGuid = string.IsNullOrEmpty(message.CurtainGuid) ? null : message.CurtainGuid;

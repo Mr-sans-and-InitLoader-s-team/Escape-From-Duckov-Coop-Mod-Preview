@@ -47,6 +47,7 @@ public static class RpcRegistry
         Register<SceneVoteRequestRpc>(RPCScene.HandleSceneVoteRequest);
         Register<SceneReadySetRpc>(RPCScene.HandleSceneReadySet);
         Register<SceneBeginLoadRpc>(RPCScene.HandleSceneBeginLoad);
+        Register<SceneSpawnEntryRpc>(TeleporterSpawnEntry.Handle);
         Register<SceneJoinRpc>(LateJoinScene.Handle);
         Register<SceneVoteCancelRpc>(RPCScene.HandleSceneVoteCancel);
         Register<SpectatorForceEndRpc>(RPCScene.HandleSpectatorForceEnd);

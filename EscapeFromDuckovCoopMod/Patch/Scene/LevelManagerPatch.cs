@@ -56,6 +56,7 @@ internal static class Patch_Level_StartInit_Gate
         try
         {
             if (!self || !self.gameObject.scene.isLoaded) return;
+            if (!await TeleporterSpawnEntry.Wait(sceneId)) return;
             var m = AccessTools.Method(typeof(LevelManager), "InitLevel", new[] { typeof(SceneLoadingContext) });
             if (m == null) throw new MissingMethodException(typeof(LevelManager).FullName, "InitLevel");
             CoopLogSystem.WriteNetworkDiagnostic($"[SCENE] Gate finished: initializing '{sceneId}'");

@@ -210,6 +210,6 @@ internal static class SharedHomeSave
         // Warehouse replicas are updated by the existing authoritative inventory protocol.
         if (changed == null && !SharedHome.Guest) Load(PlayerStorage.Instance);
         if (changed == null && !SharedHome.Guest) SharedHomeLoadouts.ReloadDeaths();
-        if (changed == null && !SharedHome.Guest && LevelManager.Instance) LevelManager.Instance.RefreshMainCharacterFace();
+        if (changed == null && !SharedHome.Guest && LevelManager.Instance?.MainCharacter) LevelManager.Instance.RefreshMainCharacterFace();
     }
 }

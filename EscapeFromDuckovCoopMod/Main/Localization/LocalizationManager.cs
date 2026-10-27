@@ -167,6 +167,7 @@ namespace EscapeFromDuckovCoopMod
             currentTranslations.Clear();
             currentTranslations["ui.window.title"] = "Co-op Mod Control Panel";
             currentTranslations["ui.sharedHome.displayHostOnly"] = "In shared mode, the host edits display contents and guests see the synchronized display. All players can use the common warehouse.";
+            currentTranslations["ui.sharedHome.consoleHostOnly"] = "In shared mode, the host installs console equipment. All players can play the installed games.";
             currentTranslations["net.sharedHome.entryFailed"] = "Could not load the shared room. Disconnected and restored your personal save. Please check the log.";
             currentTranslations["net.sharedHome.title"] = "Shared mode: connection failed";
             currentTranslations["net.sharedHome.close"] = "Close";

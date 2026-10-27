@@ -1443,6 +1443,10 @@
     {
       "key": "ui.coopMode.eyebrow",
       "value": "ESCAPE FROM DUCKOV  /  協力プレイ"
+    },
+    {
+      "key": "ui.sharedHome.consoleHostOnly",
+      "value": "共有モードではホストがゲーム機の機器を取り付けます。インストール済みのゲームは全員が遊べます。"
     }
   ]
 }

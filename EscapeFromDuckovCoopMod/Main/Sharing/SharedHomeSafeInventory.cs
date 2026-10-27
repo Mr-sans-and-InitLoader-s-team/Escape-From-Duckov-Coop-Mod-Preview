@@ -66,6 +66,7 @@ internal static class SharedHomeSafeInventory
                 if (data.lockedIndexes != null) inventory.lockedIndexes.AddRange(data.lockedIndexes);
                 attached = true;
                 inventory.Save("Inventory_Safe");
+                CoopSessionLog.Write("SharedHome", $"Safe restored: capacity={inventory.Capacity}, items={string.Join(",", incoming.Select(e => $"{e.Position}:{e.Item.TypeID}"))}");
             }
             finally { inventory.Loading = false; }
         }

@@ -44,6 +44,15 @@ namespace EscapeFromDuckovCoopMod;
     internal bool Client_WaitingForLootState(Inventory inv) => !IsServer && networkStarted && inv &&
         !LootboxDetectUtil.IsPrivateInventory(inv) && !_cliInitializedLoot.Contains(inv) && LootSearchWorldGate.IsWorldLootByInventory(inv);
 
+    internal void Client_PrepareLootOpen(Inventory inv)
+    {
+        if (!Client_WaitingForLootState(inv)) return;
+        var applying = _applyingLootState;
+        _applyingLootState = true;
+        try { inv.DestroyAllContent(); }
+        finally { _applyingLootState = applying; }
+    }
+
     private sealed class InventoryRefEq : IEqualityComparer<Inventory>
     {
         public bool Equals(Inventory x, Inventory y) => ReferenceEquals(x, y);

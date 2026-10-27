@@ -15,6 +15,7 @@ internal static class SharedHomeActions
         if (args == null || !SharedHome.Active || !NetService.Instance.IsServer) return;
         switch (action)
         {
+            case "atm": SharedHomeAtm.Enqueue(args, sender); break;
             case "storageTake": SharedHomeStorage.Take(args, sender); break;
             case "storageTaken": SharedHomeStorage.FinishTake(args, sender); break;
             case "storageEdit": SharedHomeStorageOperations.Execute(args, sender).Forget(); break;

@@ -243,6 +243,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
         Debug.Log(CoopLocalization.Get("net.disconnected", peer.EndPoint.ToString(), disconnectInfo.Reason.ToString()));
         if (!IsServer)
         {
+            TeleporterSpawnEntry.Reset();
             if (disconnectInfo.Reason == DisconnectReason.ConnectionRejected) ConnectionRecovery.Cancel();
             else ConnectionRecovery.Begin(returnToMenu);
             if (!returnToMenu) MModUI.Instance?.ShowDisconnectNotice(false);
@@ -504,6 +505,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
         SharedHome.Reset();
         CorpseRecovery.StopNetwork();
         TeleporterTravel.Reset();
+        TeleporterSpawnEntry.Reset();
         SceneNet.Instance?.ResetTeleporterVote();
         ColdBuffSync.Reset();
         COOPManager.Buff?.Reset();

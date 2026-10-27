@@ -140,6 +140,7 @@ public static class SceneTriggerResetter
     /// </summary>
     public static void ResetAllSceneTriggers()
     {
+        CountDownVoteRecovery.Reset();
         int totalResetCount = 0;
 
         // 1. 重置 OnTriggerEnterEvent 组件

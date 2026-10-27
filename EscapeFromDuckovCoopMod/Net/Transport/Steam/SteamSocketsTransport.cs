@@ -81,6 +81,7 @@ internal sealed class SteamSocketsTransport : CoopNetworkManager
         {
             if (!_api.Receive(Receive)) break;
         }
+        FlushReliable();
         foreach (var peer in _peers.Values)
             if (!peer.Ready && _now() - peer.CreatedAt >= HandshakeTimeoutSeconds)
                 Disconnect(peer, "Connection/version handshake timed out");
@@ -216,7 +217,13 @@ internal sealed class SteamSocketsTransport : CoopNetworkManager
         {
             SteamPacketCodec.WriteHeader(buffer, kind, delivery, peer.NextSequence(delivery));
             Buffer.BlockCopy(data, offset, buffer, SteamPacketCodec.HeaderSize, length);
-            var result = _api.Send(peer.Handle, buffer, size, SteamPacketCodec.SendFlags(delivery));
+            var flags = SteamPacketCodec.SendFlags(delivery);
+            if (SteamPacketCodec.IsReliable(delivery) && peer.PendingReliable.Count > 0)
+            {
+                QueueReliable(peer, buffer, size, flags);
+                return;
+            }
+            var result = _api.Send(peer.Handle, buffer, size, flags);
             if (result == EResult.k_EResultOK)
             {
                 _statistics.IncrementPacketsSent();
@@ -226,18 +233,58 @@ internal sealed class SteamSocketsTransport : CoopNetworkManager
             peer.SendFailures++;
             if (peer.SendFailures == 1 || peer.SendFailures % 100 == 0)
                 CoopLogSystem.WriteNetworkDiagnostic($"[SteamSockets] Send failed peer={peer.EndPoint} result={result} delivery={delivery} bytes={size}");
-            // Unreliable data may be dropped under congestion. A rejected reliable
-            // message must not silently leave a partially synchronized session alive.
+            if (result == EResult.k_EResultLimitExceeded && SteamPacketCodec.IsReliable(delivery))
+            {
+                QueueReliable(peer, buffer, size, flags);
+                return;
+            }
             if (SteamPacketCodec.IsReliable(delivery) || (result != EResult.k_EResultLimitExceeded && result != EResult.k_EResultIgnored))
                 Disconnect(peer, $"Steam send failed: {result}");
         }
         finally { ArrayPool<byte>.Shared.Return(buffer); }
     }
 
+    private void QueueReliable(SteamPeer peer, byte[] data, int length, int flags)
+    {
+        if (!peer.PendingReliable.Enqueue(data, length, flags, _now()))
+            Disconnect(peer, "Steam reliable pending queue exceeded limit");
+    }
+
+    private void FlushReliable()
+    {
+        var deadline = _now() + ReceiveBudgetSeconds;
+        var attempts = 0;
+        foreach (var peer in _peers.Values)
+        {
+            if (peer.Closed || peer.PendingReliable.Count == 0) continue;
+            if (peer.PendingReliable.IsStalled(_now()))
+            {
+                Disconnect(peer, "Steam reliable send queue stalled");
+                continue;
+            }
+            while (!peer.Closed && peer.PendingReliable.Count > 0 && attempts < 64 && _now() < deadline)
+            {
+                var frame = peer.PendingReliable.Peek();
+                attempts++;
+                var result = _api.Send(peer.Handle, frame.Data, frame.Data.Length, frame.Flags);
+                if (result == EResult.k_EResultLimitExceeded) break;
+                if (result != EResult.k_EResultOK)
+                {
+                    Disconnect(peer, $"Steam reliable retry failed: {result}");
+                    break;
+                }
+                peer.PendingReliable.Dequeue(_now());
+                _statistics.IncrementPacketsSent();
+                _statistics.AddBytesSent(frame.Data.Length);
+            }
+        }
+    }
+
     internal void Disconnect(SteamPeer peer, string reason)
     {
         if (peer.Closed) return;
         peer.Closed = true;
+        peer.PendingReliable.Clear();
         _closeRequests[peer] = reason;
     }
 
@@ -261,7 +308,7 @@ internal sealed class SteamSocketsTransport : CoopNetworkManager
     {
         foreach (var peer in _peers.Values)
             if (_api.GetStatus(peer.Handle, out var state))
-                CoopLogSystem.WriteNetworkDiagnostic($"[SteamSockets] peer={peer.EndPoint} ready={peer.Ready} ping={state.m_nPing}ms quality={state.m_flConnectionQualityLocal:F2}/{state.m_flConnectionQualityRemote:F2} pendingReliable={state.m_cbPendingReliable}B pendingUnreliable={state.m_cbPendingUnreliable}B unacked={state.m_cbSentUnackedReliable}B queue={state.m_usecQueueTime.m_SteamNetworkingMicroseconds}us sendFailures={peer.SendFailures}");
+                CoopLogSystem.WriteNetworkDiagnostic($"[SteamSockets] peer={peer.EndPoint} ready={peer.Ready} ping={state.m_nPing}ms quality={state.m_flConnectionQualityLocal:F2}/{state.m_flConnectionQualityRemote:F2} pendingReliable={state.m_cbPendingReliable}B pendingUnreliable={state.m_cbPendingUnreliable}B unacked={state.m_cbSentUnackedReliable}B queue={state.m_usecQueueTime.m_SteamNetworkingMicroseconds}us queuedReliable={peer.PendingReliable.Count} sendFailures={peer.SendFailures}");
     }
 
     public override void Stop()
@@ -270,6 +317,7 @@ internal sealed class SteamSocketsTransport : CoopNetworkManager
         foreach (var peer in _peers.Values)
         {
             peer.Closed = true;
+            peer.PendingReliable.Clear();
             _api.Close(peer.Handle, "Network stopped");
         }
         _peers.Clear();

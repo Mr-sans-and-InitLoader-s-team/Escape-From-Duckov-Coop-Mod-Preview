@@ -16,6 +16,7 @@ internal sealed class SteamPeer : CoopPeer
     public bool Closed;
     public int Latency;
     public int SendFailures;
+    internal readonly SteamReliableSendQueue PendingReliable = new();
     public override int Id { get; }
     public override ulong SteamId { get; }
     public override EndPoint EndPoint => _endpoint;

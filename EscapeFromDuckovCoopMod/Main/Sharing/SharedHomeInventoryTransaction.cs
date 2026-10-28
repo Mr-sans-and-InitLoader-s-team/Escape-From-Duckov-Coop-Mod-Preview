@@ -85,7 +85,9 @@ internal static class SharedHomeInventoryTransaction
             if (safeData.lockedIndexes != null) safe.lockedIndexes.AddRange(safeData.lockedIndexes);
             var success = action == "craft"
                 ? await SharedHomeCrafting.Execute(args, character, safe, Current)
-                : await SharedHomeAtm.Execute(args, character, safe, Current);
+                : action == "storageStoreAll"
+                    ? SharedHomeStorageStoreAll.Execute(character)
+                    : await SharedHomeAtm.Execute(args, character, safe, Current);
             if (!success || generation != _generation || !SharedHome.Active) return;
             profile.Save("character", ItemTreeData.FromItem(character));
             profile.Save(SharedHomeSafeInventory.ProfileKey, InventoryData.FromInventory(safe));

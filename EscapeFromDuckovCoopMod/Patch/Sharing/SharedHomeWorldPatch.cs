@@ -79,8 +79,7 @@ internal static class SharedHomeCraftPatch
     private static bool Prefix(string id, ref UniTask<List<Item>> __result)
     {
         if (!SharedHome.Guest || SharedHome.Applying) return true;
-        SharedHome.Request("craft", new { id });
-        __result = UniTask.FromResult<List<Item>>(null);
+        __result = SharedHomeCrafting.Request(id);
         return false;
     }
 }

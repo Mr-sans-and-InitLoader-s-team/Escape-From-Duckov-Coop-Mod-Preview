@@ -1814,7 +1814,7 @@ public sealed partial class AISyncService
         if (localStatus == null || !localStatus.IsInGame)
             return false;
 
-        _clientAnchor = localStatus.Position;
+        _clientAnchor = AIObservationAnchor.LocalPosition(localStatus.Position);
         _clientAnchorValid = true;
         anchor = _clientAnchor;
         return true;
@@ -1969,7 +1969,7 @@ public sealed partial class AISyncService
         if (!statuses.TryGetValue(peer, out var status) || status == null)
             return false;
 
-        var distSqr = (status.Position - anchor).sqrMagnitude;
+        var distSqr = (AIObservationAnchor.PeerPosition(peer, status) - anchor).sqrMagnitude;
         return distSqr <= range * range;
     }
 

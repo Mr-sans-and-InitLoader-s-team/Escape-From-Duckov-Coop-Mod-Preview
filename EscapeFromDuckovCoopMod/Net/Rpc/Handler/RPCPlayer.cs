@@ -268,6 +268,7 @@ namespace EscapeFromDuckovCoopMod
                     st.Position = message.Position;
                     st.Rotation = rotation;
                     st.Velocity = message.Velocity;
+                    st.SpectatingPlayerId = message.SpectatingPlayerId?.Length <= 128 ? message.SpectatingPlayerId : string.Empty;
                 }
 
                 if (service.remoteCharacters.TryGetValue(context.Sender, out var go) && go != null)

@@ -15,7 +15,8 @@ internal static class SharedHomeActions
         if (args == null || !SharedHome.Active || !NetService.Instance.IsServer) return;
         switch (action)
         {
-            case "atm": SharedHomeAtm.Enqueue(args, sender); break;
+            case "atm":
+            case "craft": SharedHomeInventoryTransaction.Enqueue(action, args, sender); break;
             case "storageTake": SharedHomeStorage.Take(args, sender); break;
             case "storageTaken": SharedHomeStorage.FinishTake(args, sender); break;
             case "storageEdit": SharedHomeStorageOperations.Execute(args, sender).Forget(); break;
@@ -24,7 +25,6 @@ internal static class SharedHomeActions
             case "storageBufferPut": SharedHomeStorage.PutBuffer(args, sender).Forget(); break;
             case "worldFlag": SharedHomeWorld.SetFlag((string)args["key"], (bool)args["value"]); break;
             case "count": SavesCounter.AddCount((string)args["key"]); break;
-            case "craft": SharedHomeCommerce.Craft((string)args["id"]).Forget(); break;
             case "shopBuy": SharedHomeShopPurchase.Buy((string)args["token"], (string)args["merchant"], (int)args["type"], (int)args["amount"], sender).Forget(); break;
             case "unlock": SharedHomeUnlocks.Execute(args); break;
             case "xp":

@@ -88,7 +88,7 @@ public static class SharedHome
         _pendingState = null;
         SharedHomeCharacterCreation.Reset();
         SharedHomeLoadouts.Reset();
-        SharedHomeAtm.Reset();
+        SharedHomeInventoryTransaction.Reset();
         _remoteEnabled = false;
         SharedHomeStorage.Reset();
         if (host)
@@ -216,7 +216,7 @@ public static class SharedHome
         }
         if (Guest && message.Kind == 12 && message.Session == _session)
         {
-            SharedHomeAtm.Receive(message.Data);
+            SharedHomeInventoryTransaction.Receive(message.Data);
             return;
         }
         if (Guest && message.Kind == 3 && message.Session == _session)

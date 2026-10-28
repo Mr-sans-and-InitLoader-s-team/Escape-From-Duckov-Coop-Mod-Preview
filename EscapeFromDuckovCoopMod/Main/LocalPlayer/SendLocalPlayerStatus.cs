@@ -151,7 +151,8 @@ public class SendLocalPlayerStatus : MonoBehaviour
             Forward = fwd,
             Velocity = vel,
             Timestamp = now,
-            VehicleId = vehicleId
+            VehicleId = vehicleId,
+            SpectatingPlayerId = AIObservationAnchor.SpectatedPlayerId()
         };
 
         LogVehiclePositionSend(vehicleId, source, pos);

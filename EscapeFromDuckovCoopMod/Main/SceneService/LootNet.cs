@@ -49,7 +49,16 @@ namespace EscapeFromDuckovCoopMod;
         if (!Client_WaitingForLootState(inv)) return;
         var applying = _applyingLootState;
         _applyingLootState = true;
-        try { inv.DestroyAllContent(); }
+        try
+        {
+            foreach (var item in inv.ToArray())
+            {
+                // Personal quest items are intentionally excluded from host snapshots.
+                if (!item || IsQuestTagged(item, inv)) continue;
+                item.Detach();
+                item.DestroyTree();
+            }
+        }
         finally { _applyingLootState = applying; }
     }
 

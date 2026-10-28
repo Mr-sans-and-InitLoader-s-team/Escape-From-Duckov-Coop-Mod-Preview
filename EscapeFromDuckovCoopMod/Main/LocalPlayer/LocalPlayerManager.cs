@@ -583,6 +583,7 @@ public class PlayerStatus
     public Vector3 Position { get; set; }
     public Quaternion Rotation { get; set; }
     public Vector3 Velocity { get; set; }
+    public string SpectatingPlayerId { get; set; }
     public string CustomFaceJson { get; set; }
     public List<EquipmentSyncData> EquipmentList { get; set; } = new();
     public List<WeaponSyncData> WeaponList { get; set; } = new();

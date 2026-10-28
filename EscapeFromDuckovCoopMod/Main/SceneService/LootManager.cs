@@ -242,6 +242,7 @@ public static class LootboxDetectUtil
         if (inv == null) return false;
         if (PersonalFormulaLoot.IsPersonal(inv)) return true;
         if (PersonalStarterLoot.IsPersonal(inv)) return true;
+        if (PersonalQuestLoot.IsPersonal(inv)) return true;
         if (DeadLootSpawnContext.LocalOnDead)
             return true;
 

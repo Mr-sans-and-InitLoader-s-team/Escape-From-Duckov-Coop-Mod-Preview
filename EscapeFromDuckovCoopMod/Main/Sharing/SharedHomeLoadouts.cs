@@ -41,6 +41,8 @@ internal static class SharedHomeLoadouts
         return "SharedHome/Players/" + BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(identity))).Replace("-", "");
     }
     private static string ContextKey(string player, string context) => context == "MainCharacterItemData" ? player : player + "/" + context;
+    internal static string TransactionKey(NetPeer peer, string context) =>
+        ValidContext(context) && Players.TryGetValue(peer, out var player) ? ContextKey(player, context) : null;
     private static byte[] Serialize(Item item)
     {
         var data = new ES3File(false);
@@ -111,7 +113,7 @@ internal static class SharedHomeLoadouts
     }
     internal static void Flush()
     {
-        if (!SharedHome.Guest || !_ready || Restoring || SharedHomeAtm.Busy || !SharedHomeSafeInventory.Ready || !CharacterMainControl.Main?.CharacterItem) return;
+        if (!SharedHome.Guest || !_ready || Restoring || SharedHomeInventoryTransaction.Busy || !SharedHomeSafeInventory.Ready || !CharacterMainControl.Main?.CharacterItem) return;
         var bytes = Serialize(CharacterMainControl.Main.CharacterItem);
         _nextReport = Time.unscaledTime + (_changed ? .25f : 1f);
         _changed = false;

@@ -85,6 +85,8 @@ internal static class SharedHomeInventoryTransaction
             if (safeData.lockedIndexes != null) safe.lockedIndexes.AddRange(safeData.lockedIndexes);
             var success = action == "craft"
                 ? await SharedHomeCrafting.Execute(args, character, safe, Current)
+                : action == "perkBegin"
+                    ? await SharedHomePerkUpgrade.Execute(args, character, safe, Current)
                 : action == "shopBuyPersonal"
                     ? await SharedHomeShopPurchase.BuyPersonal(args, character, safe, peer)
                 : action == "storageStoreAll"

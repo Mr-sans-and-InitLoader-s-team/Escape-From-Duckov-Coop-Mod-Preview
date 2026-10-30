@@ -110,7 +110,7 @@ internal static class SharedHomePerkBeginPatch
     private static bool Prefix(Perk __instance, ref bool __result)
     {
         if (!SharedHome.Guest || SharedHome.Applying) return true;
-        SharedHome.Request("perk", new { tree = __instance.Master.ID, perk = __instance.name, confirm = false });
+        SharedHomePerkUpgrade.Request(__instance).Forget();
         __result = false;
         return false;
     }

@@ -7,6 +7,8 @@ English | **[简体中文](README.md)**
 
 Current release: **v1.4.6**. All players should use the same version.
 
+The updated **1.4.6** package fixes guest upgrades and repeated warehouse synchronization with multiple clients. Download it again even if you already have 1.4.6, and update the host and every client together.
+
 Co-op logs are stored in `CoopLogs` under the game's save directory (Windows default: `%USERPROFILE%\AppData\LocalLow\TeamSoda\Duckov\CoopLogs`). `latest.log` contains the current run and `previous.log` the preceding run. Logs rotate at game startup; only these two files are retained.
 
 ---

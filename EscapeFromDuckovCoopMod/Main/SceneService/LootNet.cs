@@ -468,7 +468,7 @@ namespace EscapeFromDuckovCoopMod;
         {
             Id = lm.BuildLootIdentifier(inv),
             IsSnapshot = true,
-            Version = NextVersion(inv),
+            Version = GetCurrentVersion(inv),
             Capacity = inv.Capacity,
             Snapshot = slots
         };

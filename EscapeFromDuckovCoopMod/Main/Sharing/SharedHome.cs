@@ -64,6 +64,7 @@ public static class SharedHome
         _hostEnabled = Enabled;
         Requests.Clear();
         NeedsFull.Clear();
+        SharedHomeTransfer.Reset();
         SharedHomeCompatibility.Reset();
         SharedHomeEntry.Reset();
         SharedHomeSave.ResetPublished();
@@ -75,7 +76,7 @@ public static class SharedHome
         Requests.Remove(peer);
         SharedHomeCompatibility.PeerConnected(peer);
         var message = new SharedHomeRpc { Kind = 0, Session = _session, Data = new[] { Enabled ? (byte)1 : (byte)0 } };
-        CoopTool.SendRpcTo(peer, in message);
+        SharedHomeTransfer.Send(message, peer);
     }
     internal static void PeerValidated(NetPeer peer)
     {
@@ -86,6 +87,7 @@ public static class SharedHome
     {
         var host = Active && NetService.Instance.IsServer;
         _pendingState = null;
+        SharedHomeTransfer.Reset();
         SharedHomeCharacterCreation.Reset();
         SharedHomeLoadouts.Reset();
         SharedHomeInventoryTransaction.Reset();
@@ -139,7 +141,7 @@ public static class SharedHome
         {
             var full = new SharedHomeRpc { Kind = 1, Session = _session, Revision = ++_revision, Data = SharedHomeSave.Capture(true) };
             foreach (var peer in NeedsFull)
-                if (peer.ConnectionState == ConnectionState.Connected) CoopTool.SendRpcTo(peer, in full);
+                if (peer.ConnectionState == ConnectionState.Connected) SharedHomeTransfer.Send(full, peer);
             NeedsFull.Clear();
         }
         var data = SharedHomeSave.Capture();
@@ -147,7 +149,7 @@ public static class SharedHome
         {
             var message = new SharedHomeRpc { Kind = 1, Session = _session, Revision = ++_revision, Data = data };
             foreach (var peer in NetService.Instance.netManager.ConnectedPeerList)
-                if (SharedHomeCompatibility.Allows(peer)) CoopTool.SendRpcTo(peer, in message);
+                if (SharedHomeCompatibility.Allows(peer)) SharedHomeTransfer.Send(message, peer);
         }
         if (Time.unscaledTime >= _nextSave)
         {
@@ -169,22 +171,25 @@ public static class SharedHome
         if (action != "storageTaken" && (!SharedHomeLoadouts.Ready || SharedHomeCharacterCreation.Joining)) return false;
         var data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new { action, arguments }));
         var message = new SharedHomeRpc { Kind = 2, Session = _session, Revision = ++_requestSerial, Data = data };
-        CoopTool.SendRpc(in message);
+        SharedHomeTransfer.Send(message);
         return true;
     }
     internal static void SendPrivate(byte kind, byte[] data, NetPeer peer = null)
     {
         var message = new SharedHomeRpc { Kind = kind, Session = _session, Data = data };
-        if (peer != null) CoopTool.SendRpcTo(peer, in message);
-        else CoopTool.SendRpc(in message);
+        SharedHomeTransfer.Send(message, peer);
     }
     internal static void Reply(NetPeer peer, byte[] data)
     {
         var message = new SharedHomeRpc { Kind = 3, Session = _session, Data = data };
-        CoopTool.SendRpcTo(peer, in message);
+        SharedHomeTransfer.Send(message, peer);
     }
     public static void Handle(RpcContext context, SharedHomeRpc message)
     {
+        if (message.Kind == SharedHomeTransfer.ChunkKind)
+        {
+            if (message.Session != _session || !SharedHomeTransfer.Receive(context.Sender, message, out message)) return;
+        }
         if (Enabled && message.Session == _session && SharedHomeCompatibility.Receive(context.Sender, message.Kind, message.Data)) return;
         if (context.IsServer && !SharedHomeCompatibility.Allows(context.Sender)) return;
         if (Active && message.Session == _session && (message.Kind >= 4 && message.Kind <= 6 || message.Kind == 11))

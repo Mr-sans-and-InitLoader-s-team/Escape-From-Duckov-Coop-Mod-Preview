@@ -231,6 +231,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
         var returnToMenu = SharedHome.Guest;
         var disconnectedNetwork = netManager;
         SharedHomeCompatibility.PeerDisconnected(peer);
+        SharedHomeTransfer.PeerDisconnected(peer);
         TeleporterTravel.PeerDisconnected(peer);
         SharedHomeStorage.PeerDisconnected(peer);
         SharedHomeLoadouts.PeerDisconnected(peer);

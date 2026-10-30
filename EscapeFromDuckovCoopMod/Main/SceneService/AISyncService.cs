@@ -182,11 +182,7 @@ public sealed partial class AISyncService
 
     private bool ShouldBlockAiSync()
     {
-        var core = MultiSceneCore.Instance;
-        if (core == null) return false;
-
-        var sceneInfo = core.SceneInfo;
-        return sceneInfo != null && sceneInfo.ID == "Base";
+        return AIScenePolicy.IsBase;
     }
 
     private bool CheckAndHandleSyncBlock()

@@ -1,6 +1,7 @@
 using Duckov.Economy;
 using Duckov.UI;
 using ItemStatsSystem;
+using Newtonsoft.Json.Linq;
 using SodaCraft.StringUtilities;
 
 namespace EscapeFromDuckovCoopMod;
@@ -15,8 +16,45 @@ internal static class SharedHomeShopPurchase
     {
         if (!SharedHomeLoadouts.Ready || shop.Busy || amount <= 0) return false;
         Buying.SetValue(shop, true);
-        try { return await SharedHomeStorage.RequestPurchase(shop, type, amount); }
+        try
+        {
+            if (shop.AccountAvaliable) return await SharedHomeStorage.RequestPurchase(shop, type, amount);
+            if (!await SharedHomeInventoryTransaction.Request("shopBuyPersonal", new { merchant = shop.MerchantID, type, amount })) return false;
+            var item = CharacterMainControl.Main.CharacterItem.Inventory.LastOrDefault(i => i && i.TypeID == type);
+            Received(shop, item, item ? item.DisplayName : ItemAssetsCollection.GetMetaData(type).DisplayName);
+            return true;
+        }
         finally { if (shop) Buying.SetValue(shop, false); }
+    }
+
+    internal static async UniTask<bool> BuyPersonal(JObject args, Item character, Inventory safe, NetPeer peer)
+    {
+        var merchant = (string)args["merchant"];
+        var type = (int)args["type"];
+        var amount = (int)args["amount"];
+        var shop = SharedHomeWorld.Shops.FirstOrDefault(s => s && s.MerchantID == merchant);
+        if (!shop || shop.AccountAvaliable || shop.Busy || Purchases.ContainsKey(shop) || amount <= 0 ||
+            !shop.entries.Any(e => e.ItemTypeID == type && e.Show && e.CurrentStock >= amount)) return false;
+        var purchase = new Purchase();
+        Purchases[shop] = purchase;
+        try
+        {
+            var task = SharedHomeInventoryTransaction.WithInventories(character, safe, () => shop.Buy(type, amount));
+            if (!await task) return false;
+            var item = purchase.Item;
+            if (item && !character.Inventory.AddAndMerge(item))
+            {
+                if (LevelConfig.SaveCharacter) ItemUtilities.SendToPlayerStorage(item);
+                else
+                {
+                    var owner = NetService.Instance.remoteCharacters.TryGetValue(peer, out var remote)
+                        ? remote.GetComponent<CharacterMainControl>() : CharacterMainControl.Main;
+                    item.Drop(owner, true);
+                }
+            }
+            return true;
+        }
+        finally { Purchases.Remove(shop); }
     }
 
     internal static async UniTaskVoid Buy(string token, string merchant, int type, int amount, NetPeer peer)

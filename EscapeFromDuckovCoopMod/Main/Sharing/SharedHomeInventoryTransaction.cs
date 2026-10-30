@@ -85,6 +85,8 @@ internal static class SharedHomeInventoryTransaction
             if (safeData.lockedIndexes != null) safe.lockedIndexes.AddRange(safeData.lockedIndexes);
             var success = action == "craft"
                 ? await SharedHomeCrafting.Execute(args, character, safe, Current)
+                : action == "shopBuyPersonal"
+                    ? await SharedHomeShopPurchase.BuyPersonal(args, character, safe, peer)
                 : action == "storageStoreAll"
                     ? SharedHomeStorageStoreAll.Execute(character)
                     : await SharedHomeAtm.Execute(args, character, safe, Current);
@@ -93,6 +95,7 @@ internal static class SharedHomeInventoryTransaction
             profile.Save(SharedHomeSafeInventory.ProfileKey, InventoryData.FromInventory(safe));
             result = profile.LoadRawBytes();
             if (Current()) SharedHomeLoadouts.Receive(peer, 6, result);
+            else if (SharedHomeCharacterContext.IsTemporary(context)) SharedHomeTemporaryLoadouts.Save(profileKey, result);
             else SavesSystem.Save(profileKey, result);
             SharedHome.MarkDirty();
             (AccessTools.Field(typeof(ItemUtilities), "OnPlayerItemOperation").GetValue(null) as Action)?.Invoke();
@@ -150,8 +153,9 @@ internal static class SharedHomeInventoryTransaction
         {
             if (!accepted) return;
             var profile = new ES3File(reader.GetBytesWithLength());
-            bool Current() => generation == _generation && _token == token && SharedHome.Guest;
-            if (!Current()) return;
+            bool Current() => generation == _generation && _token == token && SharedHome.Guest &&
+                SharedHomeLoadouts.MatchesContext(profile.Load<string>("context"));
+            if (!Current()) { accepted = false; return; }
             var main = CharacterMainControl.Main;
             var heldSlot = main.CurrentHoldItemAgent?.Item?.PluggedIntoSlot?.Key;
             await SharedHomeEquipment.LoadInto(profile.Load<ItemTreeData>("character"), main.CharacterItem, Current);

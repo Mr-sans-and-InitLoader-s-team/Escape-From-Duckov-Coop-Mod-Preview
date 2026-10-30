@@ -35,7 +35,7 @@ public static class Patch_CharacterSpawnerRoot_StartSpawn
         if (svc == null || !svc.networkStarted)
             return true;
 
-        if (MultiSceneCore.Instance?.SceneInfo?.ID == "Base")
+        if (AIScenePolicy.IsBase)
             return true;
 
         if (!svc.IsServer)
@@ -57,7 +57,7 @@ public static class Patch_CharacterSpawnerGroup_StartSpawn
         if (svc == null || !svc.networkStarted)
             return true;
 
-        if (MultiSceneCore.Instance?.SceneInfo?.ID == "Base")
+        if (AIScenePolicy.IsBase)
             return true;
 
         if (!svc.IsServer)
@@ -79,7 +79,7 @@ public static class Patch_CharacterSpawnerGroupSelector_StartSpawn
         if (svc == null || !svc.networkStarted)
             return true;
 
-        if (MultiSceneCore.Instance?.SceneInfo?.ID == "Base")
+        if (AIScenePolicy.IsBase)
             return true;
 
         if (!svc.IsServer)
@@ -101,7 +101,7 @@ public static class Patch_WaveCharacterSpawner_StartSpawn
         if (svc == null || !svc.networkStarted)
             return true;
 
-        if (MultiSceneCore.Instance?.SceneInfo?.ID == "Base")
+        if (AIScenePolicy.IsBase)
             return true;
 
         if (!svc.IsServer)

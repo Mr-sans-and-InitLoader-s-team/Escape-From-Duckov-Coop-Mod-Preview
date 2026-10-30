@@ -24,8 +24,9 @@ internal static class SharedHomeLoadouts
     private static float _nextReport;
     private static int _generation;
     private static readonly string[] DeathKeys = { "DeathList", "CoopCorpseRemainders", "DeadCharacterToken", "Item/LastDeadCharacter" };
-    internal static bool Ready => _ready;
+    internal static bool Ready => _ready && MatchesContext(_context);
     internal static bool Restoring { get; private set; }
+    internal static bool MatchesContext(string context) => context == _context && context == SaveContext.Read(LevelManager.Instance);
     internal static string LocalIdentity()
     {
         if (SteamManager.Initialized) return SteamUser.GetSteamID().ToString();
@@ -46,7 +47,7 @@ internal static class SharedHomeLoadouts
     private static byte[] Serialize(Item item)
     {
         var data = new ES3File(false);
-        data.Save("context", SaveContext.Read(LevelManager.Instance));
+        data.Save("context", _context ?? SaveContext.Read(LevelManager.Instance));
         data.Save("character", ItemTreeData.FromItem(item));
         data.Save("face", LevelManager.Instance.CustomFaceManager.LoadMainCharacterSetting());
         data.Save("created", _ready);
@@ -114,6 +115,7 @@ internal static class SharedHomeLoadouts
     internal static void Flush()
     {
         if (!SharedHome.Guest || !_ready || Restoring || SharedHomeInventoryTransaction.Busy || !SharedHomeSafeInventory.Ready || !CharacterMainControl.Main?.CharacterItem) return;
+        if (!MatchesContext(_context)) return;
         var bytes = Serialize(CharacterMainControl.Main.CharacterItem);
         _nextReport = Time.unscaledTime + (_changed ? .25f : 1f);
         _changed = false;
@@ -135,7 +137,7 @@ internal static class SharedHomeLoadouts
                 var key = Key(identity);
                 if (Players.Any(p => p.Key != sender && p.Value == key)) { sender.Disconnect(); return; }
                 Players[sender] = key;
-                SendLoadout(sender, key, context).Forget();
+                SendLoadout(sender, key, context, hello.Load<ItemTreeData>("character")).Forget();
             }
             else if (kind == 6 && Players.TryGetValue(sender, out var key))
             {
@@ -158,12 +160,14 @@ internal static class SharedHomeLoadouts
                     if (previousProfile?.KeyExists(SharedHomeSafeInventory.ProfileKey) == true)
                         report.Save(SharedHomeSafeInventory.ProfileKey, previousProfile.Load<InventoryData>(SharedHomeSafeInventory.ProfileKey));
                 }
-                SavesSystem.Save(saveKey, report.LoadRawBytes());
+                if (SharedHomeCharacterContext.IsTemporary(context)) SharedHomeTemporaryLoadouts.Save(saveKey, report.LoadRawBytes());
+                else SavesSystem.Save(saveKey, report.LoadRawBytes());
                 if (report.KeyExists("face")) SavesSystem.Save(key + "/Face", report.Load<CustomFaceSettingData>("face"));
                 var deaths = new ES3File(false);
                 foreach (var deathKey in DeathKeys)
                     if (report.KeyExists(deathKey)) deaths.Save(deathKey, report.Load(deathKey));
-                if (deaths.GetKeys().Length > 0) SavesSystem.Save(key + "/Deaths", deaths.LoadRawBytes());
+                if (!SharedHomeCharacterContext.IsTemporary(context) && deaths.GetKeys().Length > 0)
+                    SavesSystem.Save(key + "/Deaths", deaths.LoadRawBytes());
                 SharedHome.MarkDirty();
                 if (created)
                 {
@@ -177,18 +181,21 @@ internal static class SharedHomeLoadouts
         else if (kind == 5 && _requested && new ES3File(bytes).Load<string>("context") == _context) _pending = bytes;
         else if (kind == 11) SharedHomeCharacterCreation.JoinHost(bytes).Forget();
     }
-    private static async UniTaskVoid SendLoadout(NetPeer sender, string key, string context)
+    private static async UniTaskVoid SendLoadout(NetPeer sender, string key, string context, ItemTreeData nativeCharacter)
     {
         await UniTask.WaitUntil(() => !SharedHome.Active || sender.ConnectionState != ConnectionState.Connected ||
             !SceneLoader.IsSceneLoading && LevelManager.LevelInited && CharacterMainControl.Main?.CharacterItem);
         if (!SharedHome.Active || sender.ConnectionState != ConnectionState.Connected) return;
         var create = !SavesSystem.KeyExisits(key) && !SavesSystem.Load<bool>(key + "/Created");
-        var data = SavesSystem.Load<byte[]>(ContextKey(key, context));
+        var temporary = SharedHomeCharacterContext.IsTemporary(context);
+        if (temporary && (nativeCharacter?.entries == null || nativeCharacter.entries.Count == 0 || nativeCharacter.entries.Count > 10000)) return;
+        var temporaryData = SharedHomeTemporaryLoadouts.Load(ContextKey(key, context));
+        var data = temporary ? temporaryData : SavesSystem.Load<byte[]>(ContextKey(key, context));
         var reply = data == null ? new ES3File(false) : new ES3File(data);
         if (data == null)
         {
-            reply.Save("character", await SharedHomeCharacterCreation.NewEquipment());
-            reply.Save(SharedHomeEndowments.Key, (Duckov.Endowment.EndowmentIndex)0);
+            reply.Save("character", temporary ? nativeCharacter : await SharedHomeCharacterCreation.NewEquipment());
+            if (!temporary) reply.Save(SharedHomeEndowments.Key, (Duckov.Endowment.EndowmentIndex)0);
         }
         if (!SharedHome.Active || sender.ConnectionState != ConnectionState.Connected ||
             !Players.TryGetValue(sender, out var current) || current != key) return;
@@ -201,7 +208,7 @@ internal static class SharedHomeLoadouts
         reply.Save("context", context);
         reply.Save("createCharacter", create);
         foreach (var deathKey in DeathKeys) reply.DeleteKey(deathKey);
-        var deaths = SavesSystem.Load<byte[]>(key + "/Deaths");
+        var deaths = temporary ? null : SavesSystem.Load<byte[]>(key + "/Deaths");
         if (deaths != null)
         {
             var deathData = new ES3File(deaths);
@@ -257,6 +264,7 @@ internal static class SharedHomeLoadouts
         Unwatch();
         Personal.TryGetValue(_context ?? string.Empty, out var personal);
         Personal.Clear();
+        SharedHomeTemporaryLoadouts.Reset();
         _context = null;
         _pending = _lastSent = null;
         _requested = _ready = _changed = false;

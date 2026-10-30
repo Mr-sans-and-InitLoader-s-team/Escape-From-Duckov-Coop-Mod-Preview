@@ -5,7 +5,7 @@
 
 English | **[简体中文](README.md)**
 
-Current release: **v1.4.4**. All players should use the same version.
+Current release: **v1.4.6**. All players should use the same version.
 
 Co-op logs are stored in `CoopLogs` under the game's save directory (Windows default: `%USERPROFILE%\AppData\LocalLow\TeamSoda\Duckov\CoopLogs`). `latest.log` contains the current run and `previous.log` the preceding run. Logs rotate at game startup; only these two files are retained.
 

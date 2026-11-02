@@ -462,7 +462,7 @@ public sealed partial class AISyncService
             {
                 watchers = GetServerWatchersInRange(entry, DeactivationRadius);
             }
-            else if (entry.Activated && ShouldRefreshServerWatchers(entry.Id, now))
+            if (entry.Activated && ShouldRefreshServerWatchers(entry.Id, now))
             {
                 watchers = EnsureServerWatchers(entry);
             }

@@ -281,7 +281,7 @@ internal static class SharedHomeStorage
         try
         {
             var character = SharedHomeLoadouts.Report();
-            sent = SharedHome.Request("storageBufferPut", new { item = Convert.ToBase64String(data.LoadRawBytes()), character = Convert.ToBase64String(character), toBuffer, position });
+            sent = !SharedHomeInventoryTransaction.Busy && SharedHome.Request("storageBufferPut", new { item = Convert.ToBase64String(data.LoadRawBytes()), character = Convert.ToBase64String(character), toBuffer, position });
             if (sent) item.DestroyTree();
         }
         finally

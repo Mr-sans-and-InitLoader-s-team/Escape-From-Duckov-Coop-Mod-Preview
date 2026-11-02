@@ -1,10 +1,10 @@
 <div align="center">
 
-# 🦆 逃离鸭科夫联机模组 · 正式版
+# 🦆 逃离鸭科夫联机模组 · 预发布版
 
 **让《逃离鸭科夫》的单人冒险变成可以和朋友一起探索、战斗与撤离的合作体验。**
 
-[![Version](https://img.shields.io/badge/Version-1.4.6-2ea44f?style=flat-square)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
+[![Version](https://img.shields.io/badge/Version-1.4.7--pre-2ea44f?style=flat-square)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.7-pre)
 [![Steam Workshop](https://img.shields.io/badge/Steam-创意工坊-1b2838?style=flat-square&logo=steam)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
 [![Stars](https://img.shields.io/github/stars/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/stargazers)
 [![Forks](https://img.shields.io/github/forks/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/network/members)
@@ -19,8 +19,8 @@
 </div>
 
 > [!IMPORTANT]
-> 当前版本为 **v1.4.6**。参与联机的玩家应安装相同版本；更新或测试前建议备份重要存档。
-> 本次 **1.4.6** 更新包包含客机强化和多客机仓库同步修复。已安装旧包的玩家也需重新下载，主机和所有客机统一使用本次更新包。
+> 当前分支为 **v1.4.7-pre 预发布版**，包含强化确认、延迟回执物品保护和怪物接收名单修复；正式版仍为 **v1.4.6**。
+> 从 [GitHub Pre-release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.7-pre) 下载完整包，解压到联机 Mod 目录。主机和所有客机须统一使用本次预发布包；测试前建议备份重要存档。
 
 ## 📖 项目简介
 
@@ -28,9 +28,9 @@
 
 | 项目 | 当前信息 |
 | --- | --- |
-| 模组版本 | **v1.4.6** |
-| 发布状态 | **正式版** |
-| 发布渠道 | [Steam 创意工坊](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282) |
+| 模组版本 | **v1.4.7-pre** |
+| 发布状态 | **预发布版** |
+| 发布渠道 | [GitHub Pre-release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.7-pre) |
 | 创意工坊 ID | `3591341282` |
 | 联机方式 | 局域网 / 在线联机 |
 | 构建目标 | .NET Standard 2.1 |
@@ -52,7 +52,7 @@
 
 普通玩家无需下载源码或手动编译：
 
-1. 在 [Steam 创意工坊](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282) 订阅模组。
+1. 预发布版使用上方 GitHub 完整包，解压到联机 Mod 目录；正式版可在 [Steam 创意工坊](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282) 订阅。
 2. 启动游戏，并在模组管理界面中启用本模组。
 3. 确认所有参与联机的玩家使用相同版本。
 4. 由一名玩家创建联机房间，其他玩家加入后即可开始游戏。

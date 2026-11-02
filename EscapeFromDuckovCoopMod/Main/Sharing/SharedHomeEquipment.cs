@@ -5,7 +5,7 @@ namespace EscapeFromDuckovCoopMod;
 
 internal static class SharedHomeEquipment
 {
-    internal static async UniTask LoadInto(ItemTreeData data, Item target, Func<bool> current)
+    internal static async UniTask LoadInto(ItemTreeData data, Item target, Func<bool> current, SharedHomePendingItems pendingItems = null)
     {
         var root = data?.RootData;
         if (root == null || !target) throw new InvalidOperationException("Shared character equipment is unavailable");
@@ -51,6 +51,7 @@ internal static class SharedHomeEquipment
             SharedHome.Apply(() =>
             {
                 var inv = target.Inventory;
+                var added = pendingItems?.DetachAdded(target);
                 inv.Loading = true;
                 try
                 {
@@ -74,7 +75,11 @@ internal static class SharedHomeEquipment
                     if (root.inventorySortLocks != null) inv.lockedIndexes.AddRange(root.inventorySortLocks);
                     attached = true;
                 }
-                finally { inv.Loading = false; }
+                finally
+                {
+                    try { if (added != null) SharedHomePendingItems.Restore(added, inv); }
+                    finally { inv.Loading = false; }
+                }
             });
         }
         finally

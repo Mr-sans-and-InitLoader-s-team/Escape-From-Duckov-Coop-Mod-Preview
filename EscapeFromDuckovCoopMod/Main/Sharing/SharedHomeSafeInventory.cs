@@ -35,7 +35,7 @@ internal static class SharedHomeSafeInventory
             profile.Save(ProfileKey, InventoryData.FromInventory(PetProxy.PetInventory));
     }
 
-    internal static async UniTask Restore(ES3File profile, Func<bool> current)
+    internal static async UniTask Restore(ES3File profile, Func<bool> current, SharedHomePendingItems pendingItems = null)
     {
         if (!LevelConfig.SavePet) return;
         await UniTask.WaitUntil(() => !current() || Ready);
@@ -55,6 +55,7 @@ internal static class SharedHomeSafeInventory
                 incoming.Add((item, entry.inventoryPosition));
             }
             if (!current() || !inventory) return;
+            var added = pendingItems?.DetachAdded(inventory);
             inventory.Loading = true;
             try
             {
@@ -65,10 +66,15 @@ internal static class SharedHomeSafeInventory
                 inventory.lockedIndexes.Clear();
                 if (data.lockedIndexes != null) inventory.lockedIndexes.AddRange(data.lockedIndexes);
                 attached = true;
+                if (added != null) SharedHomePendingItems.Restore(added, inventory);
                 inventory.Save("Inventory_Safe");
                 CoopSessionLog.Write("SharedHome", $"Safe restored: capacity={inventory.Capacity}, items={string.Join(",", incoming.Select(e => $"{e.Position}:{e.Item.TypeID}"))}");
             }
-            finally { inventory.Loading = false; }
+            finally
+            {
+                try { if (!attached && added != null) SharedHomePendingItems.Restore(added, inventory); }
+                finally { inventory.Loading = false; }
+            }
         }
         finally
         {

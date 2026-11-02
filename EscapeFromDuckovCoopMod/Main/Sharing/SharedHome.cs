@@ -91,6 +91,7 @@ public static class SharedHome
         SharedHomeCharacterCreation.Reset();
         SharedHomeLoadouts.Reset();
         SharedHomeInventoryTransaction.Reset();
+        SharedHomePerkClock.Reset();
         _remoteEnabled = false;
         SharedHomeStorage.Reset();
         if (host)

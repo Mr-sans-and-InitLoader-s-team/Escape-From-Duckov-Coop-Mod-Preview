@@ -5,9 +5,9 @@
 
 English | **[简体中文](README.md)**
 
-Current release: **v1.4.6**. All players should use the same version.
+This branch contains **v1.4.7-pre**, a pre-release. The stable release remains **v1.4.6**.
 
-The updated **1.4.6** package fixes guest upgrades and repeated warehouse synchronization with multiple clients. Download it again even if you already have 1.4.6, and update the host and every client together.
+This pre-release fixes upgrade confirmation, protects newly received items from delayed inventory replies, and refreshes AI observers for approaching clients. Download the complete package from [GitHub Pre-release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.7-pre), extract it into the co-op mod folder, and update the host and every client together.
 
 Co-op logs are stored in `CoopLogs` under the game's save directory (Windows default: `%USERPROFILE%\AppData\LocalLow\TeamSoda\Duckov\CoopLogs`). `latest.log` contains the current run and `previous.log` the preceding run. Logs rotate at game startup; only these two files are retained.
 
@@ -32,9 +32,9 @@ This mod enables stable LAN and online co-op gameplay in a game originally desig
 
 ### For Players
 
-**No manual installation or build is required.**
+**Pre-release:** install the complete GitHub package linked above.
 
-Simply subscribe on Steam Workshop:
+**Stable release:** subscribe on Steam Workshop:
 
 👉 **[Steam Workshop Page](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)**
 

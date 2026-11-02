@@ -63,6 +63,8 @@ internal static class SharedHomeSave
             unlocks["Difficulty/RageUnlocked"] = SavesSystem.LoadGlobal<bool>("Difficulty/RageUnlocked");
             Add("SharedHomeGlobalUnlocks", unlocks);
             Add("SharedHomeFlagKeys", SharedHomeWorld.FlagKeys);
+            if (selected.GetKeys().Any(key => key.StartsWith("PerkTree_")))
+                selected.Save(SharedHomePerkClock.Key, DateTime.UtcNow.ToBinary());
             if (full) selected.Save("SharedHomeFull", true);
             return selected.GetKeys().Length == 0 ? null : selected.LoadRawBytes();
         }
@@ -97,6 +99,7 @@ internal static class SharedHomeSave
         if (bytes == null || bytes.Length == 0) return;
         Begin();
         var incoming = new ES3File(bytes);
+        SharedHomePerkClock.Observe(incoming);
         var target = ES3File.cachedFiles[_path];
         if (incoming.KeyExists("SharedHomeFlagKeys"))
             SharedHomeWorld.AddFlags(incoming.Load<string[]>("SharedHomeFlagKeys"));
@@ -107,6 +110,7 @@ internal static class SharedHomeSave
         foreach (var key in incoming.GetKeys())
         {
             if (key == "SharedHomeFull") continue;
+            if (key == SharedHomePerkClock.Key) continue;
             if (key == "SharedHomeFlagKeys") continue;
             if (key == "SharedHomeGlobalUnlocks")
             {

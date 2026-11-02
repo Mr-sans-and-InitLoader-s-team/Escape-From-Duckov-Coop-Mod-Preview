@@ -12,6 +12,7 @@ internal static class SharedHomeInventoryTransaction
     private static readonly HashSet<NetPeer> PendingPeers = new();
     private static UniTaskCompletionSource<bool> _completion;
     private static string _token;
+    private static SharedHomePendingItems _pendingItems;
     private static bool _running;
     private static int _generation;
     private static Item _costCharacter;
@@ -22,6 +23,7 @@ internal static class SharedHomeInventoryTransaction
     {
         if (Busy || !SharedHomeLoadouts.Ready || !SharedHomeSafeInventory.Ready) return UniTask.FromResult(false);
         var profile = Convert.ToBase64String(SharedHomeLoadouts.Report());
+        _pendingItems = new SharedHomePendingItems(CharacterMainControl.Main.CharacterItem, PetProxy.PetInventory);
         _token = Guid.NewGuid().ToString("N");
         var completion = _completion = new UniTaskCompletionSource<bool>();
         var args = JObject.FromObject(arguments);
@@ -160,10 +162,10 @@ internal static class SharedHomeInventoryTransaction
             if (!Current()) { accepted = false; return; }
             var main = CharacterMainControl.Main;
             var heldSlot = main.CurrentHoldItemAgent?.Item?.PluggedIntoSlot?.Key;
-            await SharedHomeEquipment.LoadInto(profile.Load<ItemTreeData>("character"), main.CharacterItem, Current);
+            await SharedHomeEquipment.LoadInto(profile.Load<ItemTreeData>("character"), main.CharacterItem, Current, _pendingItems);
             if (!Current()) return;
             if (heldSlot != null) main.ChangeHoldItem(main.CharacterItem.Slots.GetSlot(heldSlot)?.Content);
-            await SharedHomeSafeInventory.Restore(profile, Current);
+            await SharedHomeSafeInventory.Restore(profile, Current, _pendingItems);
             if (!Current()) return;
             (AccessTools.Field(typeof(ItemUtilities), "OnPlayerItemOperation").GetValue(null) as Action)?.Invoke();
         }
@@ -188,6 +190,7 @@ internal static class SharedHomeInventoryTransaction
         var completion = _completion;
         _completion = null;
         _token = null;
+        _pendingItems = null;
         completion?.TrySetResult(result);
     }
 

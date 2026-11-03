@@ -260,6 +260,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
             clientRemoteCharacters.Clear();
             clientPlayerStatuses.Clear();
             RPCPlayer.ClearVehicleRiders();
+            PlayerPositionOrder.Clear();
             CoopTool._cliPendingRemoteHp.Clear();
             CustomFace._cliPendingFace.Clear();
             SceneNet.Instance?._cliLastSceneIdByPlayer.Clear();
@@ -273,6 +274,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
             if (_st != null && !string.IsNullOrEmpty(_st.EndPoint))
             {
                 RPCPlayer.ForgetVehicleRider(_st.EndPoint, true);
+                PlayerPositionOrder.Forget(_st.EndPoint);
                 _playerInvincibleUntil.Remove(_st.EndPoint);
                 SceneNet.Instance?._cliLastSceneIdByPlayer.Remove(_st.EndPoint);
           
@@ -440,6 +442,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
         clientPlayerStatuses.Clear();
         clientRemoteCharacters.Clear();
         RPCPlayer.ClearVehicleRiders();
+        PlayerPositionOrder.Clear();
         _playerInvincibleUntil.Clear();
         CoopSyncDatabase.AI.Clear();
         COOPManager.AI?.Reset();
@@ -532,6 +535,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
         playerStatuses.Clear();
         clientPlayerStatuses.Clear();
+        PlayerPositionOrder.Clear();
         SceneM._srvPeerScene.Clear();
 
         localPlayerStatus = null;

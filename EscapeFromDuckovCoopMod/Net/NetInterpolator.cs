@@ -66,6 +66,12 @@ public class NetInterpolator : MonoBehaviour
     private double _timeOffset;
     private bool _offsetInitialized;
     private double _lastRealtimeArrival = double.NegativeInfinity;
+    private bool _playerTimeline;
+    private float _playerBackTime;
+    private bool _playerRendered, _playerPredicted;
+    private Vector3 _playerRenderedPosition, _playerCorrection;
+    private double _playerPredictionTime;
+    private float _playerPredictionSpeed, _playerCorrectionSpeed;
     private Transform modelRoot; // 驱动朝向
 
     private Transform root; // 驱动位置
@@ -99,6 +105,12 @@ public class NetInterpolator : MonoBehaviour
         var localTime = Time.unscaledTimeAsDouble;
         var effectiveSendInterval = ResolveEffectiveSendInterval();
         var backTime = ResolveBackTime(effectiveSendInterval);
+        if (_playerTimeline)
+        {
+            _playerBackTime = Mathf.MoveTowards(_playerBackTime, backTime,
+                Mathf.Clamp01(catchupSpeed) * Time.unscaledDeltaTime);
+            backTime = _playerBackTime;
+        }
 
         // Mirror SnapshotInterpolation: 根据 drift 轻微调整 timeOffset，使本地时间线贴合远端
         if (_offsetInitialized)
@@ -145,7 +157,7 @@ public class NetInterpolator : MonoBehaviour
             var vel = last.vel.sqrMagnitude > 0.0001f ? last.vel : _lastVel;
             // Once prediction expires, hold its endpoint. Returning to last.pos
             // would jump backwards every time a moving target misses a packet.
-            Apply(last.pos + vel * (float)predictionTime, last.rot);
+            Apply(last.pos + vel * (float)predictionTime, last.rot, extrapolated: true);
             _lastVel = vel;
 
             if (_buf.Count > 2) _buf.RemoveRange(0, _buf.Count - 2);
@@ -207,7 +219,7 @@ public class NetInterpolator : MonoBehaviour
             _timeOffset = Time.unscaledTimeAsDouble - when;
             _offsetInitialized = true;
         }
-        else
+        else if (!_playerTimeline)
         {
             var predictedArrival = when + _timeOffset;
             var drift = Time.unscaledTimeAsDouble - predictedArrival;
@@ -246,8 +258,27 @@ public class NetInterpolator : MonoBehaviour
 
     public void PushArrival(Vector3 pos, Quaternion rot, Vector3? velocity = null)
     {
+        if (_playerTimeline)
+        {
+            _playerTimeline = false;
+            ResetTiming(velocity);
+        }
         _lastRealtimeArrival = Time.unscaledTimeAsDouble;
         Push(pos, rot, Time.unscaledTimeAsDouble, velocity);
+    }
+
+    internal void PushPlayerArrival(Vector3 pos, Quaternion rot, Vector3 velocity, double timestamp)
+    {
+        if (timestamp <= 0d || double.IsNaN(timestamp) || double.IsInfinity(timestamp)) return;
+        if (!_playerTimeline)
+        {
+            ResetTiming(velocity);
+            _playerTimeline = true;
+        }
+        _lastRealtimeArrival = Time.unscaledTimeAsDouble;
+        // Preserve spacing when delayed packets arrive together. The offset maps
+        // this player's clock to local time; clocks need not share an origin.
+        Push(pos, rot, timestamp, velocity);
     }
 
     public void PushStatus(Vector3 pos, Quaternion rot, Vector3? velocity = null)
@@ -255,6 +286,11 @@ public class NetInterpolator : MonoBehaviour
         // Full status/loadout messages carry no pose timestamp and can arrive
         // behind the live position stream. Use them only to seed or recover it.
         if (_buf.Count > 0 && Time.unscaledTimeAsDouble - _lastRealtimeArrival < 1d) return;
+        if (_playerTimeline)
+        {
+            _playerTimeline = false;
+            ResetTiming(velocity);
+        }
         Push(pos, rot, Time.unscaledTimeAsDouble, velocity);
     }
 
@@ -265,12 +301,40 @@ public class NetInterpolator : MonoBehaviour
         _offsetInitialized = false;
         _smoothedSnapshotInterval = sendInterval;
         _smoothedJitter = 0f;
+        _playerBackTime = interpolationBackTime;
+        _playerRendered = _playerPredicted = false;
+        _playerCorrection = Vector3.zero;
         _lastVel = velocity ?? Vector3.zero;
     }
 
-    private void Apply(Vector3 pos, Quaternion rot, bool hardSnap = false)
+    private Vector3 ReconcilePlayerPrediction(Vector3 pos, bool hardSnap, bool extrapolated)
+    {
+        // Reconcile resumed prediction at a bounded speed; ordinary interpolation stays unfiltered.
+        var last = _buf[_buf.Count - 1];
+        if (!_playerRendered || hardSnap || (pos - _playerRenderedPosition).sqrMagnitude > hardSnapDistance * hardSnapDistance)
+            _playerCorrection = Vector3.zero;
+        else
+        {
+            if (_playerPredicted && last.t > _playerPredictionTime && _playerPredictionSpeed > 0f)
+            {
+                _playerCorrection = _playerRenderedPosition + last.vel * Time.unscaledDeltaTime - pos;
+                _playerCorrectionSpeed = Mathf.Max(_playerPredictionSpeed, last.vel.magnitude) * (1f + Mathf.Clamp01(catchupSpeed));
+            }
+            _playerCorrection = Vector3.MoveTowards(_playerCorrection, Vector3.zero, _playerCorrectionSpeed * Time.unscaledDeltaTime);
+        }
+        pos += _playerCorrection;
+        _playerRenderedPosition = pos;
+        _playerRendered = true;
+        _playerPredicted = extrapolated;
+        _playerPredictionTime = last.t;
+        _playerPredictionSpeed = last.vel.magnitude;
+        return pos;
+    }
+
+    private void Apply(Vector3 pos, Quaternion rot, bool hardSnap = false, bool extrapolated = false)
     {
         if (!root) return;
+        if (_playerTimeline) pos = ReconcilePlayerPrediction(pos, hardSnap, extrapolated);
 
         // 误差特别大直接硬对齐，避免“橡皮筋”Sans说的回弹
         if (hardSnap || (root.position - pos).sqrMagnitude > hardSnapDistance * hardSnapDistance)

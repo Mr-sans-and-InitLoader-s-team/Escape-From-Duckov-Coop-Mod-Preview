@@ -13,6 +13,7 @@ public static class SharedHome
     private static bool _remoteEnabled;
     private static bool _initialized;
     private static bool _dirty;
+    private static bool _playerDirty;
     private static float _nextUpdate;
     private static float _nextSave;
     private static readonly Dictionary<NetPeer, long> Requests = new();
@@ -62,6 +63,7 @@ public static class SharedHome
         _requestSerial = 0;
         _remoteEnabled = false;
         _hostEnabled = Enabled;
+        _playerDirty = false;
         Requests.Clear();
         NeedsFull.Clear();
         SharedHomeTransfer.Reset();
@@ -102,6 +104,7 @@ public static class SharedHome
         SharedHomeSave.Restore();
         _session = null;
         _dirty = false;
+        _playerDirty = false;
         Requests.Clear();
         NeedsFull.Clear();
         SharedHomeCompatibility.Reset();
@@ -111,6 +114,10 @@ public static class SharedHome
     public static void MarkDirty()
     {
         if (Active && NetService.Instance.IsServer) _dirty = true;
+    }
+    internal static void MarkPlayerDirty()
+    {
+        if (Active && NetService.Instance.IsServer) _playerDirty = true;
     }
     public static void Tick()
     {
@@ -136,7 +143,8 @@ public static class SharedHome
         SharedHomeStorage.Ensure();
         if (!NetService.Instance.IsServer || Time.unscaledTime < _nextUpdate) return;
         _nextUpdate = Time.unscaledTime + .25f;
-        if (!_dirty) return;
+        // Personal reports update the host cache immediately and share the existing disk-save cadence.
+        if (!_dirty && (!_playerDirty || Time.unscaledTime < _nextSave)) return;
         _dirty = false;
         if (NeedsFull.Count > 0)
         {
@@ -156,6 +164,7 @@ public static class SharedHome
         {
             _nextSave = Time.unscaledTime + 5f;
             SavesSystem.SaveFile(false);
+            _playerDirty = false;
         }
     }
     internal static void Apply(Action action)

@@ -168,7 +168,7 @@ internal static class SharedHomeLoadouts
                     if (report.KeyExists(deathKey)) deaths.Save(deathKey, report.Load(deathKey));
                 if (!SharedHomeCharacterContext.IsTemporary(context) && deaths.GetKeys().Length > 0)
                     SavesSystem.Save(key + "/Deaths", deaths.LoadRawBytes());
-                SharedHome.MarkDirty();
+                SharedHome.MarkPlayerDirty();
                 if (created)
                 {
                     SavesSystem.Save(key + "/Created", true);

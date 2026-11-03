@@ -164,6 +164,8 @@ namespace EscapeFromDuckovCoopMod
                 return;
 
             var players = new HashSet<string>(message.Players.Select(p => p.PlayerId), StringComparer.Ordinal);
+            foreach (var playerId in service.clientPlayerStatuses.Keys.Where(id => !players.Contains(id)))
+                PlayerPositionOrder.Forget(playerId);
             foreach (var playerId in service.clientRemoteCharacters.Keys.Where(id => !players.Contains(id)).ToArray())
             {
                 var remote = service.clientRemoteCharacters[playerId];
@@ -262,6 +264,7 @@ namespace EscapeFromDuckovCoopMod
             if (context.IsServer)
             {
                 var playerId = service.GetPlayerId(context.Sender);
+                if (!PlayerPositionOrder.Accept(playerId, message.Timestamp)) return;
 
                 if (service.playerStatuses.TryGetValue(context.Sender, out var st))
                 {
@@ -298,6 +301,7 @@ namespace EscapeFromDuckovCoopMod
 
             // Only the reliable roster creates players; late position packets cannot revive a disconnected peer.
             if (!service.clientPlayerStatuses.TryGetValue(message.EndPoint, out var clientStatus)) return;
+            if (!PlayerPositionOrder.Accept(message.EndPoint, message.Timestamp)) return;
 
             clientStatus.Position = position;
             clientStatus.Rotation = rotation;
@@ -762,7 +766,8 @@ namespace EscapeFromDuckovCoopMod
 
             if (vehicleType <= 0)
             {
-                if (_playerVehicleBindings.TryGetValue(playerId, out var oldVehicleId) && oldVehicleId != 0)
+                var wasMounted = _playerVehicleBindings.TryGetValue(playerId, out var oldVehicleId) && oldVehicleId != 0;
+                if (wasMounted)
                 {
                     _playerVehicleBindings.Remove(playerId);
                     RPCVehicle.ServerHandleVehicleAuthorityDismounted(oldVehicleId, playerId);
@@ -771,16 +776,18 @@ namespace EscapeFromDuckovCoopMod
                 var rider = riderObj.GetComponentInChildren<CharacterMainControl>();
                 if (rider)
                 {
+                    wasMounted |= rider.ridingVehicleType > 0;
                     rider.ridingVehicleType = 0;
                     if (rider.movementControl != null)
                         rider.movementControl.MovementEnabled = true;
                 }
 
                 var lockComp = riderObj.GetComponent<MountedRiderLock>();
+                wasMounted |= lockComp && lockComp.enabled && lockComp.Vehicle;
                 if (lockComp != null)
                     lockComp.Unbind();
 
-                ApplyKnownPlayerPoseAfterDismount(playerId, riderObj, rider);
+                if (wasMounted) ApplyKnownPlayerPoseAfterDismount(playerId, riderObj, rider);
                 return;
             }
 
@@ -880,7 +887,7 @@ namespace EscapeFromDuckovCoopMod
                 return;
 
             LogPlayerClockSkew(playerId, remoteTimestamp);
-            interp.PushArrival(position, rotation, velocity);
+            interp.PushPlayerArrival(position, rotation, velocity, remoteTimestamp);
         }
 
         private static void LogPlayerClockSkew(string playerId, double remoteTimestamp)
@@ -895,7 +902,7 @@ namespace EscapeFromDuckovCoopMod
             _nextPlayerClockSkewLogTime = Time.unscaledTime + 5f;
             CoopPerfLog.AppendEvent(
                 "player-net",
-                $"clockSkew player={playerId} skew={skew:0.000}s usingArrivalTime=True");
+                $"clockSkew player={playerId} skew={skew:0.000}s usingSourceTimeline=True");
         }
 
         private static bool TryReadPose(PlayerStatus status, out Vector3 position, out Quaternion rotation, out Vector3 velocity)

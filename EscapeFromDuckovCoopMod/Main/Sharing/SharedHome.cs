@@ -178,7 +178,7 @@ public static class SharedHome
     {
         if (!Guest || Applying || string.IsNullOrEmpty(_session) ||
             NetService.Instance.connectedPeer?.ConnectionState != ConnectionState.Connected) return false;
-        if (action != "storageTaken" && (!SharedHomeLoadouts.Ready || SharedHomeCharacterCreation.Joining)) return false;
+        if (action != "storageTaken" && action != "beaconUnlock" && (!SharedHomeLoadouts.Ready || SharedHomeCharacterCreation.Joining)) return false;
         var data = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new { action, arguments }));
         var message = new SharedHomeRpc { Kind = 2, Session = _session, Revision = ++_requestSerial, Data = data };
         SharedHomeTransfer.Send(message);

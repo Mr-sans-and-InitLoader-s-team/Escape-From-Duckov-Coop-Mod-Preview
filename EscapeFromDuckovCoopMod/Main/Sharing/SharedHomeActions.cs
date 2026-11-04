@@ -30,6 +30,7 @@ internal static class SharedHomeActions
             case "count": SavesCounter.AddCount((string)args["key"]); break;
             case "shopBuy": SharedHomeShopPurchase.Buy((string)args["token"], (string)args["merchant"], (int)args["type"], (int)args["amount"], sender).Forget(); break;
             case "unlock": SharedHomeUnlocks.Execute(args); break;
+            case "beaconUnlock": if ((string)args["kind"] == "beacon") SharedHomeUnlocks.Execute(args); break;
             case "xp":
                 var amount = (int)args["amount"];
                 if (amount > 0) EXPManager.AddExp(amount);

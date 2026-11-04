@@ -21,6 +21,7 @@ internal static class TeleporterTravel
 
     public static void Request(string sceneId, int beaconIndex)
     {
+        CoopSessionLog.Write("Travel", $"Request target={sceneId}, beacon={beaconIndex}, role={(Service.IsServer ? "host" : "client")}, shared={SharedHome.Enabled}");
         if (IsActive || Cost.TaskPending)
         {
             TravelNotice.Show(CoopLocalization.Get("ui.teleporter.busy"));

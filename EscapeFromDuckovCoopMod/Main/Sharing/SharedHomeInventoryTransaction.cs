@@ -113,7 +113,7 @@ internal static class SharedHomeInventoryTransaction
             {
                 var writer = new NetDataWriter();
                 writer.Put(token); writer.Put(result != null);
-                if (result != null) writer.PutBytesWithLength(result);
+                if (result != null) CorpsePayload.Write(writer, result);
                 SharedHome.SendPrivate(12, writer.CopyData(), peer);
             }
         }
@@ -156,7 +156,7 @@ internal static class SharedHomeInventoryTransaction
         try
         {
             if (!accepted) return;
-            var profile = new ES3File(reader.GetBytesWithLength());
+            var profile = new ES3File(CorpsePayload.Read(reader));
             bool Current() => generation == _generation && _token == token && SharedHome.Guest &&
                 SharedHomeLoadouts.MatchesContext(profile.Load<string>("context"));
             if (!Current()) { accepted = false; return; }

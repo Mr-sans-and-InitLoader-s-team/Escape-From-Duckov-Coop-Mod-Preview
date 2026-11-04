@@ -37,7 +37,8 @@ internal static class SharedHomeUnlocks
         if (method == Methods["shop"] && (SharedHome.Applying || SharedHome.Guest && !SharedHomeLoadouts.Ready)) args[2] = false;
         if (!SharedHome.Guest || SharedHome.Applying) return true;
         var entry = Methods.First(p => p.Value == method);
-        SharedHome.Request("unlock", new { kind = entry.Key, values = args });
+        var sent = SharedHome.Request(entry.Key == "beacon" ? "beaconUnlock" : "unlock", new { kind = entry.Key, values = args });
+        if (entry.Key == "beacon") CoopSessionLog.Write("Travel", $"Shared beacon request: scene={args[0]}, index={args[1]}, sent={sent}");
         return false;
     }
     internal static void Execute(JObject args)
@@ -48,6 +49,8 @@ internal static class SharedHomeUnlocks
         if (values == null || values.Count != parameters.Length) return;
         var converted = parameters.Select((p, i) => values[i].ToObject(p.ParameterType)).ToArray();
         method.Invoke(null, converted);
+        if ((string)args["kind"] == "beacon") CoopSessionLog.Write("Travel",
+            $"Shared beacon applied: scene={converted[0]}, index={converted[1]}, unlocked={BeaconManager.GetBeaconUnlocked((string)converted[0], (int)converted[1])}");
         SharedHome.MarkDirty();
     }
 }

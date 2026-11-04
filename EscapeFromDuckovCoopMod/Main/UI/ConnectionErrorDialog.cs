@@ -23,9 +23,9 @@ internal static class ConnectionErrorDialog
         layout.spacing = 14;
         layout.childForceExpandHeight = false;
         layout.childControlHeight = true;
-        var heading = ui.CreateText("Title", _panel.transform, CoopLocalization.Get("net.sharedHome.title"), 22,
+        var heading = ui.CreateText("Title", _panel.transform, CoopLocalization.Get("net.connectionFailed"), 22,
             MModUI.GlassTheme.Text, TextAlignmentOptions.Left, FontStyles.Bold);
-        CoopLocalizedText.Bind(heading, "net.sharedHome.title");
+        CoopLocalizedText.Bind(heading, "net.connectionFailed");
         heading.gameObject.GetComponent<LayoutElement>().preferredHeight = 34;
         var scroll = ui.CreateModernScrollView("ErrorDetails", _panel.transform, 348);
         var content = scroll.GetComponent<ScrollRect>().content;

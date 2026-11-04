@@ -3483,6 +3483,7 @@ public class MModUI : MonoBehaviour
             // 创建主机 - 使用下方连接区域的端口
             if (int.TryParse(manualPort, out int serverPort))
             {
+                if (!IndependentSessionEntry.Check(CoopAISettings.ActiveGeneral.PrivateSharedHome)) return;
                 // 设置服务器端口
                 NetService.Instance.port = serverPort;
                 NetService.Instance.StartNetwork(true);
@@ -3514,6 +3515,7 @@ public class MModUI : MonoBehaviour
 
     private bool CheckCanConnect()
     {
+        if (!IndependentSessionEntry.Check(CoopAISettings.ActiveGeneral.PrivateSharedHome)) return false;
         // 检查客户端是否在关卡内
         if (LocalPlayerManager.Instance == null)
         {
@@ -3618,6 +3620,7 @@ public class MModUI : MonoBehaviour
         else
         {
             // 创建房间
+            if (!IndependentSessionEntry.Check(CoopAISettings.ActiveGeneral.PrivateSharedHome)) return;
             UpdateLobbyOptionsFromUI();
             NetService.Instance?.StartNetwork(true);
             SetStatusText("[*] " + CoopLocalization.Get("ui.steam.lobby.creating"), ModernColors.Info);

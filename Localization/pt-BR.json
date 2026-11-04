@@ -1374,11 +1374,19 @@
     },
     {
       "key": "ui.coopMode.independent.summary",
-      "value": "• Explorem e lutem juntos<br>• Progresso individual do personagem<br>• Armazenamento pessoal separado"
+      "value": "• Explorem e lutem juntos<br>• Progresso individual do personagem<br>• Carregue um save com o tutorial concluído"
     },
     {
       "key": "ui.coopMode.independent.detail",
-      "value": "Sua própria jornada<br>Experiência, habilidades, missões e desbloqueios seguem seu próprio jogo salvo.<br><br>Seu equipamento<br>Use seu armazenamento, mochila e equipamento.<br><br>Explore, lute e extraia com sua equipe."
+      "value": "Antes de conectar<br>Conclua o tutorial offline e chegue ao bunker. Carregue esse save para criar ou entrar em uma sala.<br><br>Seu próprio save<br>Experiência, habilidades, missões, desbloqueios, depósito e equipamentos ficam separados.<br><br>Explorem, lutem e extraiam juntos."
+    },
+    {
+      "key": "ui.coopMode.independent.enterSave",
+      "value": "No modo cooperativo independente, entre no save atual antes de criar ou entrar em uma sala."
+    },
+    {
+      "key": "ui.coopMode.independent.tutorialRequired",
+      "value": "O save atual ainda não concluiu o tutorial. Termine-o offline e chegue ao bunker antes de usar o modo cooperativo independente."
     },
     {
       "key": "ui.coopMode.shared.title",

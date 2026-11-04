@@ -225,7 +225,16 @@ public static class SharedHome
             _session = message.Session;
             _remoteEnabled = message.Data[0] != 0;
             _revision = 0;
-            if (!_remoteEnabled) Reset();
+            if (!_remoteEnabled)
+            {
+                Reset();
+                if (!IndependentSessionEntry.Check(false))
+                {
+                    LateJoinScene.Reset();
+                    ConnectionRecovery.SkipNextDisconnect();
+                    NetService.Instance.connectedPeer?.Disconnect();
+                }
+            }
             else SharedHomeCompatibility.BeginClient();
             return;
         }

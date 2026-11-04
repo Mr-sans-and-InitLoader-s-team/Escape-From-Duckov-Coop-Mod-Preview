@@ -33,8 +33,7 @@ public static class Patch_SceneLoaderProxy_Authority
 
         if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var proxySceneId = Traverse.Create(__instance).Field<string>("sceneID").Value;
-        if (SceneNet.Instance.IsLocalSceneLoadAllowed(proxySceneId) || LocalAppearanceTravel.Allows(proxySceneId) ||
-            LocalNewGameTravel.Allows(proxySceneId)) return true;
+        if (SceneNet.Instance.IsLocalSceneLoadAllowed(proxySceneId) || LocalAppearanceTravel.Allows(proxySceneId)) return true;
         if (SharedHome.Guest && (SharedHomeCharacterCreation.Creating || SharedHomeCharacterCreation.Joining)) return false;
         if (__instance.name == "CustomFace")
         {
@@ -181,7 +180,7 @@ internal static class SceneLoadVoteGuard
         if (sceneNet.IsLocalSceneLoadAllowed(targetId))
             return false;
 
-        if (LocalAppearanceTravel.Allows(targetId) || LocalNewGameTravel.Allows(targetId))
+        if (LocalAppearanceTravel.Allows(targetId))
             return false;
 
         if (LevelManager.Instance == null || MultiSceneCore.Instance == null)

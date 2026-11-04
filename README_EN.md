@@ -40,6 +40,8 @@ This mod enables stable LAN and online co-op gameplay in a game originally desig
 
 After subscribing, launch the game and enable the mod to start playing cooperatively.
 
+**Independent Co-op:** both host and clients must first load their current personal save, with the tutorial completed and the bunker reached, before hosting or joining. Connecting from the main menu is unavailable in this mode. Shared Co-op retains its main-menu entry.
+
 ### For Developers
 
 If you want to build from source or contribute to development, please refer to the [Build Guide](#-build-guide).

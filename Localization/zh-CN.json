@@ -1374,11 +1374,19 @@
     },
     {
       "key": "ui.coopMode.independent.summary",
-      "value": "• 一起探索、战斗与撤离<br>• 各自保留角色成长<br>• 使用个人仓库与装备"
+      "value": "• 一起探索、战斗与撤离<br>• 各自保留角色成长<br>• 需先载入已完成教程的存档"
     },
     {
       "key": "ui.coopMode.independent.detail",
-      "value": "各自的冒险<br>经验、技能、任务和解锁按个人存档推进。<br><br>各自的物资<br>使用自己的仓库、背包与穿戴装备。<br><br>与队友并肩探索、战斗，一起撤离。"
+      "value": "联机前准备<br>先离线完成教程并进入地堡，再载入该存档创建或加入房间。<br><br>各自保存<br>经验、技能、任务、解锁、仓库及装备均使用个人存档。<br><br>并肩探索、战斗，一起撤离。"
+    },
+    {
+      "key": "ui.coopMode.independent.enterSave",
+      "value": "独立合作模式必须先进入当前存档，再创建或加入房间。"
+    },
+    {
+      "key": "ui.coopMode.independent.tutorialRequired",
+      "value": "当前存档尚未完成新手教程。请先离线完成教程、进入地堡，再使用独立合作模式。"
     },
     {
       "key": "ui.coopMode.shared.title",

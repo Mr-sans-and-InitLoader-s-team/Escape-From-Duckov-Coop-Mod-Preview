@@ -1374,11 +1374,19 @@
     },
     {
       "key": "ui.coopMode.independent.summary",
-      "value": "• Gemeinsam erkunden und kämpfen<br>• Eigener Charakterfortschritt<br>• Getrennter persönlicher Lagerraum"
+      "value": "• Gemeinsam erkunden und kämpfen<br>• Eigener Charakterfortschritt<br>• Spielstand mit abgeschlossenem Tutorial laden"
     },
     {
       "key": "ui.coopMode.independent.detail",
-      "value": "Die eigene Reise<br>Erfahrung, Fähigkeiten, Aufgaben und Freischaltungen bleiben im persönlichen Spielstand.<br><br>Eigene Ausrüstung<br>Nutze dein Lager, deinen Rucksack und deine Ausrüstung.<br><br>Gemeinsam erkunden, kämpfen und entkommen."
+      "value": "Vor dem Beitritt<br>Tutorial offline abschließen, den Bunker erreichen und diesen Spielstand laden. Danach einen Raum erstellen oder beitreten.<br><br>Eigener Spielstand<br>Erfahrung, Fähigkeiten, Quests, Freischaltungen, Lager und Ausrüstung bleiben persönlich.<br><br>Gemeinsam erkunden, kämpfen und evakuieren."
+    },
+    {
+      "key": "ui.coopMode.independent.enterSave",
+      "value": "Für unabhängigen Koop muss ein Spielstand geladen sein. Betritt deinen aktuellen Spielstand, bevor du einen Raum erstellst oder beitrittst."
+    },
+    {
+      "key": "ui.coopMode.independent.tutorialRequired",
+      "value": "Das Tutorial ist im aktuellen Spielstand noch nicht abgeschlossen. Schließe es offline ab und erreiche den Bunker, bevor du unabhängigen Koop nutzt."
     },
     {
       "key": "ui.coopMode.shared.title",

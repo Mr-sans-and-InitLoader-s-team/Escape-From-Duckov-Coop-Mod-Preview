@@ -29,7 +29,6 @@ internal static class DeadLootSpawnPatch
 {
     private static bool Prefix(ref InteractableLootbox __result, Item item, InteractableLootbox prefab)
     {
-        if (LocalNewGameTravel.IsTutorial) return true;
         if (LevelManager.Instance == null || MultiSceneCore.Instance == null) return true;
         var service = NetService.Instance;
         var tombPrefab = GameplayDataSettings.Prefabs?.LootBoxPrefab_Tomb;
@@ -50,7 +49,6 @@ internal static class DeadLootSpawnPatch
 
     private static void Postfix(InteractableLootbox __result, Item item, InteractableLootbox prefab)
     {
-        if (LocalNewGameTravel.IsTutorial) return;
         if (__result == null)
             return;
 

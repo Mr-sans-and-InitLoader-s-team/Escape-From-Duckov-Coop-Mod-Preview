@@ -1374,11 +1374,19 @@
     },
     {
       "key": "ui.coopMode.independent.summary",
-      "value": "• 함께 탐험하고 전투하고 탈출<br>• 캐릭터 성장은 각자 유지<br>• 개인 창고와 장비 사용"
+      "value": "• 함께 탐험하고 전투하고 탈출<br>• 캐릭터 성장은 각자 유지<br>• 튜토리얼을 마친 저장 파일 먼저 불러오기"
     },
     {
       "key": "ui.coopMode.independent.detail",
-      "value": "나만의 여정<br>경험치, 기술, 퀘스트, 해금은 개인 저장에 따라 진행됩니다.<br><br>나만의 물자<br>개인 창고, 가방, 착용 장비를 사용합니다.<br><br>동료와 함께 탐험하고 싸우며 탈출하세요."
+      "value": "연결하기 전에<br>오프라인에서 튜토리얼을 마치고 벙커에 도착한 뒤, 해당 저장 파일을 불러와 방을 만들거나 참가하세요.<br><br>각자의 저장 파일<br>경험치, 스킬, 퀘스트, 해금, 창고와 장비는 각자 유지합니다.<br><br>함께 탐험하고 싸우며 탈출하세요."
+    },
+    {
+      "key": "ui.coopMode.independent.enterSave",
+      "value": "독립 협동 모드에서는 현재 저장 파일에 들어간 뒤 방을 만들거나 참가해야 합니다."
+    },
+    {
+      "key": "ui.coopMode.independent.tutorialRequired",
+      "value": "현재 저장 파일은 튜토리얼을 완료하지 않았습니다. 오프라인에서 튜토리얼을 마치고 벙커에 도착한 뒤 독립 협동 모드를 이용하세요."
     },
     {
       "key": "ui.coopMode.shared.title",

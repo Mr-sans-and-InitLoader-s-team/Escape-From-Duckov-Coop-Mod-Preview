@@ -190,8 +190,10 @@ namespace EscapeFromDuckovCoopMod
             currentTranslations["ui.coopMode.select"] = "SELECT  ›";
             currentTranslations["ui.coopMode.independent.title"] = "Independent Co-op";
             currentTranslations["ui.coopMode.independent.tag"] = "YOUR CHARACTER · YOUR PROGRESS";
-            currentTranslations["ui.coopMode.independent.summary"] = "• Explore and fight together<br>• Keep your own character progress<br>• Separate personal storage";
-            currentTranslations["ui.coopMode.independent.detail"] = "Your own journey<br>Keep your personal experience, skills, quests and unlocks.<br><br>Your own equipment<br>Use your own storage, backpack and worn gear.<br><br>Team up to explore, fight and extract together.";
+            currentTranslations["ui.coopMode.independent.summary"] = "• Explore and fight together<br>• Keep your own character progress<br>• Load a save with the tutorial completed";
+            currentTranslations["ui.coopMode.independent.detail"] = "Before co-op<br>Finish the tutorial offline and reach the bunker, then load that save to host or join.<br><br>Your own save<br>Keep your own experience, skills, quests, unlocks, storage and equipment.<br><br>Explore, fight and extract together.";
+            currentTranslations["ui.coopMode.independent.enterSave"] = "Independent Co-op requires a loaded save. Enter your current save before hosting or joining a room.";
+            currentTranslations["ui.coopMode.independent.tutorialRequired"] = "The current save has not completed the tutorial. Finish it offline and reach the bunker before using Independent Co-op.";
             currentTranslations["ui.coopMode.shared.title"] = "Shared Co-op";
             currentTranslations["ui.coopMode.shared.tag"] = "ONE WORLD · SHARED PROGRESS";
             currentTranslations["ui.coopMode.shared.summary"] = "• Build one world together<br>• Shared progress and public storage<br>• Characters saved by the host";

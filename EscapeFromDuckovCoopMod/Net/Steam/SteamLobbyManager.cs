@@ -120,6 +120,7 @@ namespace EscapeFromDuckovCoopMod
 
         public void CreateLobby(SteamLobbyOptions? options = null)
         {
+            if (!IndependentSessionEntry.Check(CoopAISettings.ActiveGeneral.PrivateSharedHome)) return;
             if (!SteamManager.Initialized)
             {
                 Debug.LogError("[SteamLobby] Steam未初始化");
@@ -210,6 +211,7 @@ namespace EscapeFromDuckovCoopMod
 
         public void JoinLobby(CSteamID lobbyId)
         {
+            if (!IndependentSessionEntry.Check(CoopAISettings.ActiveGeneral.PrivateSharedHome)) return;
             if (!SteamManager.Initialized)
             {
                 Debug.LogError("[SteamLobby] Steam未初始化");

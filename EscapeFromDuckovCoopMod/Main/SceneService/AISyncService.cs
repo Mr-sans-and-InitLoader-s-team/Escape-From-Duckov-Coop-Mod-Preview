@@ -182,7 +182,7 @@ public sealed partial class AISyncService
 
     private bool ShouldBlockAiSync()
     {
-        return AIScenePolicy.IsBase;
+        return AIScenePolicy.IsBase || LocalNewGameTravel.IsTutorial;
     }
 
     private bool CheckAndHandleSyncBlock()

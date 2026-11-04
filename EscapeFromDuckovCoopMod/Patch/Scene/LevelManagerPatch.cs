@@ -30,7 +30,7 @@ internal static class Patch_Level_StartInit_Gate
         if (mod.IsServer) return true;
         if (SharedHomeCharacterCreation.Creating || SharedHomeCharacterCreation.Joining) return true;
         var sid = SceneInfoCollection.GetSceneID(__instance.gameObject.scene.buildIndex);
-        if (LocalAppearanceTravel.Allows(sid)) return true;
+        if (LocalAppearanceTravel.Allows(sid) || LocalNewGameTravel.Allows(sid)) return true;
         if (string.Equals(sid, SceneInfoCollection.BaseSceneID, StringComparison.OrdinalIgnoreCase))
         {
             WaitingSynchronizationUI.Instance?.Hide();

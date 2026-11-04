@@ -240,6 +240,7 @@ public static class LootboxDetectUtil
     public static bool IsPrivateInventory(Inventory inv)
     {
         if (inv == null) return false;
+        if (LocalNewGameTravel.IsTutorial) return true;
         if (PersonalFormulaLoot.IsPersonal(inv)) return true;
         if (PersonalStarterLoot.IsPersonal(inv)) return true;
         if (PersonalQuestLoot.IsPersonal(inv)) return true;

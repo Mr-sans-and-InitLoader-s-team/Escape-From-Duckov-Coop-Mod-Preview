@@ -221,6 +221,10 @@
       "value": "Already connecting."
     },
     {
+      "key": "net.sharedHome.alreadyConnected",
+      "value": "Connected to a Shared Co-op room. Leave the current room before joining another."
+    },
+    {
       "key": "net.clientNetworkStartFailed",
       "value": "Failed to start client network: {0}"
     },

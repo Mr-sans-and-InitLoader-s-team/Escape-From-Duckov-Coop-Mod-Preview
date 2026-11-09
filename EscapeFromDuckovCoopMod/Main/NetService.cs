@@ -400,6 +400,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
     public void StartNetwork(bool isServer, bool keepSteamLobby = false)
     {
+        if (!isServer && !SharedHomeConnectionEntry.Check()) return;
         if (!IndependentSessionEntry.Check(CoopAISettings.ActiveGeneral.PrivateSharedHome)) return;
         if (isServer) StopNetwork(!keepSteamLobby);
         else ConnectionRecovery.Cleanup(() => StopNetwork(!keepSteamLobby));
@@ -480,6 +481,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
     public void ConnectToSteamHost(CSteamID host)
     {
+        if (!SharedHomeConnectionEntry.Check()) return;
         if (!IndependentSessionEntry.Check(CoopAISettings.ActiveGeneral.PrivateSharedHome)) return;
         ConnectionRecovery.RecordSteam(host);
         SetTransportMode(NetworkTransportMode.SteamP2P);
@@ -562,6 +564,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
 
     public void ConnectToHost(string ip, int port)
     {
+        if (!SharedHomeConnectionEntry.Check()) return;
         if (!IndependentSessionEntry.Check(CoopAISettings.ActiveGeneral.PrivateSharedHome)) return;
         // 基础校验
         if (string.IsNullOrWhiteSpace(ip))

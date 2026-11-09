@@ -221,6 +221,10 @@
       "value": "연결 중입니다."
     },
     {
+      "key": "net.sharedHome.alreadyConnected",
+      "value": "공유 협동 방에 연결되어 있습니다. 다른 방에 참가하려면 먼저 현재 방에서 나가세요."
+    },
+    {
       "key": "net.clientNetworkStartFailed",
       "value": "클라이언트 네트워크 시작 실패: {0}"
     },

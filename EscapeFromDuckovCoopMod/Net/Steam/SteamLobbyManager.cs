@@ -211,6 +211,7 @@ namespace EscapeFromDuckovCoopMod
 
         public void JoinLobby(CSteamID lobbyId)
         {
+            if (!SharedHomeConnectionEntry.Check()) return;
             if (!IndependentSessionEntry.Check(CoopAISettings.ActiveGeneral.PrivateSharedHome)) return;
             if (!SteamManager.Initialized)
             {

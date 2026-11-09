@@ -221,6 +221,10 @@
       "value": "接続中です。"
     },
     {
+      "key": "net.sharedHome.alreadyConnected",
+      "value": "共有協力ルームに接続中です。別のルームに参加するには、先に現在のルームから退出してください。"
+    },
+    {
       "key": "net.clientNetworkStartFailed",
       "value": "クライアントネットワーク起動失敗: {0}"
     },

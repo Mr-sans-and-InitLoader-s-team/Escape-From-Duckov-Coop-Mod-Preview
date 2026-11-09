@@ -12,6 +12,7 @@ internal sealed class CoopModeSelectionUI : MonoBehaviour
     private bool _chosen;
     private bool _manual;
     private int _manualScene;
+    private Title _title;
     private readonly List<(Light Light, int Mask)> _sceneLights = new();
 
     internal void Bind(Canvas canvas, MModUI ui) { _canvas = canvas; _ui = ui; }
@@ -31,6 +32,20 @@ internal sealed class CoopModeSelectionUI : MonoBehaviour
     private void Update()
     {
         var menu = SharedHomeEntry.AtMainMenu;
+        var handle = SceneManager.GetActiveScene().handle;
+        if (menu && _menu != handle)
+        {
+            _menu = handle;
+            _chosen = false;
+            _title = FindObjectOfType<Title>();
+        }
+        if (menu && _title && _title.gameObject.activeInHierarchy)
+        {
+            Close();
+            _ui.HideConnectionPanel();
+            _manual = false;
+            return;
+        }
         if (!CanChoose || _manual && _manualScene != SceneManager.GetActiveScene().handle || !menu && !_manual)
         {
             Close();
@@ -39,8 +54,6 @@ internal sealed class CoopModeSelectionUI : MonoBehaviour
             return;
         }
         if (_manual) return;
-        var handle = SceneManager.GetActiveScene().handle;
-        if (_menu != handle) { _menu = handle; _chosen = false; }
         if (!_chosen && !_root && _canvas) Open();
     }
 

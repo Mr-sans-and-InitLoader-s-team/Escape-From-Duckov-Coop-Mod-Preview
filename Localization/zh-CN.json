@@ -221,6 +221,10 @@
       "value": "正在连接中."
     },
     {
+      "key": "net.sharedHome.alreadyConnected",
+      "value": "已连接共享房间。请先离开当前房间，再连接其他房间。"
+    },
+    {
       "key": "net.clientNetworkStartFailed",
       "value": "启动客户端网络失败：{0}"
     },

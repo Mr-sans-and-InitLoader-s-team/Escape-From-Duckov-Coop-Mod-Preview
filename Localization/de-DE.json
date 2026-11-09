@@ -221,6 +221,10 @@
       "value": "Verbindung läuft bereits."
     },
     {
+      "key": "net.sharedHome.alreadyConnected",
+      "value": "Mit einem geteilten Koop-Raum verbunden. Verlasse den aktuellen Raum, bevor du einem anderen beitrittst."
+    },
+    {
       "key": "net.clientNetworkStartFailed",
       "value": "Client-Netzwerk konnte nicht gestartet werden: {0}"
     },

@@ -221,6 +221,10 @@
       "value": "Já está conectando."
     },
     {
+      "key": "net.sharedHome.alreadyConnected",
+      "value": "Você está em uma sala de Coop Compartilhado. Saia da sala atual antes de entrar em outra."
+    },
+    {
       "key": "net.clientNetworkStartFailed",
       "value": "Falha ao iniciar a rede do cliente: {0}"
     },

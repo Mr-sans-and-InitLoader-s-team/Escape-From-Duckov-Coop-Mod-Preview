@@ -4,7 +4,7 @@
 
 **让《逃离鸭科夫》的单人冒险变成可以和朋友一起探索、战斗与撤离的合作体验。**
 
-[![Version](https://img.shields.io/badge/Version-1.4.7-2ea44f?style=flat-square)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.7)
+[![Version](https://img.shields.io/badge/Version-1.4.7hotfix%201-2ea44f?style=flat-square)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.7-hotfix.1)
 [![Steam Workshop](https://img.shields.io/badge/Steam-创意工坊-1b2838?style=flat-square&logo=steam)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
 [![Stars](https://img.shields.io/github/stars/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/stargazers)
 [![Forks](https://img.shields.io/github/forks/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/network/members)
@@ -19,8 +19,8 @@
 </div>
 
 > [!IMPORTANT]
-> 当前版本为 **v1.4.7 正式版**，包含强化确认、物品回执、信标解锁、怪物接收名单与移动同步修复。
-> 从 [GitHub Release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.7) 下载完整包，解压到联机 Mod 目录。主机和所有客机须统一更新至本次正式版。
+> 当前发布版本为 **1.4.7hotfix 1 正式版**，修复共享房间内重复连接触发装备清理和场景重载的问题，内部版本保持 **1.4.7**。
+> 从 [GitHub Release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.7-hotfix.1) 下载完整包，解压到联机 Mod 目录。主机和所有客机须统一更新至本次修复包。
 
 ## 📖 项目简介
 
@@ -28,9 +28,10 @@
 
 | 项目 | 当前信息 |
 | --- | --- |
-| 模组版本 | **v1.4.7** |
+| 发布版本 | **1.4.7hotfix 1** |
+| 内部版本 | **1.4.7** |
 | 发布状态 | **正式版** |
-| 发布渠道 | [GitHub Release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.7) |
+| 发布渠道 | [GitHub Release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.7-hotfix.1) |
 | 创意工坊 ID | `3591341282` |
 | 联机方式 | 局域网 / 在线联机 |
 | 构建目标 | .NET Standard 2.1 |

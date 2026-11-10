@@ -1,5 +1,6 @@
 using ItemStatsSystem;
 using ItemStatsSystem.Data;
+using ItemStatsSystem.Items;
 
 namespace EscapeFromDuckovCoopMod;
 
@@ -43,13 +44,19 @@ internal static class SharedHomeEquipment
                 incoming.Add((item, null, entry.position));
             }
             if (!target || !current()) return;
-            foreach (var entry in incoming.Where(e => e.Slot != null))
-            {
-                var slot = target.Slots?.GetSlot(entry.Slot);
-                if (slot == null || !slot.CanPlug(entry.Item)) throw new InvalidOperationException("Shared equipment slot is incompatible: " + entry.Slot);
-            }
             SharedHome.Apply(() =>
             {
+                foreach (var entry in incoming.Where(e => e.Slot != null))
+                {
+                    var slot = target.Slots?.GetSlot(entry.Slot);
+                    if (slot == null)
+                    {
+                        if (!target.Slots) target.CreateSlotsComponent();
+                        slot = new Slot(entry.Slot);
+                        target.Slots.Add(slot);
+                    }
+                    if (!slot.CanPlug(entry.Item)) throw new InvalidOperationException("Shared equipment slot is incompatible: " + entry.Slot);
+                }
                 var inv = target.Inventory;
                 var added = pendingItems?.DetachAdded(target);
                 inv.Loading = true;

@@ -231,9 +231,10 @@ internal static class SharedHomeLoadouts
             if (generation != _generation) return;
             if (!personal) { _ready = true; _changed = true; Flush(); }
         }
-        catch (Exception e) when (create && generation == _generation)
+        catch (Exception e) when (!personal && generation == _generation)
         {
-            Debug.LogError($"[SharedHome] Character creation failed: {e}");
+            _ready = false;
+            Debug.LogError($"[SharedHome] Character restore failed: {e}");
             NetService.Instance.StopNetwork();
             MModUI.ShowTip(CoopLocalization.Get("net.sharedHome.entryFailed"));
         }

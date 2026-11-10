@@ -5,9 +5,11 @@
 
 English | **[简体中文](README.md)**
 
-The current stable release is **1.4.7hotfix 1**. The internal version remains **1.4.7**.
+The current stable release is **1.4.8**. The internal version is **1.4.8**.
 
-This hotfix prevents repeated connection requests from clearing Shared Co-op equipment and reloading the scene. Download the complete package from [GitHub Release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.7-hotfix.1), extract it into the co-op mod folder, and update the host and every client together.
+This release fixes Shared Co-op loadout restoration stopping when a custom equipment slot is missing, and cleans up failed restoration during normal rejoining. Download the complete package from [GitHub Release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.8), extract it into the co-op mod folder, and update the host and every client together.
+
+Mods that add equipment slots or custom inventory cells may cause additional issues. If problems occur, please isolate the involved mods to identify the cause.
 
 Co-op logs are stored in `CoopLogs` under the game's save directory (Windows default: `%USERPROFILE%\AppData\LocalLow\TeamSoda\Duckov\CoopLogs`). `latest.log` contains the current run and `previous.log` the preceding run. Logs rotate at game startup; only these two files are retained.
 

@@ -4,7 +4,7 @@
 
 **让《逃离鸭科夫》的单人冒险变成可以和朋友一起探索、战斗与撤离的合作体验。**
 
-[![Version](https://img.shields.io/badge/Version-1.4.8-2ea44f?style=flat-square)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.8)
+[![Version](https://img.shields.io/badge/Version-1.4.8.1-2ea44f?style=flat-square)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.8.1)
 [![Steam Workshop](https://img.shields.io/badge/Steam-创意工坊-1b2838?style=flat-square&logo=steam)](https://steamcommunity.com/sharedfiles/filedetails/?id=3591341282)
 [![Stars](https://img.shields.io/github/stars/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/stargazers)
 [![Forks](https://img.shields.io/github/forks/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview?style=flat-square&logo=github)](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/network/members)
@@ -19,8 +19,8 @@
 </div>
 
 > [!IMPORTANT]
-> 当前发布版本为 **1.4.8 正式版**，修复共享模式自定义装备槽位缺失导致恢复中断，以及普通重连恢复失败后未正确退出的问题，内部版本为 **1.4.8**。
-> 从 [GitHub Release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.8) 下载完整包，解压到联机 Mod 目录。主机和所有客机须统一更新至本次修复包。
+> 当前发布版本为 **1.4.8.1 正式版**，修复读档后联机面板鼠标隐藏、点击穿透为角色开火的问题，内部版本为 **1.4.8.1**。
+> 从 [GitHub Release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.8.1) 下载完整包，解压到联机 Mod 目录。主机和所有客机须统一更新至本次修复包。
 > 扩展槽位和自定义格子模组可能出现额外异常，如遇问题请自行排查、辨别相关模组。
 
 ## 📖 项目简介
@@ -29,10 +29,10 @@
 
 | 项目 | 当前信息 |
 | --- | --- |
-| 发布版本 | **1.4.8** |
-| 内部版本 | **1.4.8** |
+| 发布版本 | **1.4.8.1** |
+| 内部版本 | **1.4.8.1** |
 | 发布状态 | **正式版** |
-| 发布渠道 | [GitHub Release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.8) |
+| 发布渠道 | [GitHub Release](https://github.com/Mr-sans-and-InitLoader-s-team/Escape-From-Duckov-Coop-Mod-Preview/releases/tag/v1.4.8.1) |
 | 创意工坊 ID | `3591341282` |
 | 联机方式 | 局域网 / 在线联机 |
 | 构建目标 | .NET Standard 2.1 |

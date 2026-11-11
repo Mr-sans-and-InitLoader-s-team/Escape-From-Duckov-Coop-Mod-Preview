@@ -40,6 +40,7 @@ public class MModUILayoutBuilder
     public void BuildMainPanel(Transform canvasTransform)
     {
         _components.MainPanel = _ui.CreateModernPanel("MainPanel", canvasTransform, new Vector2(1160, 760), new Vector2(-1, 0));
+        _components.MainPanel.AddComponent<CoopUIInputBlocker>();
         _ui.MakeDraggable(_components.MainPanel);
 
         var mainLayout = _components.MainPanel.AddComponent<VerticalLayoutGroup>();

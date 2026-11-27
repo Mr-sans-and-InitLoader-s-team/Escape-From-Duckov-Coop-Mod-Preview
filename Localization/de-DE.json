@@ -1459,6 +1459,10 @@
     {
       "key": "ui.sharedHome.consoleHostOnly",
       "value": "Im gemeinsamen Modus installiert der Host die Konsolenausrüstung. Alle Spieler können die installierten Spiele spielen."
+    },
+    {
+      "key": "ui.sharedHome.paymentFailed",
+      "value": "Die Zahlung konnte nicht abgeschlossen werden. Bitte versuche es erneut."
     }
   ]
 }

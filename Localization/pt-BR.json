@@ -1459,6 +1459,10 @@
     {
       "key": "ui.sharedHome.consoleHostOnly",
       "value": "No modo compartilhado, o anfitrião instala os equipamentos do console. Todos podem jogar os jogos instalados."
+    },
+    {
+      "key": "ui.sharedHome.paymentFailed",
+      "value": "Não foi possível concluir o pagamento. Tente novamente em instantes."
     }
   ]
 }

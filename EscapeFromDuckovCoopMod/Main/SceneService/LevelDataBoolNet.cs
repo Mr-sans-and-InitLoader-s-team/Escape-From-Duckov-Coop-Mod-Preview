@@ -692,7 +692,7 @@ public static class LevelDataBoolNet
             Debug.Log($"[LevelDataBool] applied vehicle required item vehicle={vehicleId} item={requireItemId} count={applied}");
     }
 
-    private static bool TryGetInteractableKey(InteractableBase interactable, out int key)
+    internal static bool TryGetInteractableKey(InteractableBase interactable, out int key)
     {
         key = 0;
         if (!interactable)
@@ -798,7 +798,7 @@ public static class LevelDataBoolNet
         try
         {
             var items = costTaker.Cost.items;
-            return items != null && items.Length > 0;
+            return items != null && items.Length > 0 && !ConstructionSiteReplay.IsSharedConstructionCost(costTaker);
         }
         catch
         {

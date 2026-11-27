@@ -6,9 +6,11 @@ namespace EscapeFromDuckovCoopMod;
 [HarmonyPatch(typeof(CostTaker), "OnInteractFinished")]
 internal static class CostTakerPaidFinishPatch
 {
-    private static void Prefix(CostTaker __instance)
+    private static bool Prefix(CostTaker __instance)
     {
+        if (SharedHomeCostTakers.TryRequest(__instance)) return false;
         LevelDataBoolNet.BeginCostTakerPayment(__instance);
+        return true;
     }
 
     private static Exception Finalizer(CostTaker __instance, Exception __exception)
@@ -36,4 +38,10 @@ internal static class CostTakerPaidEnablePatch
         LotteryBoxNet.RememberPaymentGateState(__instance);
         LevelDataBoolNet.TryApplyCachedCostTakerPaid(__instance);
     }
+}
+
+[HarmonyPatch(typeof(CostTaker), "OnDisable")]
+internal static class SharedCostTakerPendingDisablePatch
+{
+    private static void Postfix(CostTaker __instance) => SharedHomeCostTakers.Release(__instance);
 }

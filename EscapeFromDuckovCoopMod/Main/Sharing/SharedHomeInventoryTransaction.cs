@@ -85,7 +85,9 @@ internal static class SharedHomeInventoryTransaction
                 if (!item || !safe.AddAt(item, entry.inventoryPosition)) throw new InvalidOperationException("Transaction safe inventory could not load");
             }
             if (safeData.lockedIndexes != null) safe.lockedIndexes.AddRange(safeData.lockedIndexes);
-            var success = action == "craft"
+            var success = action == "costTaker"
+                ? SharedHomeCostTakers.Execute(args, character, safe, peer, Current)
+                : action == "craft"
                 ? await SharedHomeCrafting.Execute(args, character, safe, Current)
                 : action == "perkBegin"
                     ? await SharedHomePerkUpgrade.Execute(args, character, safe, Current)
@@ -109,6 +111,7 @@ internal static class SharedHomeInventoryTransaction
         {
             if (character) character.DestroyTree();
             if (safeObject) { safeObject.GetComponent<Inventory>().DestroyAllContent(); Object.Destroy(safeObject); }
+            if (action == "costTaker" && result == null) SharedHomeCostTakers.CancelPending(args, peer);
             if (Current())
             {
                 var writer = new NetDataWriter();

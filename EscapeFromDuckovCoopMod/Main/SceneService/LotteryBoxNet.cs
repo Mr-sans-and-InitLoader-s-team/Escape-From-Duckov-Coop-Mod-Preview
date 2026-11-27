@@ -156,10 +156,13 @@ public static class LotteryBoxNet
         if (service == null || !service.networkStarted)
             return;
 
+        var box = FindBox(message);
+        if (context.IsServer && box && message.Phase == PhaseBegin &&
+            !SharedHomeCostTakers.CanBeginLottery(GetField<CostTaker>(CostTakerField, box), context.Sender))
+            return;
         if (ShouldSuppressDuplicate(RecentInbound, BuildRecentKey(message)))
             return;
 
-        var box = FindBox(message);
         if (box)
             ApplyRemote(box, message);
         else

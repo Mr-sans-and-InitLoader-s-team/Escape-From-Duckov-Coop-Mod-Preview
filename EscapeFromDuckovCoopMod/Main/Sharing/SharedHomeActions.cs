@@ -19,6 +19,7 @@ internal static class SharedHomeActions
             case "craft":
             case "perkBegin":
             case "shopBuyPersonal":
+            case "costTaker":
             case "storageStoreAll": SharedHomeInventoryTransaction.Enqueue(action, args, sender); break;
             case "storageTake": SharedHomeStorage.Take(args, sender); break;
             case "storageTaken": SharedHomeStorage.FinishTake(args, sender); break;

@@ -1459,6 +1459,10 @@
     {
       "key": "ui.sharedHome.consoleHostOnly",
       "value": "공유 모드에서는 호스트가 게임기 장비를 설치합니다. 설치된 게임은 모든 플레이어가 즐길 수 있습니다."
+    },
+    {
+      "key": "ui.sharedHome.paymentFailed",
+      "value": "결제를 완료하지 못했습니다. 잠시 후 다시 시도해 주세요."
     }
   ]
 }

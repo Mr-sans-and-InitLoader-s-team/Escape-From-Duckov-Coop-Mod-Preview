@@ -1459,6 +1459,10 @@
     {
       "key": "ui.sharedHome.consoleHostOnly",
       "value": "共有モードではホストがゲーム機の機器を取り付けます。インストール済みのゲームは全員が遊べます。"
+    },
+    {
+      "key": "ui.sharedHome.paymentFailed",
+      "value": "支払いを完了できませんでした。しばらくしてから再試行してください。"
     }
   ]
 }

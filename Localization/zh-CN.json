@@ -1459,6 +1459,10 @@
     {
       "key": "ui.sharedHome.consoleHostOnly",
       "value": "共享模式下由主机安装游戏机设备，所有玩家均可游玩已安装的游戏。"
+    },
+    {
+      "key": "ui.sharedHome.paymentFailed",
+      "value": "暂时无法完成付款，请稍后重试。"
     }
   ]
 }

@@ -1459,6 +1459,10 @@
     {
       "key": "ui.sharedHome.consoleHostOnly",
       "value": "In shared mode, the host installs console equipment. All players can play the installed games."
+    },
+    {
+      "key": "ui.sharedHome.paymentFailed",
+      "value": "Unable to complete this payment. Please try again."
     }
   ]
 }

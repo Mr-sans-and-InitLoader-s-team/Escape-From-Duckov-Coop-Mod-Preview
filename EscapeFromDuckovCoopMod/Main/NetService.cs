@@ -234,6 +234,7 @@ public class NetService : MonoBehaviour, ICoopNetworkListener, IModNetworkServic
         SharedHomeTransfer.PeerDisconnected(peer);
         TeleporterTravel.PeerDisconnected(peer);
         SharedHomeStorage.PeerDisconnected(peer);
+        SharedHomeCostTakers.PeerDisconnected(peer);
         SharedHomeLoadouts.PeerDisconnected(peer);
         var sceneVote = SceneNet.Instance;
         if (IsServer && sceneVote != null && sceneVote.sceneVoteActive && sceneVote.sceneParticipantIds.Contains(GetPlayerId(peer)))
